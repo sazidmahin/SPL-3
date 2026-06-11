@@ -19,3 +19,13 @@ All workspace-scoped endpoints must verify:
 - user is active member of workspace
 - user has required role
 - workspace subscription allows paid feature if needed
+
+## Admin APIs
+
+Platform admin APIs are separate from workspace APIs.
+
+Admin base path:
+
+/api/v1/admin
+
+Only users with platform_role = super_admin can access full admin routes.
