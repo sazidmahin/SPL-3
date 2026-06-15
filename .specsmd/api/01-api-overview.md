@@ -29,3 +29,5 @@ Admin base path:
 /api/v1/admin
 
 Only users with platform_role = super_admin can access full admin routes.
+
+The `support_admin` platform role is reserved for later limited-access support workflows and should not receive the full `/api/v1/admin` surface by default.

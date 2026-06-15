@@ -148,7 +148,7 @@ Creates the `workspace_members` table and model. Tracks user access to workspace
 **Feature:** List user workspaces
 
 **What it does:**  
-Returns all personal and organization workspaces where the authenticated user is an active member.
+Returns all personal and organization workspaces where the authenticated user is an active member, and supports loading a single workspace detail view for workspace-scoped screens.
 
 ---
 
@@ -157,7 +157,7 @@ Returns all personal and organization workspaces where the authenticated user is
 **Feature:** Create organization workspace
 
 **What it does:**  
-Allows users to create an organization workspace and automatically become the owner of that workspace.
+Allows users to create an organization workspace, automatically become the owner of that workspace, and manage organization members through invite and member-list endpoints.
 
 ---
 
@@ -193,7 +193,7 @@ Ensures all business queries include `workspace_id` so users cannot access data 
 **Feature:** Frontend workspace selector
 
 **What it does:**  
-Allows users to switch between their personal workspace and organization workspaces in the frontend.
+Allows users to switch between their personal workspace and organization workspaces in the frontend, and provides the base workspace settings and dashboard context UI for the selected workspace.
 
 ---
 
@@ -415,7 +415,7 @@ Creates initial plans such as Free Individual, Individual Pro, Team, and Enterpr
 **Feature:** Feature access validation
 
 **What it does:**  
-Checks whether a workspace subscription allows a requested feature such as AI SRS generation or AI diagram generation.
+Checks whether a workspace subscription allows a requested feature such as manual Draw.io editing, AI SRS generation, AI diagram generation, or artifact export.
 
 ---
 
@@ -442,7 +442,7 @@ Prevents inviting more organization members than the subscription plan allows.
 **Feature:** Plan and subscription endpoints
 
 **What it does:**  
-Adds APIs for listing plans, viewing workspace subscription, and viewing current usage.
+Adds APIs for listing plans, viewing workspace subscription, viewing current usage, and creating a checkout session for later billing-provider integration.
 
 ---
 
@@ -886,7 +886,63 @@ Tests submitting raw requirements, generating SRS, extracting requirements, gene
 **Feature:** Developer documentation
 
 **What it does:**  
-Updates README and `.specsmd` files so future development agents understand the architecture and implementation plan.
+Updates README and `.specsmd` files so future development agents understand the architecture, implementation plan, and extended platform-admin scope.
+
+---
+
+## Sprint 13: Extended Scope - Super Admin
+
+### TICKET-096: Platform Role Fields
+
+**Feature:** Platform-level admin identity
+
+**What it does:**  
+Extends the `users` table and backend model with `platform_role` and `is_platform_admin` so platform access remains separate from workspace roles.
+
+---
+
+### TICKET-097: Admin Audit Log Model
+
+**Feature:** Platform admin audit logging
+
+**What it does:**  
+Creates the `admin_audit_logs` table and backend model to record privileged admin actions against users, workspaces, subscriptions, projects, diagrams, SRS documents, and related targets.
+
+---
+
+### TICKET-098: Platform Settings Model
+
+**Feature:** Global platform configuration
+
+**What it does:**  
+Creates the `platform_settings` table and backend model for application-wide configuration such as default free plan, LLM provider, maintenance mode, and input limits.
+
+---
+
+### TICKET-099: Super Admin Seed Setup
+
+**Feature:** Initial platform admin bootstrap
+
+**What it does:**  
+Adds startup or seed-command logic that creates the first super admin from environment variables if no platform admin exists.
+
+---
+
+### TICKET-100: Admin Access Dependency
+
+**Feature:** Platform admin authorization
+
+**What it does:**  
+Adds backend dependency logic for `/api/v1/admin` routes so only users with `platform_role = super_admin` can access platform-level APIs while normal workspace routes keep tenant isolation.
+
+---
+
+### TICKET-101: Platform Admin APIs
+
+**Feature:** Platform administration endpoints
+
+**What it does:**  
+Adds initial `/api/v1/admin` endpoints for platform-level visibility into users, workspaces, subscriptions, projects, generation jobs, and LLM calls with admin action logging.
 
 ---
 
