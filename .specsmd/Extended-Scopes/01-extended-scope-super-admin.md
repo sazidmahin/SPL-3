@@ -78,6 +78,9 @@ support_admin
 Can view platform data for support/debugging
 --
 Should not modify billing or delete data unless allowed
+
+For the current roadmap, treat `support_admin` as a reserved platform role.
+Full `/api/v1/admin` access belongs only to `super_admin` unless a later spec adds narrower support-admin endpoints explicitly.
 ```
 
 ```text

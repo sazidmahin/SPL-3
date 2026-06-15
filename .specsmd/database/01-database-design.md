@@ -18,6 +18,8 @@ Core tables:
 - diagram_requirement_links
 - prompt_templates
 - llm_calls
+- admin_audit_logs
+- platform_settings
 - payment_customers
 - invoices
 
