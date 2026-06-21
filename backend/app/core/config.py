@@ -5,7 +5,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    database_url: PostgresDsn
+    project_name: str = "SRS Diagram Platform"
+    api_v1_prefix: str = "/api/v1"
+    database_url: PostgresDsn = (
+        "postgresql+psycopg2://postgres:postgres@localhost:5432/srs_diagram_platform"
+    )
 
     model_config = SettingsConfigDict(
         env_file=".env",
