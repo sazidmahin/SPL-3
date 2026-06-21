@@ -7,6 +7,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     project_name: str = "SRS Diagram Platform"
     api_v1_prefix: str = "/api/v1"
+    secret_key: str = "change-this-development-secret"
+    access_token_expire_minutes: int = 60
     database_url: PostgresDsn = (
         "postgresql+psycopg2://postgres:postgres@localhost:5432/srs_diagram_platform"
     )
