@@ -40,6 +40,36 @@ type Project = {
   updated_at: string
 }
 
+type Diagram = {
+  id: string
+  workspace_id: string
+  project_id: string
+  title: string
+  diagram_type: string
+  source: string
+  status: string
+  current_version: number
+  created_by_user_id: string
+  created_at: string
+  updated_at: string
+}
+
+type DiagramVersion = {
+  id: string
+  workspace_id: string
+  project_id: string
+  diagram_id: string
+  version_number: number
+  drawio_xml: string
+  diagram_json: string | null
+  created_by_user_id: string
+  created_at: string
+}
+
+type DiagramDetail = Diagram & {
+  current: DiagramVersion
+}
+
 type AuthSession = {
   access_token: string
   token_type: string
@@ -57,6 +87,8 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api/v1'
 const SESSION_STORAGE_KEY = 'spl3.auth.session'
 const WORKSPACE_STORAGE_KEY = 'spl3.workspace.active'
 const PROJECT_STORAGE_KEY = 'spl3.project.active'
+const DIAGRAM_STORAGE_KEY = 'spl3.diagram.active'
+const BLANK_DRAWIO_XML = '<mxfile><diagram name="Page-1"></diagram></mxfile>'
 
 function readStoredSession(): AuthSession | null {
   const stored = window.localStorage.getItem(SESSION_STORAGE_KEY)
@@ -86,11 +118,16 @@ function App() {
   const [session, setSession] = useState<AuthSession | null>(() => readStoredSession())
   const [workspaces, setWorkspaces] = useState<WorkspaceMembership[]>([])
   const [projects, setProjects] = useState<Project[]>([])
+  const [diagrams, setDiagrams] = useState<Diagram[]>([])
+  const [diagramVersions, setDiagramVersions] = useState<DiagramVersion[]>([])
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(() =>
     window.localStorage.getItem(WORKSPACE_STORAGE_KEY),
   )
   const [activeProjectId, setActiveProjectId] = useState<string | null>(() =>
     window.localStorage.getItem(PROJECT_STORAGE_KEY),
+  )
+  const [activeDiagramId, setActiveDiagramId] = useState<string | null>(() =>
+    window.localStorage.getItem(DIAGRAM_STORAGE_KEY),
   )
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -99,12 +136,18 @@ function App() {
   const [workspaceSlug, setWorkspaceSlug] = useState('')
   const [projectName, setProjectName] = useState('')
   const [projectDescription, setProjectDescription] = useState('')
+  const [diagramTitle, setDiagramTitle] = useState('')
+  const [diagramType, setDiagramType] = useState('class')
+  const [diagramXml, setDiagramXml] = useState(BLANK_DRAWIO_XML)
   const [error, setError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isLoadingMe, setIsLoadingMe] = useState(false)
   const [isLoadingProjects, setIsLoadingProjects] = useState(false)
+  const [isLoadingDiagrams, setIsLoadingDiagrams] = useState(false)
+  const [isSavingDiagram, setIsSavingDiagram] = useState(false)
   const [isCreatingWorkspace, setIsCreatingWorkspace] = useState(false)
   const [isCreatingProject, setIsCreatingProject] = useState(false)
+  const [isCreatingDiagram, setIsCreatingDiagram] = useState(false)
 
   const activeWorkspace = useMemo(
     () =>
@@ -118,6 +161,63 @@ function App() {
     [activeProjectId, projects],
   )
 
+  const activeDiagram = useMemo(
+    () => diagrams.find((diagram) => diagram.id === activeDiagramId) ?? diagrams[0],
+    [activeDiagramId, diagrams],
+  )
+
+  async function loadDiagramDetail(
+    authSession: AuthSession,
+    workspaceId: string,
+    projectId: string,
+    diagramId: string,
+  ) {
+    const detail = await parseApiResponse<DiagramDetail>(
+      await fetch(
+        `${API_BASE_URL}/workspaces/${workspaceId}/projects/${projectId}/diagrams/${diagramId}`,
+        { headers: { Authorization: `Bearer ${authSession.access_token}` } },
+      ),
+    )
+    const versions = await parseApiResponse<DiagramVersion[]>(
+      await fetch(
+        `${API_BASE_URL}/workspaces/${workspaceId}/projects/${projectId}/diagrams/${diagramId}/versions`,
+        { headers: { Authorization: `Bearer ${authSession.access_token}` } },
+      ),
+    )
+    setDiagramXml(detail.current.drawio_xml)
+    setDiagramVersions(versions)
+    setActiveDiagramId(diagramId)
+    window.localStorage.setItem(DIAGRAM_STORAGE_KEY, diagramId)
+  }
+
+  async function loadDiagrams(authSession: AuthSession, workspaceId: string, projectId: string) {
+    setIsLoadingDiagrams(true)
+    setError(null)
+    try {
+      const nextDiagrams = await parseApiResponse<Diagram[]>(
+        await fetch(`${API_BASE_URL}/workspaces/${workspaceId}/projects/${projectId}/diagrams`, {
+          headers: { Authorization: `Bearer ${authSession.access_token}` },
+        }),
+      )
+      setDiagrams(nextDiagrams)
+      const nextDiagramId = nextDiagrams.some((diagram) => diagram.id === activeDiagramId)
+        ? activeDiagramId
+        : nextDiagrams[0]?.id ?? null
+      if (nextDiagramId) {
+        await loadDiagramDetail(authSession, workspaceId, projectId, nextDiagramId)
+      } else {
+        setActiveDiagramId(null)
+        setDiagramVersions([])
+        setDiagramXml(BLANK_DRAWIO_XML)
+        window.localStorage.removeItem(DIAGRAM_STORAGE_KEY)
+      }
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Unable to load diagrams')
+    } finally {
+      setIsLoadingDiagrams(false)
+    }
+  }
+
   async function loadProjects(authSession: AuthSession, workspaceId: string) {
     setIsLoadingProjects(true)
     setError(null)
@@ -128,14 +228,20 @@ function App() {
         }),
       )
       setProjects(nextProjects)
-      if (!nextProjects.some((project) => project.id === activeProjectId)) {
-        const firstProjectId = nextProjects[0]?.id ?? null
-        setActiveProjectId(firstProjectId)
-        if (firstProjectId) {
-          window.localStorage.setItem(PROJECT_STORAGE_KEY, firstProjectId)
-        } else {
-          window.localStorage.removeItem(PROJECT_STORAGE_KEY)
-        }
+      const nextProjectId = nextProjects.some((project) => project.id === activeProjectId)
+        ? activeProjectId
+        : nextProjects[0]?.id ?? null
+      setActiveProjectId(nextProjectId)
+      if (nextProjectId) {
+        window.localStorage.setItem(PROJECT_STORAGE_KEY, nextProjectId)
+        await loadDiagrams(authSession, workspaceId, nextProjectId)
+      } else {
+        setDiagrams([])
+        setDiagramVersions([])
+        setActiveDiagramId(null)
+        setDiagramXml(BLANK_DRAWIO_XML)
+        window.localStorage.removeItem(PROJECT_STORAGE_KEY)
+        window.localStorage.removeItem(DIAGRAM_STORAGE_KEY)
       }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Unable to load projects')
@@ -169,9 +275,13 @@ function App() {
         await loadProjects(nextSession, nextWorkspaceId)
       } else {
         setProjects([])
+        setDiagrams([])
+        setDiagramVersions([])
         setActiveProjectId(null)
+        setActiveDiagramId(null)
         window.localStorage.removeItem(WORKSPACE_STORAGE_KEY)
         window.localStorage.removeItem(PROJECT_STORAGE_KEY)
+        window.localStorage.removeItem(DIAGRAM_STORAGE_KEY)
       }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Unable to load session')
@@ -214,11 +324,15 @@ function App() {
     window.localStorage.removeItem(SESSION_STORAGE_KEY)
     window.localStorage.removeItem(WORKSPACE_STORAGE_KEY)
     window.localStorage.removeItem(PROJECT_STORAGE_KEY)
+    window.localStorage.removeItem(DIAGRAM_STORAGE_KEY)
     setSession(null)
     setWorkspaces([])
     setProjects([])
+    setDiagrams([])
+    setDiagramVersions([])
     setActiveWorkspaceId(null)
     setActiveProjectId(null)
+    setActiveDiagramId(null)
     setPassword('')
     setError(null)
   }
@@ -226,17 +340,47 @@ function App() {
   async function selectWorkspace(workspaceId: string) {
     setActiveWorkspaceId(workspaceId)
     setActiveProjectId(null)
+    setActiveDiagramId(null)
     setProjects([])
+    setDiagrams([])
+    setDiagramVersions([])
+    setDiagramXml(BLANK_DRAWIO_XML)
     window.localStorage.setItem(WORKSPACE_STORAGE_KEY, workspaceId)
     window.localStorage.removeItem(PROJECT_STORAGE_KEY)
+    window.localStorage.removeItem(DIAGRAM_STORAGE_KEY)
     if (session) {
       await loadProjects(session, workspaceId)
     }
   }
 
-  function selectProject(projectId: string) {
+  async function selectProject(projectId: string) {
     setActiveProjectId(projectId)
+    setActiveDiagramId(null)
+    setDiagrams([])
+    setDiagramVersions([])
+    setDiagramXml(BLANK_DRAWIO_XML)
     window.localStorage.setItem(PROJECT_STORAGE_KEY, projectId)
+    window.localStorage.removeItem(DIAGRAM_STORAGE_KEY)
+    if (session && activeWorkspace) {
+      await loadDiagrams(session, activeWorkspace.workspace.id, projectId)
+    }
+  }
+
+  async function selectDiagram(diagramId: string) {
+    if (!session || !activeWorkspace || !activeProject) {
+      return
+    }
+    setError(null)
+    try {
+      await loadDiagramDetail(
+        session,
+        activeWorkspace.workspace.id,
+        activeProject.id,
+        diagramId,
+      )
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Unable to load diagram')
+    }
   }
 
   function applyWorkspaceName(value: string) {
@@ -309,13 +453,94 @@ function App() {
         }),
       )
       setProjects([project, ...projects])
-      selectProject(project.id)
+      setActiveProjectId(project.id)
+      setDiagrams([])
+      setDiagramVersions([])
+      setActiveDiagramId(null)
+      setDiagramXml(BLANK_DRAWIO_XML)
+      window.localStorage.setItem(PROJECT_STORAGE_KEY, project.id)
+      window.localStorage.removeItem(DIAGRAM_STORAGE_KEY)
       setProjectName('')
       setProjectDescription('')
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Unable to create project')
     } finally {
       setIsCreatingProject(false)
+    }
+  }
+
+  async function createDiagram(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!session || !activeWorkspace || !activeProject) {
+      return
+    }
+
+    setIsCreatingDiagram(true)
+    setError(null)
+    try {
+      const detail = await parseApiResponse<DiagramDetail>(
+        await fetch(
+          `${API_BASE_URL}/workspaces/${activeWorkspace.workspace.id}/projects/${activeProject.id}/diagrams`,
+          {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${session.access_token}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              title: diagramTitle,
+              diagram_type: diagramType,
+              drawio_xml: diagramXml,
+            }),
+          },
+        ),
+      )
+      setDiagrams([detail, ...diagrams])
+      setDiagramVersions([detail.current])
+      setActiveDiagramId(detail.id)
+      setDiagramXml(detail.current.drawio_xml)
+      window.localStorage.setItem(DIAGRAM_STORAGE_KEY, detail.id)
+      setDiagramTitle('')
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Unable to create diagram')
+    } finally {
+      setIsCreatingDiagram(false)
+    }
+  }
+
+  async function saveDiagramVersion() {
+    if (!session || !activeWorkspace || !activeProject || !activeDiagram) {
+      return
+    }
+
+    setIsSavingDiagram(true)
+    setError(null)
+    try {
+      const version = await parseApiResponse<DiagramVersion>(
+        await fetch(
+          `${API_BASE_URL}/workspaces/${activeWorkspace.workspace.id}/projects/${activeProject.id}/diagrams/${activeDiagram.id}/versions`,
+          {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${session.access_token}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ drawio_xml: diagramXml }),
+          },
+        ),
+      )
+      setDiagramVersions([...diagramVersions, version])
+      setDiagrams(
+        diagrams.map((diagram) =>
+          diagram.id === activeDiagram.id
+            ? { ...diagram, current_version: version.version_number }
+            : diagram,
+        ),
+      )
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Unable to save diagram')
+    } finally {
+      setIsSavingDiagram(false)
     }
   }
 
@@ -346,9 +571,9 @@ function App() {
                 className="text-button"
                 type="button"
                 onClick={() => loadCurrentUser(session)}
-                disabled={isLoadingMe || isLoadingProjects}
+                disabled={isLoadingMe || isLoadingProjects || isLoadingDiagrams}
               >
-                {isLoadingMe || isLoadingProjects ? 'Refreshing' : 'Refresh'}
+                {isLoadingMe || isLoadingProjects || isLoadingDiagrams ? 'Refreshing' : 'Refresh'}
               </button>
             </div>
             <div className="workspace-switcher">
@@ -437,7 +662,7 @@ function App() {
                       project.id === activeProject?.id ? 'project-option active' : 'project-option'
                     }
                     type="button"
-                    onClick={() => selectProject(project.id)}
+                    onClick={() => void selectProject(project.id)}
                   >
                     <span>{project.name}</span>
                     <small>{new Date(project.created_at).toLocaleDateString()}</small>
@@ -452,14 +677,6 @@ function App() {
                     <span className="panel-label">Project</span>
                     <h2>{activeProject.name}</h2>
                     <p>{activeProject.description ?? 'No description'}</p>
-                    <div className="project-actions" aria-label="Project areas">
-                      <button className="secondary-button" type="button" disabled>
-                        SRS
-                      </button>
-                      <button className="secondary-button" type="button" disabled>
-                        Diagrams
-                      </button>
-                    </div>
                   </>
                 ) : (
                   <p>No project selected.</p>
@@ -493,6 +710,123 @@ function App() {
                 disabled={!activeWorkspace || isCreatingProject}
               >
                 {isCreatingProject ? 'Creating' : 'Create project'}
+              </button>
+            </form>
+          </article>
+
+          <article className="panel diagrams-panel">
+            <div className="panel-heading">
+              <span className="panel-label">Manual diagrams</span>
+              <button
+                className="text-button"
+                type="button"
+                onClick={() =>
+                  activeWorkspace &&
+                  activeProject &&
+                  void loadDiagrams(session, activeWorkspace.workspace.id, activeProject.id)
+                }
+                disabled={!activeWorkspace || !activeProject || isLoadingDiagrams}
+              >
+                {isLoadingDiagrams ? 'Loading' : 'Reload'}
+              </button>
+            </div>
+
+            <div className="diagram-layout">
+              <div className="diagram-list" aria-label="Diagrams">
+                {diagrams.map((diagram) => (
+                  <button
+                    key={diagram.id}
+                    className={
+                      diagram.id === activeDiagram?.id ? 'diagram-option active' : 'diagram-option'
+                    }
+                    type="button"
+                    onClick={() => void selectDiagram(diagram.id)}
+                  >
+                    <span>{diagram.title}</span>
+                    <small>
+                      {diagram.diagram_type} / v{diagram.current_version}
+                    </small>
+                  </button>
+                ))}
+                {diagrams.length === 0 ? <p>No diagrams found.</p> : null}
+              </div>
+
+              <div className="drawio-editor">
+                <iframe
+                  className="drawio-frame"
+                  src="https://embed.diagrams.net/?embed=1&proto=json&spin=1&ui=min"
+                  title="Draw.io editor"
+                />
+                <label>
+                  Draw.io XML
+                  <textarea
+                    value={diagramXml}
+                    onChange={(event) => setDiagramXml(event.target.value)}
+                    rows={8}
+                  />
+                </label>
+                <div className="diagram-actions">
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    onClick={() => setDiagramXml(BLANK_DRAWIO_XML)}
+                  >
+                    Blank XML
+                  </button>
+                  <button
+                    className="primary-button"
+                    type="button"
+                    onClick={() => void saveDiagramVersion()}
+                    disabled={!activeDiagram || isSavingDiagram}
+                  >
+                    {isSavingDiagram ? 'Saving' : 'Save version'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="diagram-versions" aria-label="Diagram versions">
+                <span className="panel-label">Versions</span>
+                {diagramVersions.map((version) => (
+                  <button
+                    key={version.id}
+                    className="version-option"
+                    type="button"
+                    onClick={() => setDiagramXml(version.drawio_xml)}
+                  >
+                    Version {version.version_number}
+                  </button>
+                ))}
+                {diagramVersions.length === 0 ? <p>No versions.</p> : null}
+              </div>
+            </div>
+          </article>
+
+          <article className="panel create-diagram-panel">
+            <span className="panel-label">New manual diagram</span>
+            <form className="diagram-form" onSubmit={createDiagram}>
+              <label>
+                Title
+                <input
+                  value={diagramTitle}
+                  onChange={(event) => setDiagramTitle(event.target.value)}
+                  required
+                />
+              </label>
+              <label>
+                Type
+                <select value={diagramType} onChange={(event) => setDiagramType(event.target.value)}>
+                  <option value="class">Class</option>
+                  <option value="flowchart">Flowchart</option>
+                  <option value="sequence">Sequence</option>
+                  <option value="other">Other</option>
+                </select>
+              </label>
+              <button
+                className="primary-button"
+                type="submit"
+                disabled={!activeProject || isCreatingDiagram}
+              >
+                {isCreatingDiagram ? 'Creating' : 'Create diagram'}
               </button>
             </form>
           </article>

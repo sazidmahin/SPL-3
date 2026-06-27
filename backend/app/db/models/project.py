@@ -31,3 +31,4 @@ class Project(Base):
 
     workspace: Mapped["Workspace"] = relationship(back_populates="projects")
     created_by: Mapped["User"] = relationship(foreign_keys=[created_by_user_id])
+    diagrams: Mapped[list["Diagram"]] = relationship(back_populates="project")
