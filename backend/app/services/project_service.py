@@ -4,6 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.models import Project, WorkspaceMember
+from app.services.billing_service import require_project_capacity
 from app.services.workspace_service import require_workspace_role
 
 PROJECT_MUTATION_ROLES = {"owner", "admin", "member"}
@@ -38,6 +39,7 @@ def create_project(
     description: str | None,
 ) -> Project:
     require_workspace_role(membership, allowed_roles=PROJECT_MUTATION_ROLES)
+    require_project_capacity(db, workspace_id=membership.workspace_id)
     cleaned_name = name.strip()
     if not cleaned_name:
         raise InvalidProjectError("Project name is required")

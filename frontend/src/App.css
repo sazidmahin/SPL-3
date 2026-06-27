@@ -297,6 +297,64 @@
   grid-template-columns: 220px minmax(0, 1fr) 160px;
 }
 
+.billing-layout {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: 20px;
+  margin-top: 16px;
+}
+
+.billing-status {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+}
+
+.usage-grid {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.usage-grid span {
+  min-height: 34px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 7px 10px;
+  background: var(--surface-muted);
+  color: var(--text-strong);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.plan-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.plan-option {
+  display: grid;
+  gap: 10px;
+  min-height: 190px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px;
+}
+
+.plan-option h2 {
+  margin: 0 0 6px;
+  font-size: 18px;
+}
+
+.plan-option strong {
+  color: var(--text-strong);
+}
+
+.plan-option small {
+  color: var(--text-muted);
+  font-size: 13px;
+}
 .project-list,
 .diagram-list,
 .diagram-versions {

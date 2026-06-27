@@ -70,6 +70,51 @@ type DiagramDetail = Diagram & {
   current: DiagramVersion
 }
 
+type Plan = {
+  id: string
+  code: string
+  name: string
+  description: string | null
+  workspace_type: string
+  price_cents_monthly: number
+  max_projects: number
+  max_members: number
+  monthly_srs_generations: number
+  monthly_ai_diagram_generations: number
+  monthly_manual_diagram_saves: number
+  can_use_manual_drawio: boolean
+  can_generate_srs: boolean
+  can_generate_ai_diagrams: boolean
+  can_export_srs: boolean
+  can_export_diagrams: boolean
+}
+
+type Subscription = {
+  id: string
+  workspace_id: string
+  plan_id: string
+  status: string
+  current_period_start: string
+  current_period_end: string
+  plan: Plan
+}
+
+type Usage = {
+  id: string
+  workspace_id: string
+  period_key: string
+  srs_generations: number
+  ai_diagram_generations: number
+  manual_diagram_saves: number
+}
+
+type CheckoutResponse = {
+  checkout_session_id: string
+  checkout_url: string
+  plan: Plan
+  subscription: Subscription
+}
+
 type AuthSession = {
   access_token: string
   token_type: string
@@ -120,6 +165,9 @@ function App() {
   const [projects, setProjects] = useState<Project[]>([])
   const [diagrams, setDiagrams] = useState<Diagram[]>([])
   const [diagramVersions, setDiagramVersions] = useState<DiagramVersion[]>([])
+  const [plans, setPlans] = useState<Plan[]>([])
+  const [subscription, setSubscription] = useState<Subscription | null>(null)
+  const [usage, setUsage] = useState<Usage | null>(null)
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(() =>
     window.localStorage.getItem(WORKSPACE_STORAGE_KEY),
   )
@@ -144,7 +192,9 @@ function App() {
   const [isLoadingMe, setIsLoadingMe] = useState(false)
   const [isLoadingProjects, setIsLoadingProjects] = useState(false)
   const [isLoadingDiagrams, setIsLoadingDiagrams] = useState(false)
+  const [isLoadingBilling, setIsLoadingBilling] = useState(false)
   const [isSavingDiagram, setIsSavingDiagram] = useState(false)
+  const [isCheckingOut, setIsCheckingOut] = useState(false)
   const [isCreatingWorkspace, setIsCreatingWorkspace] = useState(false)
   const [isCreatingProject, setIsCreatingProject] = useState(false)
   const [isCreatingDiagram, setIsCreatingDiagram] = useState(false)
@@ -165,6 +215,33 @@ function App() {
     () => diagrams.find((diagram) => diagram.id === activeDiagramId) ?? diagrams[0],
     [activeDiagramId, diagrams],
   )
+
+  async function loadBilling(authSession: AuthSession, workspaceId: string) {
+    setIsLoadingBilling(true)
+    setError(null)
+    try {
+      const [nextPlans, nextSubscription, nextUsage] = await Promise.all([
+        parseApiResponse<Plan[]>(await fetch(`${API_BASE_URL}/billing/plans`)),
+        parseApiResponse<Subscription>(
+          await fetch(`${API_BASE_URL}/workspaces/${workspaceId}/billing/subscription`, {
+            headers: { Authorization: `Bearer ${authSession.access_token}` },
+          }),
+        ),
+        parseApiResponse<Usage>(
+          await fetch(`${API_BASE_URL}/workspaces/${workspaceId}/billing/usage`, {
+            headers: { Authorization: `Bearer ${authSession.access_token}` },
+          }),
+        ),
+      ])
+      setPlans(nextPlans)
+      setSubscription(nextSubscription)
+      setUsage(nextUsage)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Unable to load billing')
+    } finally {
+      setIsLoadingBilling(false)
+    }
+  }
 
   async function loadDiagramDetail(
     authSession: AuthSession,
@@ -272,11 +349,14 @@ function App() {
       window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(nextSession))
       if (nextWorkspaceId) {
         window.localStorage.setItem(WORKSPACE_STORAGE_KEY, nextWorkspaceId)
+        await loadBilling(nextSession, nextWorkspaceId)
         await loadProjects(nextSession, nextWorkspaceId)
       } else {
         setProjects([])
         setDiagrams([])
         setDiagramVersions([])
+        setSubscription(null)
+        setUsage(null)
         setActiveProjectId(null)
         setActiveDiagramId(null)
         window.localStorage.removeItem(WORKSPACE_STORAGE_KEY)
@@ -330,6 +410,11 @@ function App() {
     setProjects([])
     setDiagrams([])
     setDiagramVersions([])
+    setSubscription(null)
+    setUsage(null)
+    setPlans([])
+    setSubscription(null)
+    setUsage(null)
     setActiveWorkspaceId(null)
     setActiveProjectId(null)
     setActiveDiagramId(null)
@@ -344,11 +429,17 @@ function App() {
     setProjects([])
     setDiagrams([])
     setDiagramVersions([])
+    setSubscription(null)
+    setUsage(null)
+    setPlans([])
+    setSubscription(null)
+    setUsage(null)
     setDiagramXml(BLANK_DRAWIO_XML)
     window.localStorage.setItem(WORKSPACE_STORAGE_KEY, workspaceId)
     window.localStorage.removeItem(PROJECT_STORAGE_KEY)
     window.localStorage.removeItem(DIAGRAM_STORAGE_KEY)
     if (session) {
+      await loadBilling(session, workspaceId)
       await loadProjects(session, workspaceId)
     }
   }
@@ -466,6 +557,32 @@ function App() {
       setError(caught instanceof Error ? caught.message : 'Unable to create project')
     } finally {
       setIsCreatingProject(false)
+    }
+  }
+
+  async function checkoutPlan(planCode: string) {
+    if (!session || !activeWorkspace) {
+      return
+    }
+
+    setIsCheckingOut(true)
+    setError(null)
+    try {
+      const checkout = await parseApiResponse<CheckoutResponse>(
+        await fetch(`${API_BASE_URL}/workspaces/${activeWorkspace.workspace.id}/billing/checkout`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ plan_code: planCode }),
+        }),
+      )
+      setSubscription(checkout.subscription)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Unable to start checkout')
+    } finally {
+      setIsCheckingOut(false)
     }
   }
 
@@ -638,6 +755,59 @@ function App() {
             </form>
           </article>
 
+          <article className="panel billing-panel">
+            <div className="panel-heading">
+              <span className="panel-label">Billing</span>
+              <button
+                className="text-button"
+                type="button"
+                onClick={() =>
+                  activeWorkspace && void loadBilling(session, activeWorkspace.workspace.id)
+                }
+                disabled={!activeWorkspace || isLoadingBilling}
+              >
+                {isLoadingBilling ? 'Loading' : 'Reload'}
+              </button>
+            </div>
+
+            <div className="billing-layout">
+              <div className="billing-status">
+                <span className="panel-label">Current plan</span>
+                <h2>{subscription?.plan.name ?? 'No plan loaded'}</h2>
+                <p>{subscription?.plan.description ?? 'Refresh billing to load workspace status.'}</p>
+                {usage ? (
+                  <div className="usage-grid">
+                    <span>SRS {usage.srs_generations}/{subscription?.plan.monthly_srs_generations ?? 0}</span>
+                    <span>AI diagrams {usage.ai_diagram_generations}/{subscription?.plan.monthly_ai_diagram_generations ?? 0}</span>
+                    <span>Manual saves {usage.manual_diagram_saves}/{subscription?.plan.monthly_manual_diagram_saves ?? 0}</span>
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="plan-grid" aria-label="Plans">
+                {availablePlans.map((plan) => (
+                  <article className="plan-option" key={plan.id}>
+                    <div>
+                      <h2>{plan.name}</h2>
+                      <p>{plan.description}</p>
+                    </div>
+                    <strong>${(plan.price_cents_monthly / 100).toFixed(0)}/mo</strong>
+                    <small>
+                      {plan.max_projects} projects / {plan.max_members} members / {plan.monthly_manual_diagram_saves} saves
+                    </small>
+                    <button
+                      className="secondary-button"
+                      type="button"
+                      onClick={() => void checkoutPlan(plan.code)}
+                      disabled={!activeWorkspace || isCheckingOut || subscription?.plan.code === plan.code}
+                    >
+                      {subscription?.plan.code === plan.code ? 'Current' : 'Select'}
+                    </button>
+                  </article>
+                ))}
+              </div>
+            </div>
+          </article>
           <article className="panel projects-panel">
             <div className="panel-heading">
               <span className="panel-label">Projects</span>
