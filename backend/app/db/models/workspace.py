@@ -31,3 +31,4 @@ class Workspace(Base):
         back_populates="owned_workspaces", foreign_keys=[owner_user_id]
     )
     members: Mapped[list["WorkspaceMember"]] = relationship(back_populates="workspace")
+    projects: Mapped[list["Project"]] = relationship(back_populates="workspace")
