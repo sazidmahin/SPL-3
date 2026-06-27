@@ -32,3 +32,5 @@ class Workspace(Base):
     )
     members: Mapped[list["WorkspaceMember"]] = relationship(back_populates="workspace")
     projects: Mapped[list["Project"]] = relationship(back_populates="workspace")
+    subscription: Mapped["Subscription | None"] = relationship(back_populates="workspace")
+    usage_counters: Mapped[list["UsageCounter"]] = relationship(back_populates="workspace")

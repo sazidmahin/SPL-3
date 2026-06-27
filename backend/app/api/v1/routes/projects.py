@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_workspace_membership, get_db
 from app.db.models import Project, WorkspaceMember
 from app.schemas.project import ProjectCreateRequest, ProjectRead, ProjectUpdateRequest
+from app.services.billing_service import BillingError
 from app.services.project_service import (
     InvalidProjectError,
     ProjectNotFoundError,
@@ -38,6 +39,11 @@ def create_workspace_project(
         )
     except WorkspacePermissionError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except BillingError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
     except InvalidProjectError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,

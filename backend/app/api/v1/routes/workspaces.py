@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_current_workspace_membership, get_db
 from app.db.models import User, WorkspaceMember
+from app.services.billing_service import BillingError
 from app.schemas.workspace import (
     WorkspaceCreateRequest,
     WorkspaceMemberInviteRequest,
@@ -100,6 +101,11 @@ def invite_member(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     except UserNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except BillingError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
     except DuplicateWorkspaceMemberError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except InvalidWorkspaceError as exc:

@@ -4,6 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.models import Diagram, DiagramVersion, WorkspaceMember
+from app.services.billing_service import record_feature_usage
 from app.services.project_service import ProjectNotFoundError, get_active_project
 from app.services.workspace_service import require_workspace_role
 
@@ -52,6 +53,7 @@ def create_manual_diagram(
 ) -> Diagram:
     require_workspace_role(membership, allowed_roles=DIAGRAM_MUTATION_ROLES)
     _ensure_project_access(db, membership=membership, project_id=project_id)
+    record_feature_usage(db, workspace_id=membership.workspace_id, feature="manual_diagram_save")
 
     diagram = Diagram(
         workspace_id=membership.workspace_id,
@@ -153,6 +155,7 @@ def save_diagram_version(
     diagram = get_active_diagram(
         db, membership=membership, project_id=project_id, diagram_id=diagram_id
     )
+    record_feature_usage(db, workspace_id=membership.workspace_id, feature="manual_diagram_save")
     next_version = diagram.current_version + 1
     version = DiagramVersion(
         workspace_id=membership.workspace_id,

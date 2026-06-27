@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_workspace_membership, get_db
 from app.db.models import Diagram, DiagramVersion, WorkspaceMember
+from app.services.billing_service import BillingError
 from app.schemas.diagram import (
     DiagramCreateRequest,
     DiagramDetailRead,
@@ -56,6 +57,11 @@ def create_diagram(
         return _detail_response(detail_diagram, current)
     except WorkspacePermissionError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except BillingError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
     except DiagramNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except InvalidDiagramError as exc:
@@ -73,6 +79,11 @@ def list_diagrams(
 ) -> list[Diagram]:
     try:
         return list_active_diagrams(db, membership=membership, project_id=project_id)
+    except BillingError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
     except DiagramNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
@@ -89,6 +100,11 @@ def get_diagram(
             db, membership=membership, project_id=project_id, diagram_id=diagram_id
         )
         return _detail_response(diagram, current)
+    except BillingError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
     except DiagramNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
@@ -116,6 +132,11 @@ def create_diagram_version(
         )
     except WorkspacePermissionError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except BillingError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
     except DiagramNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except InvalidDiagramError as exc:
@@ -136,5 +157,10 @@ def get_versions(
         return list_diagram_versions(
             db, membership=membership, project_id=project_id, diagram_id=diagram_id
         )
+    except BillingError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
     except DiagramNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
