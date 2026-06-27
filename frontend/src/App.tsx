@@ -44,6 +44,7 @@ type AuthMode = 'login' | 'register'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api/v1'
 const SESSION_STORAGE_KEY = 'spl3.auth.session'
+const WORKSPACE_STORAGE_KEY = 'spl3.workspace.active'
 
 function readStoredSession(): AuthSession | null {
   const stored = window.localStorage.getItem(SESSION_STORAGE_KEY)
@@ -72,14 +73,25 @@ function App() {
   const [mode, setMode] = useState<AuthMode>('login')
   const [session, setSession] = useState<AuthSession | null>(() => readStoredSession())
   const [workspaces, setWorkspaces] = useState<WorkspaceMembership[]>([])
+  const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(() =>
+    window.localStorage.getItem(WORKSPACE_STORAGE_KEY),
+  )
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [fullName, setFullName] = useState('')
+  const [workspaceName, setWorkspaceName] = useState('')
+  const [workspaceSlug, setWorkspaceSlug] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isLoadingMe, setIsLoadingMe] = useState(false)
+  const [isCreatingWorkspace, setIsCreatingWorkspace] = useState(false)
 
-  const activeWorkspace = useMemo(() => workspaces[0], [workspaces])
+  const activeWorkspace = useMemo(
+    () =>
+      workspaces.find((membership) => membership.workspace.id === activeWorkspaceId) ??
+      workspaces[0],
+    [activeWorkspaceId, workspaces],
+  )
 
   async function loadCurrentUser(authSession: AuthSession) {
     setIsLoadingMe(true)
@@ -92,6 +104,15 @@ function App() {
       )
       setSession({ ...authSession, user: current.user })
       setWorkspaces(current.workspaces)
+      if (!current.workspaces.some((membership) => membership.workspace.id === activeWorkspaceId)) {
+        const firstWorkspaceId = current.workspaces[0]?.workspace.id ?? null
+        setActiveWorkspaceId(firstWorkspaceId)
+        if (firstWorkspaceId) {
+          window.localStorage.setItem(WORKSPACE_STORAGE_KEY, firstWorkspaceId)
+        } else {
+          window.localStorage.removeItem(WORKSPACE_STORAGE_KEY)
+        }
+      }
       window.localStorage.setItem(
         SESSION_STORAGE_KEY,
         JSON.stringify({ ...authSession, user: current.user }),
@@ -135,10 +156,64 @@ function App() {
 
   function signOut() {
     window.localStorage.removeItem(SESSION_STORAGE_KEY)
+    window.localStorage.removeItem(WORKSPACE_STORAGE_KEY)
     setSession(null)
     setWorkspaces([])
+    setActiveWorkspaceId(null)
     setPassword('')
     setError(null)
+  }
+
+  function selectWorkspace(workspaceId: string) {
+    setActiveWorkspaceId(workspaceId)
+    window.localStorage.setItem(WORKSPACE_STORAGE_KEY, workspaceId)
+  }
+
+  function applyWorkspaceName(value: string) {
+    setWorkspaceName(value)
+    if (!workspaceSlug) {
+      setWorkspaceSlug(
+        value
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-|-$/g, ''),
+      )
+    }
+  }
+
+  async function createWorkspace(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!session) {
+      return
+    }
+
+    setIsCreatingWorkspace(true)
+    setError(null)
+    try {
+      const membership = await parseApiResponse<WorkspaceMembership>(
+        await fetch(`${API_BASE_URL}/workspaces`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            name: workspaceName,
+            slug: workspaceSlug,
+            type: 'organization',
+          }),
+        }),
+      )
+      setWorkspaces([...workspaces, membership])
+      selectWorkspace(membership.workspace.id)
+      setWorkspaceName('')
+      setWorkspaceSlug('')
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Unable to create workspace')
+    } finally {
+      setIsCreatingWorkspace(false)
+    }
   }
 
   if (session) {
@@ -163,7 +238,7 @@ function App() {
 
           <article className="panel workspace-panel">
             <div className="panel-heading">
-              <span className="panel-label">Active workspace</span>
+              <span className="panel-label">Workspaces</span>
               <button
                 className="text-button"
                 type="button"
@@ -172,6 +247,25 @@ function App() {
               >
                 {isLoadingMe ? 'Refreshing' : 'Refresh'}
               </button>
+            </div>
+            <div className="workspace-switcher">
+              {workspaces.map((membership) => (
+                <button
+                  key={membership.workspace.id}
+                  className={
+                    membership.workspace.id === activeWorkspace?.workspace.id
+                      ? 'workspace-option active'
+                      : 'workspace-option'
+                  }
+                  type="button"
+                  onClick={() => selectWorkspace(membership.workspace.id)}
+                >
+                  <span>{membership.workspace.name}</span>
+                  <small>
+                    {membership.workspace.type} / {membership.role}
+                  </small>
+                </button>
+              ))}
             </div>
             {activeWorkspace ? (
               <div className="workspace-row">
@@ -184,6 +278,36 @@ function App() {
             ) : (
               <p>No active workspace found.</p>
             )}
+          </article>
+
+          <article className="panel create-workspace-panel">
+            <span className="panel-label">New organization</span>
+            <form className="workspace-form" onSubmit={createWorkspace}>
+              <label>
+                Name
+                <input
+                  value={workspaceName}
+                  onChange={(event) => applyWorkspaceName(event.target.value)}
+                  required
+                />
+              </label>
+              <label>
+                Slug
+                <input
+                  value={workspaceSlug}
+                  onChange={(event) => setWorkspaceSlug(event.target.value)}
+                  pattern="[a-z0-9]+(-[a-z0-9]+)*"
+                  required
+                />
+              </label>
+              <button
+                className="primary-button"
+                type="submit"
+                disabled={isCreatingWorkspace}
+              >
+                {isCreatingWorkspace ? 'Creating' : 'Create workspace'}
+              </button>
+            </form>
           </article>
         </section>
 
