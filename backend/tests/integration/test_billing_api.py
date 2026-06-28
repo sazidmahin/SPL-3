@@ -115,6 +115,14 @@ def test_billing_endpoints_seed_plans_subscription_usage_and_checkout(client: Te
     assert checkout_response.json()["checkout_session_id"].startswith("checkout_")
     assert checkout_response.json()["subscription"]["plan"]["code"] == "individual_pro"
 
+    mismatch_response = client.post(
+        f"/api/v1/workspaces/{workspace_id}/billing/checkout",
+        headers=auth_header(token),
+        json={"plan_code": "team"},
+    )
+    assert mismatch_response.status_code == 422
+    assert mismatch_response.json()["detail"] == "Plan is not available for this workspace"
+
 
 def test_project_limit_blocks_free_personal_workspace(client: TestClient) -> None:
     token = register(client, "owner@example.com", "Owner User")

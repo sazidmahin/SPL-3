@@ -211,6 +211,14 @@ function App() {
     [activeProjectId, projects],
   )
 
+  const availablePlans = useMemo(() => {
+    const workspaceType = activeWorkspace?.workspace.type
+    if (!workspaceType) {
+      return plans
+    }
+    return plans.filter((plan) => plan.workspace_type === workspaceType || plan.workspace_type === 'any')
+  }, [activeWorkspace, plans])
+
   const activeDiagram = useMemo(
     () => diagrams.find((diagram) => diagram.id === activeDiagramId) ?? diagrams[0],
     [activeDiagramId, diagrams],
@@ -410,8 +418,6 @@ function App() {
     setProjects([])
     setDiagrams([])
     setDiagramVersions([])
-    setSubscription(null)
-    setUsage(null)
     setPlans([])
     setSubscription(null)
     setUsage(null)
@@ -429,8 +435,6 @@ function App() {
     setProjects([])
     setDiagrams([])
     setDiagramVersions([])
-    setSubscription(null)
-    setUsage(null)
     setPlans([])
     setSubscription(null)
     setUsage(null)

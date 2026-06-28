@@ -165,8 +165,6 @@ def invite_workspace_member(
     if workspace.type == "personal" and active_member_count >= 1:
         raise InvalidWorkspaceError("Personal workspaces cannot have additional members")
 
-    require_member_capacity(db, workspace_id=workspace_id)
-
     existing_membership = db.scalar(
         select(WorkspaceMember).where(
             WorkspaceMember.workspace_id == workspace_id,
@@ -176,6 +174,8 @@ def invite_workspace_member(
     )
     if existing_membership is not None:
         raise DuplicateWorkspaceMemberError("User is already a workspace member")
+
+    require_member_capacity(db, workspace_id=workspace_id)
 
     membership = WorkspaceMember(
         workspace_id=workspace_id,
