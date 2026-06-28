@@ -268,6 +268,7 @@
 }
 
 .create-workspace-panel,
+.billing-panel,
 .projects-panel,
 .create-project-panel,
 .diagrams-panel,
@@ -401,6 +402,8 @@
   .diagram-form,
   .project-layout,
   .diagram-layout,
+  .billing-layout,
+  .plan-grid,
   .diagram-actions {
     grid-template-columns: 1fr;
   }

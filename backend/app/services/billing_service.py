@@ -268,6 +268,7 @@ def require_member_capacity(db: Session, *, workspace_id: UUID) -> None:
     if int(active_member_count or 0) >= subscription.plan.max_members:
         raise BillingLimitExceededError("Workspace member limit exceeded")
 
+
 def require_project_capacity(db: Session, *, workspace_id: UUID) -> None:
     subscription = get_or_create_subscription(db, workspace_id=workspace_id)
     active_project_count = db.scalar(
@@ -281,8 +282,15 @@ def require_project_capacity(db: Session, *, workspace_id: UUID) -> None:
     if int(active_project_count or 0) >= subscription.plan.max_projects:
         raise BillingLimitExceededError("Workspace project limit exceeded")
 
+
 def create_checkout_session(db: Session, *, workspace_id: UUID, plan_code: str) -> CheckoutSession:
     plan = get_plan_by_code(db, plan_code=plan_code)
+    workspace = db.get(Workspace, workspace_id)
+    if workspace is None:
+        raise BillingFeatureBlockedError("Workspace not found")
+    if plan.workspace_type not in {workspace.type, "any"}:
+        raise BillingFeatureBlockedError("Plan is not available for this workspace")
+
     subscription = get_or_create_subscription(db, workspace_id=workspace_id)
     subscription.plan_id = plan.id
     subscription.status = "active"
