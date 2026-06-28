@@ -10,7 +10,7 @@ from sqlalchemy.pool import StaticPool
 from app.api.deps import get_db
 from app.db import models  # noqa: F401
 from app.db.base import Base
-from app.db.models import ExtractedRequirement, Plan, SrsDocument, Subscription, UsageCounter
+from app.db.models import Diagram, DiagramRequirementLink, ExtractedRequirement, Plan, SrsDocument, Subscription, UsageCounter
 from app.main import app
 
 
@@ -141,6 +141,11 @@ def test_srs_generation_requires_paid_plan_then_creates_completed_document(
     assert body["job"]["progress_percent"] == 100
     assert body["job"]["diagram_methods"] == ["llm", "rule_based"]
     assert body["job"]["result_payload"]["requirement_count"] >= 1
+    assert body["job"]["result_payload"]["diagram_count"] == 1
+    assert len(body["diagrams"]) == 1
+    assert body["diagrams"][0]["source"] == "generated"
+    assert body["diagrams"][0]["current"]["drawio_xml"].startswith("<mxfile>")
+    assert body["diagrams"][0]["requirement_links"]
     assert body["srs_document"]["title"] == "Claims MVP"
     assert "## Functional Requirements" in body["srs_document"]["content_markdown"]
     assert body["srs_document"]["extracted_requirements"]
@@ -181,6 +186,8 @@ def test_srs_generation_requires_paid_plan_then_creates_completed_document(
     assert counter.srs_generations == 1
     assert db_session.scalar(select(SrsDocument).where(SrsDocument.workspace_id == UUID(workspace_id))) is not None
     assert db_session.scalar(select(ExtractedRequirement).where(ExtractedRequirement.workspace_id == UUID(workspace_id))) is not None
+    assert db_session.scalar(select(Diagram).where(Diagram.workspace_id == UUID(workspace_id))) is not None
+    assert db_session.scalar(select(DiagramRequirementLink).where(DiagramRequirementLink.workspace_id == UUID(workspace_id))) is not None
 
 
 def test_generation_job_access_is_scoped_to_workspace_and_project(

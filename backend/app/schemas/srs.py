@@ -4,6 +4,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.diagram import DiagramDetailRead
+
 GenerationJobStatus = Literal["pending", "running", "completed", "failed", "partially_completed"]
 GenerationJobType = Literal["srs", "class_diagram", "full"]
 DiagramMethod = Literal["llm", "rule_based"]
@@ -97,3 +99,4 @@ class SrsGenerateResponse(BaseModel):
     requirement_input: RequirementInputRead
     job: GenerationJobRead
     srs_document: SrsDocumentDetailRead
+    diagrams: list[DiagramDetailRead] = Field(default_factory=list)
