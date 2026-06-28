@@ -8,7 +8,15 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import Diagram, DiagramVersion, ExtractedRequirement, RequirementInput, SrsDocument, WorkspaceMember
+from app.db.models import (
+    Diagram,
+    DiagramRequirementLink,
+    DiagramVersion,
+    ExtractedRequirement,
+    RequirementInput,
+    SrsDocument,
+    WorkspaceMember,
+)
 from app.services.billing_service import record_feature_usage
 from app.services.llm_service import execute_llm_call, get_or_create_prompt_template
 from app.services.project_service import ProjectNotFoundError, get_active_project
@@ -116,6 +124,11 @@ def _candidate_entities(text: str) -> list[str]:
         if len(entities) == 8:
             break
     return entities
+
+
+def _element_id(label: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", label.lower()).strip("-")
+    return f"class:{slug or 'requirement'}"
 
 
 def build_class_diagram_context(
@@ -271,8 +284,8 @@ def build_drawio_xml(model: ClassDiagramModel) -> str:
     for index, diagram_class in enumerate(model.classes, start=2):
         cell_id = str(index)
         class_ids[diagram_class.name] = cell_id
-        attributes = "\\n".join(diagram_class.attributes)
-        methods = "\\n".join(diagram_class.methods)
+        attributes = "\n".join(diagram_class.attributes)
+        methods = "\n".join(diagram_class.methods)
         value = html.escape(f"{diagram_class.name}\n--\n{attributes}\n--\n{methods}")
         x = 40 + ((index - 2) % 3) * 220
         y = 40 + ((index - 2) // 3) * 150
@@ -299,6 +312,92 @@ def build_drawio_xml(model: ClassDiagramModel) -> str:
         + "".join(cells)
         + '</root></mxGraphModel></diagram></mxfile>'
     )
+
+
+def _load_extracted_requirements_for_srs(
+    db: Session, *, workspace_id: UUID, project_id: UUID, srs_document_id: UUID | None
+) -> list[ExtractedRequirement]:
+    if srs_document_id is None:
+        return []
+    return list(
+        db.scalars(
+            select(ExtractedRequirement)
+            .where(
+                ExtractedRequirement.workspace_id == workspace_id,
+                ExtractedRequirement.project_id == project_id,
+                ExtractedRequirement.srs_document_id == srs_document_id,
+            )
+            .order_by(ExtractedRequirement.requirement_code.asc())
+        )
+    )
+
+
+def _best_class_for_requirement(requirement: ExtractedRequirement, model: ClassDiagramModel) -> DiagramClass | None:
+    if not model.classes:
+        return None
+    text = requirement.requirement_text.lower()
+    for diagram_class in model.classes:
+        if diagram_class.name.lower() in text:
+            return diagram_class
+    candidates = _candidate_entities(requirement.requirement_text)
+    for candidate in candidates:
+        for diagram_class in model.classes:
+            if diagram_class.name.lower() == candidate.lower():
+                return diagram_class
+    return model.classes[0]
+
+
+def _build_traceability_payload(
+    requirements: list[ExtractedRequirement], model: ClassDiagramModel
+) -> list[dict[str, str | float]]:
+    payload = []
+    for requirement in requirements:
+        diagram_class = _best_class_for_requirement(requirement, model)
+        if diagram_class is None:
+            continue
+        payload.append(
+            {
+                "requirement_code": requirement.requirement_code,
+                "diagram_element_id": _element_id(diagram_class.name),
+                "diagram_element_label": diagram_class.name,
+                "confidence_score": 0.78,
+            }
+        )
+    return payload
+
+
+def _create_requirement_links(
+    db: Session,
+    *,
+    workspace_id: UUID,
+    project_id: UUID,
+    diagram: Diagram,
+    version: DiagramVersion,
+    srs_document_id: UUID | None,
+    requirements: list[ExtractedRequirement],
+    model: ClassDiagramModel,
+) -> None:
+    if srs_document_id is None:
+        return
+    for requirement in requirements:
+        diagram_class = _best_class_for_requirement(requirement, model)
+        if diagram_class is None:
+            continue
+        db.add(
+            DiagramRequirementLink(
+                workspace_id=workspace_id,
+                project_id=project_id,
+                diagram_id=diagram.id,
+                diagram_version_id=version.id,
+                srs_document_id=srs_document_id,
+                extracted_requirement_id=requirement.id,
+                requirement_code=requirement.requirement_code,
+                diagram_element_id=_element_id(diagram_class.name),
+                diagram_element_label=diagram_class.name,
+                link_reason="Requirement text matched the generated class diagram element.",
+                confidence_score=0.78,
+            )
+        )
 
 
 def generate_class_diagram(
@@ -332,6 +431,12 @@ def generate_class_diagram(
         for method in normalized_methods
     ]
     merged = merge_diagram_models(models)
+    requirements = _load_extracted_requirements_for_srs(
+        db,
+        workspace_id=membership.workspace_id,
+        project_id=project_id,
+        srs_document_id=srs_document_id,
+    )
     drawio_xml = build_drawio_xml(merged)
     diagram_json = {
         "source_type": context.source_type,
@@ -339,6 +444,7 @@ def generate_class_diagram(
         "methods": normalized_methods,
         "classes": [diagram_class.__dict__ for diagram_class in merged.classes],
         "relationships": [relationship.__dict__ for relationship in merged.relationships],
+        "traceability": _build_traceability_payload(requirements, merged),
     }
 
     diagram = Diagram(
@@ -353,16 +459,26 @@ def generate_class_diagram(
     )
     db.add(diagram)
     db.flush()
-    db.add(
-        DiagramVersion(
-            workspace_id=membership.workspace_id,
-            project_id=project_id,
-            diagram_id=diagram.id,
-            version_number=1,
-            drawio_xml=drawio_xml,
-            diagram_json=json.dumps(diagram_json),
-            created_by_user_id=membership.user_id,
-        )
+    version = DiagramVersion(
+        workspace_id=membership.workspace_id,
+        project_id=project_id,
+        diagram_id=diagram.id,
+        version_number=1,
+        drawio_xml=drawio_xml,
+        diagram_json=json.dumps(diagram_json),
+        created_by_user_id=membership.user_id,
+    )
+    db.add(version)
+    db.flush()
+    _create_requirement_links(
+        db,
+        workspace_id=membership.workspace_id,
+        project_id=project_id,
+        diagram=diagram,
+        version=version,
+        srs_document_id=srs_document_id,
+        requirements=requirements,
+        model=merged,
     )
     db.commit()
     db.refresh(diagram)

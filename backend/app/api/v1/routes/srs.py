@@ -4,7 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_workspace_membership, get_db
-from app.db.models import GenerationJob, RequirementInput, SrsDocument, WorkspaceMember
+from app.db.models import Diagram, GenerationJob, RequirementInput, SrsDocument, WorkspaceMember
+from app.schemas.diagram import DiagramDetailRead
 from app.schemas.srs import (
     GenerationJobRead,
     RequirementInputCreateRequest,
@@ -15,6 +16,7 @@ from app.schemas.srs import (
     SrsGenerateResponse,
 )
 from app.services.billing_service import BillingError
+from app.services.diagram_service import get_diagram_detail, list_diagram_requirement_links
 from app.services.srs_service import (
     GenerationJobNotFoundError,
     InvalidSrsRequestError,
@@ -32,6 +34,20 @@ router = APIRouter(
     prefix="/workspaces/{workspace_id}/projects/{project_id}/srs",
     tags=["srs"],
 )
+
+
+def _diagram_detail_response(
+    db: Session, *, membership: WorkspaceMember, project_id: UUID, diagram: Diagram
+) -> DiagramDetailRead:
+    detail_diagram, current = get_diagram_detail(
+        db, membership=membership, project_id=project_id, diagram_id=diagram.id
+    )
+    links = list_diagram_requirement_links(
+        db, membership=membership, project_id=project_id, diagram_id=diagram.id
+    )
+    return DiagramDetailRead.model_validate(
+        {**detail_diagram.__dict__, "current": current, "requirement_links": links}
+    )
 
 
 @router.post("/inputs", response_model=RequirementInputRead, status_code=status.HTTP_201_CREATED)
@@ -68,7 +84,7 @@ def generate_srs(
     db: Session = Depends(get_db),
 ) -> SrsGenerateResponse:
     try:
-        requirement_input, job, srs_document = start_generation_job(
+        requirement_input, job, srs_document, diagrams = start_generation_job(
             db,
             membership=membership,
             project_id=project_id,
@@ -96,6 +112,10 @@ def generate_srs(
         requirement_input=requirement_input,
         job=job,
         srs_document=srs_document,
+        diagrams=[
+            _diagram_detail_response(db, membership=membership, project_id=project_id, diagram=diagram)
+            for diagram in diagrams
+        ],
     )
 
 

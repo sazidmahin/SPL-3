@@ -4,8 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_workspace_membership, get_db
-from app.db.models import Diagram, DiagramVersion, WorkspaceMember
-from app.services.billing_service import BillingError
+from app.db.models import Diagram, DiagramRequirementLink, DiagramVersion, WorkspaceMember
 from app.schemas.diagram import (
     ClassDiagramGenerateRequest,
     DiagramCreateRequest,
@@ -14,6 +13,7 @@ from app.schemas.diagram import (
     DiagramVersionCreateRequest,
     DiagramVersionRead,
 )
+from app.services.billing_service import BillingError
 from app.services.diagram_generation_service import (
     DiagramGenerationError,
     DiagramGenerationSourceNotFoundError,
@@ -26,6 +26,7 @@ from app.services.diagram_service import (
     create_manual_diagram,
     get_diagram_detail,
     list_active_diagrams,
+    list_diagram_requirement_links,
     list_diagram_versions,
     save_diagram_version,
 )
@@ -37,8 +38,24 @@ router = APIRouter(
 )
 
 
-def _detail_response(diagram: Diagram, current: DiagramVersion) -> DiagramDetailRead:
-    return DiagramDetailRead.model_validate({**diagram.__dict__, "current": current})
+def _detail_response(
+    diagram: Diagram, current: DiagramVersion, links: list[DiagramRequirementLink] | None = None
+) -> DiagramDetailRead:
+    return DiagramDetailRead.model_validate(
+        {**diagram.__dict__, "current": current, "requirement_links": links or []}
+    )
+
+
+def _load_detail_response(
+    db: Session, *, membership: WorkspaceMember, project_id: UUID, diagram_id: UUID
+) -> DiagramDetailRead:
+    diagram, current = get_diagram_detail(
+        db, membership=membership, project_id=project_id, diagram_id=diagram_id
+    )
+    links = list_diagram_requirement_links(
+        db, membership=membership, project_id=project_id, diagram_id=diagram.id
+    )
+    return _detail_response(diagram, current, links)
 
 
 @router.post("", response_model=DiagramDetailRead, status_code=status.HTTP_201_CREATED)
@@ -58,10 +75,9 @@ def create_diagram(
             drawio_xml=payload.drawio_xml,
             diagram_json=payload.diagram_json,
         )
-        detail_diagram, current = get_diagram_detail(
+        return _load_detail_response(
             db, membership=membership, project_id=project_id, diagram_id=diagram.id
         )
-        return _detail_response(detail_diagram, current)
     except WorkspacePermissionError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     except BillingError as exc:
@@ -94,10 +110,9 @@ def generate_class_diagram_route(
             srs_document_id=payload.srs_document_id,
             methods=payload.methods,
         )
-        detail_diagram, current = get_diagram_detail(
+        return _load_detail_response(
             db, membership=membership, project_id=project_id, diagram_id=diagram.id
         )
-        return _detail_response(detail_diagram, current)
     except WorkspacePermissionError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     except BillingError as exc:
@@ -112,6 +127,7 @@ def generate_class_diagram_route(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=str(exc),
         ) from exc
+
 
 @router.get("", response_model=list[DiagramRead])
 def list_diagrams(
@@ -138,10 +154,9 @@ def get_diagram(
     db: Session = Depends(get_db),
 ) -> DiagramDetailRead:
     try:
-        diagram, current = get_diagram_detail(
+        return _load_detail_response(
             db, membership=membership, project_id=project_id, diagram_id=diagram_id
         )
-        return _detail_response(diagram, current)
     except BillingError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,

@@ -3,7 +3,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import Diagram, DiagramVersion, WorkspaceMember
+from app.db.models import Diagram, DiagramRequirementLink, DiagramVersion, WorkspaceMember
 from app.services.billing_service import record_feature_usage
 from app.services.project_service import ProjectNotFoundError, get_active_project
 from app.services.workspace_service import require_workspace_role
@@ -141,6 +141,23 @@ def get_diagram_detail(
     )
     return diagram, get_current_diagram_version(db, diagram=diagram)
 
+
+
+def list_diagram_requirement_links(
+    db: Session, *, membership: WorkspaceMember, project_id: UUID, diagram_id: UUID
+) -> list[DiagramRequirementLink]:
+    get_active_diagram(db, membership=membership, project_id=project_id, diagram_id=diagram_id)
+    return list(
+        db.scalars(
+            select(DiagramRequirementLink)
+            .where(
+                DiagramRequirementLink.workspace_id == membership.workspace_id,
+                DiagramRequirementLink.project_id == project_id,
+                DiagramRequirementLink.diagram_id == diagram_id,
+            )
+            .order_by(DiagramRequirementLink.requirement_code.asc())
+        )
+    )
 
 def save_diagram_version(
     db: Session,

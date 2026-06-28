@@ -7,13 +7,19 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.db.models import (
+    Diagram,
     ExtractedRequirement,
     GenerationJob,
     RequirementInput,
     SrsDocument,
     WorkspaceMember,
 )
-from app.services.billing_service import record_feature_usage
+from app.services.billing_service import BillingError, record_feature_usage
+from app.services.diagram_generation_service import (
+    DiagramGenerationError,
+    InvalidDiagramGenerationRequestError,
+    generate_class_diagram as generate_class_diagram_artifact,
+)
 from app.services.llm_service import execute_llm_call, get_or_create_prompt_template
 from app.services.project_service import ProjectNotFoundError, get_active_project
 from app.services.workspace_service import require_workspace_role
@@ -337,12 +343,14 @@ def start_generation_job(
     raw_text: str,
     generate_class_diagram: bool,
     diagram_methods: list[str],
-) -> tuple[RequirementInput, GenerationJob, SrsDocument]:
+) -> tuple[RequirementInput, GenerationJob, SrsDocument, list[Diagram]]:
     require_workspace_role(membership, allowed_roles=GENERATION_MUTATION_ROLES)
     _ensure_project_access(db, membership=membership, project_id=project_id)
     record_feature_usage(db, workspace_id=membership.workspace_id, feature="srs_generation")
 
     normalized_methods = _normalize_diagram_methods(diagram_methods)
+    if generate_class_diagram and not normalized_methods:
+        normalized_methods = ["rule_based"]
     requirement_input = RequirementInput(
         workspace_id=membership.workspace_id,
         project_id=project_id,
@@ -438,19 +446,45 @@ def start_generation_job(
             )
         )
 
-    generation_job.status = "completed"
+    db.flush()
+    generated_diagrams: list[Diagram] = []
+    diagram_error: str | None = None
+    if generate_class_diagram:
+        generation_job.progress_percent = 80
+        db.commit()
+        try:
+            generated_diagrams.append(
+                generate_class_diagram_artifact(
+                    db,
+                    membership=membership,
+                    project_id=project_id,
+                    requirement_input_id=None,
+                    srs_document_id=srs_document.id,
+                    methods=normalized_methods,
+                )
+            )
+        except (BillingError, DiagramGenerationError, InvalidDiagramGenerationRequestError) as exc:
+            diagram_error = str(exc)
+
+    generation_job.status = "partially_completed" if diagram_error else "completed"
     generation_job.progress_percent = 100
     generation_job.completed_at = datetime.now(UTC)
+    generation_job.error_message = diagram_error
     generation_job.result_payload = {
         "srs_document_id": str(srs_document.id),
         "requirement_count": len(classified),
         "functional_count": len([item for item in classified if item.requirement_type == "functional"]),
         "non_functional_count": len([item for item in classified if item.requirement_type == "non_functional"]),
+        "diagram_ids": [str(diagram.id) for diagram in generated_diagrams],
+        "diagram_count": len(generated_diagrams),
     }
     db.commit()
     db.refresh(generation_job)
-    return requirement_input, generation_job, get_srs_document(
-        db, membership=membership, project_id=project_id, srs_document_id=srs_document.id
+    return (
+        requirement_input,
+        generation_job,
+        get_srs_document(db, membership=membership, project_id=project_id, srs_document_id=srs_document.id),
+        generated_diagrams,
     )
 
 
