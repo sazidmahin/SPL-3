@@ -10,7 +10,7 @@ from sqlalchemy.pool import StaticPool
 from app.api.deps import get_db
 from app.db import models  # noqa: F401
 from app.db.base import Base
-from app.db.models import Plan, Subscription, UsageCounter
+from app.db.models import ExtractedRequirement, Plan, SrsDocument, Subscription, UsageCounter
 from app.main import app
 
 
@@ -101,7 +101,7 @@ def test_requirement_input_can_be_submitted_for_project(client: TestClient) -> N
     assert response.json()["raw_text"] == "Users submit and track claims."
 
 
-def test_srs_generation_requires_paid_plan_then_creates_pending_job(
+def test_srs_generation_requires_paid_plan_then_creates_completed_document(
     client: TestClient, db_session: Session
 ) -> None:
     token = register(client, "owner@example.com", "Owner User")
@@ -136,10 +136,14 @@ def test_srs_generation_requires_paid_plan_then_creates_pending_job(
     assert response.status_code == 201
     body = response.json()
     assert body["requirement_input"]["title"] == "Claims MVP"
-    assert body["job"]["status"] == "pending"
+    assert body["job"]["status"] == "completed"
     assert body["job"]["job_type"] == "full"
-    assert body["job"]["progress_percent"] == 0
+    assert body["job"]["progress_percent"] == 100
     assert body["job"]["diagram_methods"] == ["llm", "rule_based"]
+    assert body["job"]["result_payload"]["requirement_count"] >= 1
+    assert body["srs_document"]["title"] == "Claims MVP"
+    assert "## Functional Requirements" in body["srs_document"]["content_markdown"]
+    assert body["srs_document"]["extracted_requirements"]
 
     status_response = client.get(
         f"/api/v1/workspaces/{workspace_id}/projects/{project['id']}/srs/jobs/{body['job']['id']}",
@@ -147,6 +151,7 @@ def test_srs_generation_requires_paid_plan_then_creates_pending_job(
     )
     assert status_response.status_code == 200
     assert status_response.json()["id"] == body["job"]["id"]
+    assert status_response.json()["status"] == "completed"
 
     list_response = client.get(
         f"/api/v1/workspaces/{workspace_id}/projects/{project['id']}/srs/jobs",
@@ -155,11 +160,27 @@ def test_srs_generation_requires_paid_plan_then_creates_pending_job(
     assert list_response.status_code == 200
     assert [job["id"] for job in list_response.json()] == [body["job"]["id"]]
 
+    documents_response = client.get(
+        f"/api/v1/workspaces/{workspace_id}/projects/{project['id']}/srs",
+        headers=auth_header(token),
+    )
+    assert documents_response.status_code == 200
+    assert [document["id"] for document in documents_response.json()] == [body["srs_document"]["id"]]
+
+    detail_response = client.get(
+        f"/api/v1/workspaces/{workspace_id}/projects/{project['id']}/srs/{body['srs_document']['id']}",
+        headers=auth_header(token),
+    )
+    assert detail_response.status_code == 200
+    assert detail_response.json()["extracted_requirements"][0]["requirement_code"] == "REQ-001"
+
     counter = db_session.scalar(
         select(UsageCounter).where(UsageCounter.workspace_id == UUID(workspace_id))
     )
     assert counter is not None
     assert counter.srs_generations == 1
+    assert db_session.scalar(select(SrsDocument).where(SrsDocument.workspace_id == UUID(workspace_id))) is not None
+    assert db_session.scalar(select(ExtractedRequirement).where(ExtractedRequirement.workspace_id == UUID(workspace_id))) is not None
 
 
 def test_generation_job_access_is_scoped_to_workspace_and_project(

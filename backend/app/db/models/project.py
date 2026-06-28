@@ -34,3 +34,4 @@ class Project(Base):
     diagrams: Mapped[list["Diagram"]] = relationship(back_populates="project")
     requirement_inputs: Mapped[list["RequirementInput"]] = relationship(back_populates="project")
     generation_jobs: Mapped[list["GenerationJob"]] = relationship(back_populates="project")
+    srs_documents: Mapped[list["SrsDocument"]] = relationship()

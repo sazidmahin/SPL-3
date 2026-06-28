@@ -137,6 +137,7 @@
 .diagram-option:focus-visible,
 .version-option:focus-visible,
 .generation-option:focus-visible,
+.requirement-item:focus-visible,
 .mode-tabs button:focus-visible,
 .primary-button:focus-visible,
 .secondary-button:focus-visible,
@@ -355,9 +356,63 @@
   font-weight: 750;
 }
 
+.generation-option.active {
+  border-color: var(--accent);
+  background: var(--success-bg);
+}
+
 .generation-option small {
   color: var(--text-muted);
   font-size: 13px;
+}
+
+.srs-review {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+}
+
+.srs-document-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.srs-markdown {
+  max-height: 360px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px;
+  background: var(--surface-muted);
+  color: var(--text-strong);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.requirement-review {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.requirement-item {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px;
+  background: var(--surface);
+}
+
+.requirement-item strong,
+.requirement-item span,
+.requirement-item small {
+  display: inline-flex;
+  margin-right: 8px;
+  color: var(--text-strong);
 }
 
 .billing-layout {
@@ -467,6 +522,8 @@
   .billing-layout,
   .srs-layout,
   .plan-grid,
+  .srs-document-list,
+  .requirement-review,
   .diagram-actions {
     grid-template-columns: 1fr;
   }

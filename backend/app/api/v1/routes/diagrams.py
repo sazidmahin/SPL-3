@@ -7,11 +7,18 @@ from app.api.deps import get_current_workspace_membership, get_db
 from app.db.models import Diagram, DiagramVersion, WorkspaceMember
 from app.services.billing_service import BillingError
 from app.schemas.diagram import (
+    ClassDiagramGenerateRequest,
     DiagramCreateRequest,
     DiagramDetailRead,
     DiagramRead,
     DiagramVersionCreateRequest,
     DiagramVersionRead,
+)
+from app.services.diagram_generation_service import (
+    DiagramGenerationError,
+    DiagramGenerationSourceNotFoundError,
+    InvalidDiagramGenerationRequestError,
+    generate_class_diagram,
 )
 from app.services.diagram_service import (
     DiagramNotFoundError,
@@ -70,6 +77,41 @@ def create_diagram(
             detail=str(exc),
         ) from exc
 
+
+@router.post("/class/generate", response_model=DiagramDetailRead, status_code=status.HTTP_201_CREATED)
+def generate_class_diagram_route(
+    project_id: UUID,
+    payload: ClassDiagramGenerateRequest,
+    membership: WorkspaceMember = Depends(get_current_workspace_membership),
+    db: Session = Depends(get_db),
+) -> DiagramDetailRead:
+    try:
+        diagram = generate_class_diagram(
+            db,
+            membership=membership,
+            project_id=project_id,
+            requirement_input_id=payload.requirement_input_id,
+            srs_document_id=payload.srs_document_id,
+            methods=payload.methods,
+        )
+        detail_diagram, current = get_diagram_detail(
+            db, membership=membership, project_id=project_id, diagram_id=diagram.id
+        )
+        return _detail_response(detail_diagram, current)
+    except WorkspacePermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except BillingError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+    except DiagramGenerationSourceNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except (DiagramGenerationError, InvalidDiagramGenerationRequestError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
 
 @router.get("", response_model=list[DiagramRead])
 def list_diagrams(

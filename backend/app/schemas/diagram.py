@@ -15,6 +15,12 @@ class DiagramCreateRequest(BaseModel):
     diagram_json: str | None = None
 
 
+class ClassDiagramGenerateRequest(BaseModel):
+    requirement_input_id: UUID | None = None
+    srs_document_id: UUID | None = None
+    methods: list[Literal["llm", "rule_based", "both"]] = Field(default_factory=lambda: ["rule_based"])
+
+
 class DiagramVersionCreateRequest(BaseModel):
     drawio_xml: str = Field(min_length=1)
     diagram_json: str | None = None

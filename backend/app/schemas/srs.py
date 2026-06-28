@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 GenerationJobStatus = Literal["pending", "running", "completed", "failed", "partially_completed"]
 GenerationJobType = Literal["srs", "class_diagram", "full"]
 DiagramMethod = Literal["llm", "rule_based"]
+RequirementType = Literal["functional", "non_functional"]
 
 
 class RequirementInputCreateRequest(BaseModel):
@@ -52,6 +53,47 @@ class GenerationJobRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class ExtractedRequirementRead(BaseModel):
+    id: UUID
+    workspace_id: UUID
+    project_id: UUID
+    srs_document_id: UUID
+    requirement_input_id: UUID
+    generation_job_id: UUID
+    requirement_code: str
+    requirement_text: str
+    requirement_type: RequirementType
+    nfr_subtype: str | None
+    source_trace: str
+    extraction_reason: str
+    confidence_score: float
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class SrsDocumentRead(BaseModel):
+    id: UUID
+    workspace_id: UUID
+    project_id: UUID
+    requirement_input_id: UUID
+    generation_job_id: UUID
+    title: str
+    status: str
+    content_markdown: str
+    content_json: dict
+    created_by_user_id: UUID
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class SrsDocumentDetailRead(SrsDocumentRead):
+    extracted_requirements: list[ExtractedRequirementRead]
+
+
 class SrsGenerateResponse(BaseModel):
     requirement_input: RequirementInputRead
     job: GenerationJobRead
+    srs_document: SrsDocumentDetailRead
