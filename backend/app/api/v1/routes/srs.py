@@ -4,11 +4,13 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_workspace_membership, get_db
-from app.db.models import GenerationJob, RequirementInput, WorkspaceMember
+from app.db.models import GenerationJob, RequirementInput, SrsDocument, WorkspaceMember
 from app.schemas.srs import (
     GenerationJobRead,
     RequirementInputCreateRequest,
     RequirementInputRead,
+    SrsDocumentDetailRead,
+    SrsDocumentRead,
     SrsGenerateRequest,
     SrsGenerateResponse,
 )
@@ -16,9 +18,12 @@ from app.services.billing_service import BillingError
 from app.services.srs_service import (
     GenerationJobNotFoundError,
     InvalidSrsRequestError,
+    SrsDocumentNotFoundError,
     create_requirement_input,
     get_generation_job,
+    get_srs_document,
     list_generation_jobs,
+    list_srs_documents,
     start_generation_job,
 )
 from app.services.workspace_service import WorkspacePermissionError
@@ -63,7 +68,7 @@ def generate_srs(
     db: Session = Depends(get_db),
 ) -> SrsGenerateResponse:
     try:
-        requirement_input, job = start_generation_job(
+        requirement_input, job, srs_document = start_generation_job(
             db,
             membership=membership,
             project_id=project_id,
@@ -87,7 +92,11 @@ def generate_srs(
             detail=str(exc),
         ) from exc
 
-    return SrsGenerateResponse(requirement_input=requirement_input, job=job)
+    return SrsGenerateResponse(
+        requirement_input=requirement_input,
+        job=job,
+        srs_document=srs_document,
+    )
 
 
 @router.get("/jobs", response_model=list[GenerationJobRead])
@@ -114,4 +123,34 @@ def get_job(
             db, membership=membership, project_id=project_id, job_id=job_id
         )
     except GenerationJobNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+@router.get("", response_model=list[SrsDocumentRead])
+def get_srs_documents(
+    project_id: UUID,
+    membership: WorkspaceMember = Depends(get_current_workspace_membership),
+    db: Session = Depends(get_db),
+) -> list[SrsDocument]:
+    try:
+        return list_srs_documents(db, membership=membership, project_id=project_id)
+    except GenerationJobNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+@router.get("/{srs_document_id}", response_model=SrsDocumentDetailRead)
+def get_srs_document_detail(
+    project_id: UUID,
+    srs_document_id: UUID,
+    membership: WorkspaceMember = Depends(get_current_workspace_membership),
+    db: Session = Depends(get_db),
+) -> SrsDocument:
+    try:
+        return get_srs_document(
+            db,
+            membership=membership,
+            project_id=project_id,
+            srs_document_id=srs_document_id,
+        )
+    except (GenerationJobNotFoundError, SrsDocumentNotFoundError) as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc

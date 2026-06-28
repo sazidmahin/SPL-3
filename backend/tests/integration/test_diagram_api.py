@@ -1,14 +1,18 @@
+import json
 from collections.abc import Generator
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from uuid import UUID
+
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.api.deps import get_db
 from app.db import models  # noqa: F401
 from app.db.base import Base
+from app.db.models import Plan, Subscription, UsageCounter
 from app.main import app
 
 
@@ -69,6 +73,17 @@ def create_project(client: TestClient, token: str, workspace_id: str, name: str)
     )
     assert response.status_code == 201
     return response.json()
+
+
+def upgrade_personal_workspace(db_session: Session, workspace_id: str) -> None:
+    subscription = db_session.scalar(
+        select(Subscription).where(Subscription.workspace_id == UUID(workspace_id))
+    )
+    assert subscription is not None
+    plan = db_session.scalar(select(Plan).where(Plan.code == "individual_pro"))
+    assert plan is not None
+    subscription.plan_id = plan.id
+    db_session.commit()
 
 
 def create_diagram(
@@ -192,3 +207,52 @@ def test_viewer_can_read_diagrams_but_cannot_save_versions(client: TestClient) -
         json={"drawio_xml": "<mxfile><diagram>viewer</diagram></mxfile>"},
     )
     assert save_response.status_code == 403
+
+def test_generate_class_diagram_from_srs_document_persists_drawio_xml(
+    client: TestClient, db_session: Session
+) -> None:
+    token = register(client, "owner@example.com", "Owner User")
+    workspace_id = personal_workspace_id(client, token)
+    project = create_project(client, token, workspace_id, "Claims Portal")
+    client.get(
+        f"/api/v1/workspaces/{workspace_id}/billing/subscription",
+        headers=auth_header(token),
+    )
+    upgrade_personal_workspace(db_session, workspace_id)
+
+    srs_response = client.post(
+        f"/api/v1/workspaces/{workspace_id}/projects/{project['id']}/srs/generate",
+        headers=auth_header(token),
+        json={
+            "title": "Claims MVP",
+            "raw_text": "Users submit claims. Admins approve claims. The system must respond within two seconds.",
+        },
+    )
+    assert srs_response.status_code == 201
+    srs_document_id = srs_response.json()["srs_document"]["id"]
+
+    rule_based_response = client.post(
+        f"/api/v1/workspaces/{workspace_id}/projects/{project['id']}/diagrams/class/generate",
+        headers=auth_header(token),
+        json={"srs_document_id": srs_document_id, "methods": ["rule_based"]},
+    )
+    assert rule_based_response.status_code == 201
+    body = rule_based_response.json()
+    assert body["source"] == "generated"
+    assert body["diagram_type"] == "class"
+    assert body["current"]["drawio_xml"].startswith("<mxfile>")
+    assert json.loads(body["current"]["diagram_json"])["methods"] == ["rule_based"]
+
+    llm_response = client.post(
+        f"/api/v1/workspaces/{workspace_id}/projects/{project['id']}/diagrams/class/generate",
+        headers=auth_header(token),
+        json={"srs_document_id": srs_document_id, "methods": ["llm"]},
+    )
+    assert llm_response.status_code == 201
+    assert json.loads(llm_response.json()["current"]["diagram_json"])["methods"] == ["llm"]
+
+    counter = db_session.scalar(
+        select(UsageCounter).where(UsageCounter.workspace_id == UUID(workspace_id))
+    )
+    assert counter is not None
+    assert counter.ai_diagram_generations == 1

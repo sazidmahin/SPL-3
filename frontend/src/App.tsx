@@ -134,8 +134,42 @@ type GenerationJob = {
   completed_at: string | null
 }
 
+type ExtractedRequirement = {
+  id: string
+  workspace_id: string
+  project_id: string
+  srs_document_id: string
+  requirement_input_id: string
+  generation_job_id: string
+  requirement_code: string
+  requirement_text: string
+  requirement_type: 'functional' | 'non_functional'
+  nfr_subtype: string | null
+  source_trace: string
+  extraction_reason: string
+  confidence_score: number
+  created_at: string
+}
+
+type SrsDocument = {
+  id: string
+  workspace_id: string
+  project_id: string
+  requirement_input_id: string
+  generation_job_id: string
+  title: string
+  status: string
+  content_markdown: string
+  content_json: Record<string, unknown>
+  created_by_user_id: string
+  created_at: string
+  updated_at: string
+  extracted_requirements?: ExtractedRequirement[]
+}
+
 type SrsGenerateResponse = {
   job: GenerationJob
+  srs_document: SrsDocument
 }
 
 type AuthSession = {
@@ -189,6 +223,8 @@ function App() {
   const [diagrams, setDiagrams] = useState<Diagram[]>([])
   const [diagramVersions, setDiagramVersions] = useState<DiagramVersion[]>([])
   const [generationJobs, setGenerationJobs] = useState<GenerationJob[]>([])
+  const [srsDocuments, setSrsDocuments] = useState<SrsDocument[]>([])
+  const [activeSrsDocument, setActiveSrsDocument] = useState<SrsDocument | null>(null)
   const [plans, setPlans] = useState<Plan[]>([])
   const [subscription, setSubscription] = useState<Subscription | null>(null)
   const [usage, setUsage] = useState<Usage | null>(null)
@@ -221,9 +257,11 @@ function App() {
   const [isLoadingDiagrams, setIsLoadingDiagrams] = useState(false)
   const [isLoadingBilling, setIsLoadingBilling] = useState(false)
   const [isLoadingGenerationJobs, setIsLoadingGenerationJobs] = useState(false)
+  const [isLoadingSrsDocuments, setIsLoadingSrsDocuments] = useState(false)
   const [isSavingDiagram, setIsSavingDiagram] = useState(false)
   const [isCheckingOut, setIsCheckingOut] = useState(false)
   const [isStartingGeneration, setIsStartingGeneration] = useState(false)
+  const [isGeneratingClassDiagram, setIsGeneratingClassDiagram] = useState(false)
   const [isCreatingWorkspace, setIsCreatingWorkspace] = useState(false)
   const [isCreatingProject, setIsCreatingProject] = useState(false)
   const [isCreatingDiagram, setIsCreatingDiagram] = useState(false)
@@ -299,6 +337,47 @@ function App() {
     }
   }
 
+  async function loadSrsDocumentDetail(
+    authSession: AuthSession,
+    workspaceId: string,
+    projectId: string,
+    documentId: string,
+  ) {
+    const document = await parseApiResponse<SrsDocument>(
+      await fetch(`${API_BASE_URL}/workspaces/${workspaceId}/projects/${projectId}/srs/${documentId}`, {
+        headers: { Authorization: `Bearer ${authSession.access_token}` },
+      }),
+    )
+    setActiveSrsDocument(document)
+    setSrsDocuments((current) =>
+      current.some((item) => item.id === document.id)
+        ? current.map((item) => (item.id === document.id ? document : item))
+        : [document, ...current],
+    )
+  }
+
+  async function loadSrsDocuments(authSession: AuthSession, workspaceId: string, projectId: string) {
+    setIsLoadingSrsDocuments(true)
+    setError(null)
+    try {
+      const documents = await parseApiResponse<SrsDocument[]>(
+        await fetch(`${API_BASE_URL}/workspaces/${workspaceId}/projects/${projectId}/srs`, {
+          headers: { Authorization: `Bearer ${authSession.access_token}` },
+        }),
+      )
+      setSrsDocuments(documents)
+      if (documents[0]) {
+        await loadSrsDocumentDetail(authSession, workspaceId, projectId, documents[0].id)
+      } else {
+        setActiveSrsDocument(null)
+      }
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Unable to load SRS documents')
+    } finally {
+      setIsLoadingSrsDocuments(false)
+    }
+  }
+
   async function loadDiagramDetail(
     authSession: AuthSession,
     workspaceId: string,
@@ -369,6 +448,7 @@ function App() {
         window.localStorage.setItem(PROJECT_STORAGE_KEY, nextProjectId)
         await loadDiagrams(authSession, workspaceId, nextProjectId)
         await loadGenerationJobs(authSession, workspaceId, nextProjectId)
+        await loadSrsDocuments(authSession, workspaceId, nextProjectId)
       } else {
         setDiagrams([])
         setDiagramVersions([])
@@ -508,6 +588,7 @@ function App() {
     if (session && activeWorkspace) {
       await loadDiagrams(session, activeWorkspace.workspace.id, projectId)
       await loadGenerationJobs(session, activeWorkspace.workspace.id, projectId)
+      await loadSrsDocuments(session, activeWorkspace.workspace.id, projectId)
     }
   }
 
@@ -665,6 +746,8 @@ function App() {
         }),
       )
       setGenerationJobs([response.job, ...generationJobs])
+      setSrsDocuments([response.srs_document, ...srsDocuments])
+      setActiveSrsDocument(response.srs_document)
       setSrsTitle('')
       setSrsRawText('')
       setGenerateClassDiagram(false)
@@ -673,6 +756,40 @@ function App() {
       setError(caught instanceof Error ? caught.message : 'Unable to start generation')
     } finally {
       setIsStartingGeneration(false)
+    }
+  }
+
+  async function generateClassDiagramFromSrs(methods: Array<'llm' | 'rule_based'>) {
+    if (!session || !activeWorkspace || !activeProject || !activeSrsDocument) {
+      return
+    }
+
+    setIsGeneratingClassDiagram(true)
+    setError(null)
+    try {
+      const detail = await parseApiResponse<DiagramDetail>(
+        await fetch(`${API_BASE_URL}/workspaces/${activeWorkspace.workspace.id}/projects/${activeProject.id}/diagrams/class/generate`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            srs_document_id: activeSrsDocument.id,
+            methods,
+          }),
+        }),
+      )
+      setDiagrams([detail, ...diagrams])
+      setDiagramVersions([detail.current])
+      setActiveDiagramId(detail.id)
+      setDiagramXml(detail.current.drawio_xml)
+      window.localStorage.setItem(DIAGRAM_STORAGE_KEY, detail.id)
+      await loadBilling(session, activeWorkspace.workspace.id)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Unable to generate class diagram')
+    } finally {
+      setIsGeneratingClassDiagram(false)
     }
   }
 
@@ -983,11 +1100,14 @@ function App() {
                 onClick={() =>
                   activeWorkspace &&
                   activeProject &&
-                  void loadGenerationJobs(session, activeWorkspace.workspace.id, activeProject.id)
+                  void Promise.all([
+                    loadGenerationJobs(session, activeWorkspace.workspace.id, activeProject.id),
+                    loadSrsDocuments(session, activeWorkspace.workspace.id, activeProject.id),
+                  ])
                 }
-                disabled={!activeWorkspace || !activeProject || isLoadingGenerationJobs}
+                disabled={!activeWorkspace || !activeProject || isLoadingGenerationJobs || isLoadingSrsDocuments}
               >
-                {isLoadingGenerationJobs ? 'Loading' : 'Reload'}
+                {isLoadingGenerationJobs || isLoadingSrsDocuments ? 'Loading' : 'Reload'}
               </button>
             </div>
 
@@ -1050,6 +1170,61 @@ function App() {
                 </div>
               </div>
             </div>
+
+            {activeSrsDocument ? (
+              <div className="srs-review">
+                <div className="panel-heading">
+                  <span className="panel-label">Generated SRS</span>
+                  <span>{new Date(activeSrsDocument.created_at).toLocaleString()}</span>
+                </div>
+                <div className="srs-document-list" aria-label="SRS documents">
+                  {srsDocuments.map((document) => (
+                    <button
+                      className={document.id === activeSrsDocument.id ? 'generation-option active' : 'generation-option'}
+                      key={document.id}
+                      type="button"
+                      onClick={() =>
+                        activeWorkspace &&
+                        activeProject &&
+                        void loadSrsDocumentDetail(session, activeWorkspace.workspace.id, activeProject.id, document.id)
+                      }
+                    >
+                      <span>{document.title}</span>
+                      <small>{document.status}</small>
+                    </button>
+                  ))}
+                </div>
+                <div className="diagram-actions">
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    onClick={() => void generateClassDiagramFromSrs(['rule_based'])}
+                    disabled={isGeneratingClassDiagram}
+                  >
+                    {isGeneratingClassDiagram ? 'Generating' : 'Rule-based diagram'}
+                  </button>
+                  <button
+                    className="primary-button"
+                    type="button"
+                    onClick={() => void generateClassDiagramFromSrs(['llm'])}
+                    disabled={isGeneratingClassDiagram}
+                  >
+                    {isGeneratingClassDiagram ? 'Generating' : 'LLM diagram'}
+                  </button>
+                </div>
+                <pre className="srs-markdown">{activeSrsDocument.content_markdown}</pre>
+                <div className="requirement-review" aria-label="Extracted requirements">
+                  {activeSrsDocument.extracted_requirements?.map((requirement) => (
+                    <article className="requirement-item" key={requirement.id}>
+                      <strong>{requirement.requirement_code}</strong>
+                      <span>{requirement.requirement_type}</span>
+                      {requirement.nfr_subtype ? <small>{requirement.nfr_subtype}</small> : null}
+                      <p>{requirement.requirement_text}</p>
+                    </article>
+                  ))}
+                </div>
+              </div>
+            ) : null}
           </article>
 
           <article className="panel diagrams-panel">
