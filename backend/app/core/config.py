@@ -1,4 +1,4 @@
-from functools import lru_cache
+﻿from functools import lru_cache
 
 from pydantic import PostgresDsn
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     database_url: PostgresDsn = (
         "postgresql+psycopg2://postgres:postgres@localhost:5432/srs_diagram_platform"
     )
+    super_admin_email: str | None = None
+    super_admin_password: str | None = None
+    super_admin_full_name: str = "Platform Super Admin"
 
     model_config = SettingsConfigDict(
         env_file=".env",

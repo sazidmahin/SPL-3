@@ -1,4 +1,4 @@
-from collections.abc import Generator
+﻿from collections.abc import Generator
 from typing import Annotated
 from uuid import UUID
 
@@ -48,6 +48,15 @@ def get_current_user(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",
+        )
+    return user
+
+
+def require_super_admin(user: User = Depends(get_current_user)) -> User:
+    if user.platform_role != "super_admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Platform super admin access required",
         )
     return user
 
