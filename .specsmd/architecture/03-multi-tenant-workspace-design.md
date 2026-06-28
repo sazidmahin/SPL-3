@@ -1,22 +1,17 @@
+﻿# Multi-Tenant Workspace Design
 
-# Multi-Tenant Workspace Design
-
-The system uses workspace_id as the tenant isolation key.
+The system uses `workspace_id` as the tenant isolation key for normal product data.
 
 A workspace can be:
 
 1. personal
 2. organization
 
-Every user receives a personal workspace after registration.
+Every registered user receives a personal workspace. A user can belong to multiple workspaces, and workspace membership determines access inside each workspace.
 
-A user can belong to multiple workspaces.
+## Workspace-Owned Tables
 
-Workspace membership determines access.
-
-Business data must be owned by a workspace.
-
-Tables that must include workspace_id:
+These tables must include and enforce `workspace_id` scoping on normal APIs:
 
 - projects
 - requirement_inputs
@@ -41,19 +36,32 @@ WHERE id = :project_id
 AND workspace_id = :workspace_id;
 ```
 
+## Normal API Access Flow
 
-Access flow:
+1. JWT authentication
+2. Load current active user
+3. Read `workspace_id` from the route
+4. Check active `workspace_members` record
+5. Check workspace role permission
+6. Check subscription and plan feature when the endpoint is paid
+7. Run workspace-scoped queries
 
-## API request
+## Platform Admin Access Flow
 
-## JWT authentication
+Platform administration is a separate role layer from workspace membership.
 
-## Get current user
+`users.platform_role` values:
 
-## Get workspace_id
+- `user`
+- `support_admin` reserved for later limited support workflows
+- `super_admin`
 
-## Check workspace_members
+Only `super_admin` can access the current `/api/v1/admin` APIs. Normal workspace APIs must not silently bypass workspace membership for platform admins.
 
-## Check role permission
+Admin access flow:
 
-## Check subscription if paid feature
+1. JWT authentication
+2. Load current active user
+3. Require `user.platform_role = super_admin`
+4. Use dedicated `/api/v1/admin` routes for platform visibility or configuration
+5. Log sensitive admin actions in `admin_audit_logs`

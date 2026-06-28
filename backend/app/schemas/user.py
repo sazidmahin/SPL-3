@@ -1,4 +1,4 @@
-from datetime import datetime
+﻿from datetime import datetime
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
@@ -10,6 +10,8 @@ class UserRead(BaseModel):
     full_name: str
     avatar_url: str | None = None
     status: str
+    platform_role: str = "user"
+    is_platform_admin: bool = False
     created_at: datetime
     updated_at: datetime
 

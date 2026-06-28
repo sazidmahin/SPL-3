@@ -1,3 +1,4 @@
+﻿from app.db.models.admin import AdminAuditLog, PlatformSetting
 from app.db.models.billing import Plan, Subscription, UsageCounter
 from app.db.models.diagram import Diagram, DiagramRequirementLink, DiagramVersion
 from app.db.models.generation import GenerationJob, RequirementInput
@@ -9,6 +10,7 @@ from app.db.models.workspace import Workspace
 from app.db.models.workspace_member import WorkspaceMember
 
 __all__ = [
+    "AdminAuditLog",
     "Diagram",
     "DiagramRequirementLink",
     "DiagramVersion",
@@ -16,6 +18,7 @@ __all__ = [
     "GenerationJob",
     "LlmCall",
     "Plan",
+    "PlatformSetting",
     "Project",
     "RequirementInput",
     "PromptTemplate",

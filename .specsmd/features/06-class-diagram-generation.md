@@ -1,42 +1,44 @@
-# Class Diagram Generation
+﻿# Class Diagram Generation
 
-Class diagram generation uses extracted requirements.
+Class diagram generation uses extracted SRS requirements and remains workspace-scoped.
 
 The system supports:
 
-- LLM-based class diagram generation
 - rule-based class diagram generation
+- LLM-based class diagram generation as an extension point
+- manual Draw.io XML editing and versioning when the workspace plan allows it
 
-Output format:
+## Output
 
-- Draw.io XML
+Generated and manually saved diagrams store:
 
-Flow:
+- `diagrams` metadata
+- `diagram_versions.current_xml`
+- generated `diagram_json` when available
+- `diagram_requirement_links` for traceability between extracted requirements and diagram elements
 
-Extracted requirements
-----------------------
+## Full Generation Flow
 
-Class Diagram Generator
------------------------
+1. SRS generation stores extracted requirements.
+2. Class diagram generation reads those extracted requirements.
+3. The selected generator produces Draw.io XML and structured diagram JSON.
+4. The backend stores a diagram and initial diagram version.
+5. Traceability links are stored for generated requirement-to-element mappings.
+6. The frontend presents generated artifacts for review and allows opening the generated diagram.
 
-LLM Generator
--------------
+## Manual Diagram Flow
 
-Rule-Based Generator
---------------------
+1. User creates or opens a diagram.
+2. User edits Draw.io XML.
+3. Save creates a new diagram version when allowed by the workspace plan and usage limit.
+4. The latest version remains the current XML for export and review.
 
-Draw.io XML
------------
+## Exports
 
-Save diagram versions
----------------------
+Diagram export is a paid feature controlled by `plan.can_export_diagrams`.
 
-Open in Draw.io Editor
-----------------------
+```text
+GET /api/v1/workspaces/{workspace_id}/projects/{project_id}/diagrams/{diagram_id}/export
+```
 
-User edits
-----------
-
-Save new version
-
-Class diagram generation should be extensible so other diagram types can be added later.
+Class diagram generation should remain extensible so other diagram types can be added later.
