@@ -178,6 +178,15 @@ def test_srs_generation_requires_paid_plan_then_creates_completed_document(
     )
     assert detail_response.status_code == 200
     assert detail_response.json()["extracted_requirements"][0]["requirement_code"] == "REQ-001"
+    assert detail_response.json()["content_json"]["generation_metadata"]["generation_job_id"] == body["job"]["id"]
+
+    export_response = client.get(
+        f"/api/v1/workspaces/{workspace_id}/projects/{project['id']}/srs/{body['srs_document']['id']}/export",
+        headers=auth_header(token),
+    )
+    assert export_response.status_code == 200
+    assert "# Claims MVP" in export_response.text
+    assert export_response.headers["content-disposition"].endswith('.md"')
 
     counter = db_session.scalar(
         select(UsageCounter).where(UsageCounter.workspace_id == UUID(workspace_id))

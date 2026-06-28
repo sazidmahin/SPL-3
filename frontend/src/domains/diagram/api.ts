@@ -80,3 +80,17 @@ export async function generateClassDiagram(
     }),
   )
 }
+export async function exportDiagram(accessToken: string, workspaceId: string, projectId: string, diagramId: string) {
+  const response = await fetch(`${API_BASE_URL}/workspaces/${workspaceId}/projects/${projectId}/diagrams/${diagramId}/export`, {
+    headers: authHeaders(accessToken),
+  })
+  if (!response.ok) {
+    const body = await response.json().catch(() => null)
+    const detail = body && typeof body.detail === 'string' ? body.detail : 'Unable to export diagram'
+    throw new Error(detail)
+  }
+  return {
+    content: await response.text(),
+    filename: response.headers.get('content-disposition'),
+  }
+}

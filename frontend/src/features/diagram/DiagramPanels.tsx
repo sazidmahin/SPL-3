@@ -13,11 +13,14 @@ type DiagramsPanelProps = {
   diagramXml: string
   isLoadingDiagrams: boolean
   isSavingDiagram: boolean
+  canUseManualDrawio: boolean
+  canExportDiagrams: boolean
   onReload: () => void
   onSelectDiagram: (diagramId: string) => void
   onDiagramXmlChange: (value: string) => void
   onResetXml: () => void
   onSaveVersion: () => void
+  onExportDiagram: () => void
 }
 
 export function DiagramsPanel({
@@ -29,11 +32,14 @@ export function DiagramsPanel({
   diagramXml,
   isLoadingDiagrams,
   isSavingDiagram,
+  canUseManualDrawio,
+  canExportDiagrams,
   onReload,
   onSelectDiagram,
   onDiagramXmlChange,
   onResetXml,
   onSaveVersion,
+  onExportDiagram,
 }: DiagramsPanelProps) {
   return (
     <article className="panel diagrams-panel">
@@ -48,6 +54,7 @@ export function DiagramsPanel({
           {isLoadingDiagrams ? 'Loading' : 'Reload'}
         </button>
       </div>
+      {!canUseManualDrawio ? <p className="upgrade-prompt">Upgrade to use manual Draw.io editing.</p> : null}
 
       <div className="diagram-layout">
         <div className="diagram-list" aria-label="Diagrams">
@@ -75,21 +82,35 @@ export function DiagramsPanel({
           />
           <label>
             Draw.io XML
-            <textarea value={diagramXml} onChange={(event) => onDiagramXmlChange(event.target.value)} rows={8} />
+            <textarea
+              value={diagramXml}
+              onChange={(event) => onDiagramXmlChange(event.target.value)}
+              rows={8}
+              disabled={!canUseManualDrawio}
+            />
           </label>
           <div className="diagram-actions">
-            <button className="secondary-button" type="button" onClick={onResetXml}>
+            <button className="secondary-button" type="button" onClick={onResetXml} disabled={!canUseManualDrawio}>
               Blank XML
+            </button>
+            <button
+              className="secondary-button"
+              type="button"
+              onClick={onExportDiagram}
+              disabled={!activeDiagram || !canExportDiagrams}
+            >
+              Export diagram
             </button>
             <button
               className="primary-button"
               type="button"
               onClick={onSaveVersion}
-              disabled={!activeDiagram || isSavingDiagram}
+              disabled={!activeDiagram || isSavingDiagram || !canUseManualDrawio}
             >
               {isSavingDiagram ? 'Saving' : 'Save version'}
             </button>
           </div>
+          {!canExportDiagrams ? <p className="upgrade-prompt">Upgrade to export diagrams.</p> : null}
         </div>
 
         <div className="diagram-versions" aria-label="Diagram versions">
@@ -116,6 +137,7 @@ type CreateDiagramPanelProps = {
   diagramTitle: string
   diagramType: string
   isCreatingDiagram: boolean
+  canUseManualDrawio: boolean
   onDiagramTitleChange: (value: string) => void
   onDiagramTypeChange: (value: string) => void
   onSubmit: (event: FormEvent<HTMLFormElement>) => void
@@ -126,6 +148,7 @@ export function CreateDiagramPanel({
   diagramTitle,
   diagramType,
   isCreatingDiagram,
+  canUseManualDrawio,
   onDiagramTitleChange,
   onDiagramTypeChange,
   onSubmit,
@@ -147,10 +170,15 @@ export function CreateDiagramPanel({
             <option value="other">Other</option>
           </select>
         </label>
-        <button className="primary-button" type="submit" disabled={!activeProject || isCreatingDiagram}>
+        <button
+          className="primary-button"
+          type="submit"
+          disabled={!activeProject || isCreatingDiagram || !canUseManualDrawio}
+        >
           {isCreatingDiagram ? 'Creating' : 'Create diagram'}
         </button>
       </form>
+      {!canUseManualDrawio ? <p className="upgrade-prompt">Upgrade to create manual diagrams.</p> : null}
     </article>
   )
 }

@@ -10,6 +10,7 @@ from app.db.models import (
     Diagram,
     ExtractedRequirement,
     GenerationJob,
+    LlmCall,
     RequirementInput,
     SrsDocument,
     WorkspaceMember,
@@ -334,6 +335,34 @@ def build_srs_document(title: str, summary: dict, requirements: list[Requirement
     return "\n".join(markdown_lines), content_json
 
 
+
+
+def _generation_metadata(db: Session, *, workspace_id: UUID, project_id: UUID, generation_job_id: UUID) -> dict:
+    calls = list(
+        db.scalars(
+            select(LlmCall)
+            .where(
+                LlmCall.workspace_id == workspace_id,
+                LlmCall.project_id == project_id,
+                LlmCall.generation_job_id == generation_job_id,
+            )
+            .order_by(LlmCall.created_at.asc())
+        )
+    )
+    return {
+        "generation_job_id": str(generation_job_id),
+        "llm_calls": [
+            {
+                "id": str(call.id),
+                "prompt_template_id": str(call.prompt_template_id) if call.prompt_template_id else None,
+                "provider": call.provider,
+                "model_name": call.model_name,
+                "status": call.status,
+                "total_tokens": call.total_tokens,
+            }
+            for call in calls
+        ],
+    }
 def start_generation_job(
     db: Session,
     *,
@@ -413,6 +442,12 @@ def start_generation_job(
         requirements=extracted,
     )
     markdown, content_json = build_srs_document(requirement_input.title, summary, classified)
+    content_json["generation_metadata"] = _generation_metadata(
+        db,
+        workspace_id=membership.workspace_id,
+        project_id=project_id,
+        generation_job_id=generation_job.id,
+    )
 
     srs_document = SrsDocument(
         workspace_id=membership.workspace_id,

@@ -445,6 +445,12 @@ def generate_class_diagram(
         "classes": [diagram_class.__dict__ for diagram_class in merged.classes],
         "relationships": [relationship.__dict__ for relationship in merged.relationships],
         "traceability": _build_traceability_payload(requirements, merged),
+        "generation_metadata": {
+            "generation_methods": normalized_methods,
+            "model_name": "deterministic-srs-v1" if "llm" in normalized_methods else None,
+            "source_type": context.source_type,
+            "source_id": str(context.source_id),
+        },
     }
 
     diagram = Diagram(

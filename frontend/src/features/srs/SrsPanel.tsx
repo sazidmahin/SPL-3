@@ -19,6 +19,9 @@ type SrsPanelProps = {
   isLoadingSrsDocuments: boolean
   isStartingGeneration: boolean
   isGeneratingClassDiagram: boolean
+  canGenerateSrs: boolean
+  canGenerateAiDiagrams: boolean
+  canExportSrs: boolean
   onReload: () => void
   onSrsTitleChange: (value: string) => void
   onSrsRawTextChange: (value: string) => void
@@ -26,6 +29,7 @@ type SrsPanelProps = {
   onStartGeneration: (event: FormEvent<HTMLFormElement>) => void
   onSelectSrsDocument: (documentId: string) => void
   onGenerateClassDiagram: (methods: ClassDiagramMethod[]) => void
+  onExportSrs: () => void
   onOpenGeneratedDiagram: (diagram: DiagramDetail) => void
 }
 
@@ -43,6 +47,9 @@ export function SrsPanel({
   isLoadingSrsDocuments,
   isStartingGeneration,
   isGeneratingClassDiagram,
+  canGenerateSrs,
+  canGenerateAiDiagrams,
+  canExportSrs,
   onReload,
   onSrsTitleChange,
   onSrsRawTextChange,
@@ -50,6 +57,7 @@ export function SrsPanel({
   onStartGeneration,
   onSelectSrsDocument,
   onGenerateClassDiagram,
+  onExportSrs,
   onOpenGeneratedDiagram,
 }: SrsPanelProps) {
   const latestGenerationJob = generationJobs[0]
@@ -87,11 +95,17 @@ export function SrsPanel({
             <input
               checked={generateClassDiagram}
               type="checkbox"
+              disabled={!canGenerateAiDiagrams}
               onChange={(event) => onGenerateClassDiagramChange(event.target.checked)}
             />
             Class diagram
           </label>
-          <button className="primary-button" type="submit" disabled={!activeProject || isStartingGeneration}>
+          {!canGenerateSrs ? <p className="upgrade-prompt">Upgrade to generate SRS documents.</p> : null}
+          <button
+            className="primary-button"
+            type="submit"
+            disabled={!activeProject || isStartingGeneration || !canGenerateSrs}
+          >
             {isStartingGeneration ? 'Starting' : generateClassDiagram ? 'Generate SRS + diagram' : 'Start generation'}
           </button>
         </form>
@@ -140,11 +154,14 @@ export function SrsPanel({
             ))}
           </div>
           <div className="diagram-actions">
+            <button className="secondary-button" type="button" onClick={onExportSrs} disabled={!canExportSrs}>
+              Export SRS
+            </button>
             <button
               className="secondary-button"
               type="button"
               onClick={() => onGenerateClassDiagram(['rule_based'])}
-              disabled={isGeneratingClassDiagram}
+              disabled={isGeneratingClassDiagram || !canGenerateAiDiagrams}
             >
               {isGeneratingClassDiagram ? 'Generating' : 'Rule-based diagram'}
             </button>
@@ -152,11 +169,13 @@ export function SrsPanel({
               className="primary-button"
               type="button"
               onClick={() => onGenerateClassDiagram(['llm'])}
-              disabled={isGeneratingClassDiagram}
+              disabled={isGeneratingClassDiagram || !canGenerateAiDiagrams}
             >
               {isGeneratingClassDiagram ? 'Generating' : 'LLM diagram'}
             </button>
           </div>
+          {!canExportSrs ? <p className="upgrade-prompt">Upgrade to export SRS documents.</p> : null}
+          {!canGenerateAiDiagrams ? <p className="upgrade-prompt">Upgrade to generate AI diagrams.</p> : null}
 
           {generatedDiagrams.length > 0 ? (
             <div className="artifact-review" aria-label="Generated diagram artifacts">
