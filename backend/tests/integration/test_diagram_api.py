@@ -256,7 +256,11 @@ def test_generate_class_diagram_from_srs_document_persists_drawio_xml(
     assert body["source"] == "generated"
     assert body["diagram_type"] == "class"
     assert body["current"]["drawio_xml"].startswith("<mxfile>")
-    assert json.loads(body["current"]["diagram_json"])["methods"] == ["rule_based"]
+    rule_based_diagram_json = json.loads(body["current"]["diagram_json"])
+    assert rule_based_diagram_json["methods"] == ["rule_based"]
+    assert {"User", "Admin", "Claim"}.issubset(rule_based_diagram_json["rule_based_extraction"]["classes"])
+    assert "submitClaim()" in rule_based_diagram_json["rule_based_extraction"]["methods_by_class"]["User"]
+    assert "approveClaim()" in rule_based_diagram_json["rule_based_extraction"]["methods_by_class"]["Admin"]
 
     llm_response = client.post(
         f"/api/v1/workspaces/{workspace_id}/projects/{project['id']}/diagrams/class/generate",

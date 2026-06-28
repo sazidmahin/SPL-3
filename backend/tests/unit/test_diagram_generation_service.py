@@ -26,8 +26,15 @@ def test_registry_and_rule_based_generator_create_drawio_xml() -> None:
         None, workspace_id=uuid4(), project_id=uuid4(), context=context
     )
     xml = build_drawio_xml(model)
+    classes = {diagram_class.name: diagram_class for diagram_class in model.classes}
+    relationships = {(relationship.source, relationship.target, relationship.label) for relationship in model.relationships}
 
-    assert model.classes
+    assert {"User", "Admin", "Claim"}.issubset(classes)
+    assert "Support" not in classes
+    assert "submitClaim()" in classes["User"].methods
+    assert "approveClaim()" in classes["Admin"].methods
+    assert ("User", "Claim", "submit") in relationships
+    assert ("Admin", "Claim", "approve") in relationships
     assert "<mxfile>" in xml
     assert "mxCell" in xml
 

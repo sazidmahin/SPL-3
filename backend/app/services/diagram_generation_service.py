@@ -25,31 +25,105 @@ from app.services.workspace_service import require_workspace_role
 DIAGRAM_GENERATION_ROLES = {"owner", "admin", "member"}
 SUPPORTED_METHODS = {"llm", "rule_based"}
 ENTITY_STOPWORDS = {
-    "The",
-    "System",
-    "Users",
-    "User",
-    "Admins",
-    "Admin",
-    "Managers",
-    "Manager",
-    "Claims",
-    "Requirements",
-    "Requirement",
+    "a",
+    "an",
+    "and",
+    "be",
+    "by",
+    "for",
+    "from",
+    "if",
+    "in",
+    "into",
+    "it",
+    "of",
+    "on",
+    "or",
+    "shall",
+    "should",
+    "system",
+    "support",
+    "supports",
+    "must",
+    "can",
+    "allow",
+    "allows",
+    "that",
+    "the",
+    "their",
+    "this",
+    "to",
+    "two",
+    "within",
+    "second",
+    "seconds",
+    "requirement",
+    "requirements",
 }
-
+ACTION_VERBS = {
+    "add",
+    "approve",
+    "archive",
+    "assign",
+    "authenticate",
+    "calculate",
+    "cancel",
+    "capture",
+    "change",
+    "check",
+    "classify",
+    "create",
+    "delete",
+    "download",
+    "edit",
+    "export",
+    "extract",
+    "generate",
+    "import",
+    "invite",
+    "list",
+    "load",
+    "login",
+    "manage",
+    "notify",
+    "open",
+    "pay",
+    "persist",
+    "publish",
+    "read",
+    "register",
+    "reject",
+    "remove",
+    "render",
+    "respond",
+    "review",
+    "save",
+    "select",
+    "send",
+    "show",
+    "store",
+    "submit",
+    "switch",
+    "track",
+    "update",
+    "upload",
+    "validate",
+    "verify",
+    "view",
+}
+IRREGULAR_NOUNS = {
+    "people": "Person",
+    "children": "Child",
+}
 
 class DiagramGenerationError(Exception):
     """Base class for expected diagram generation failures."""
 
-
 class InvalidDiagramGenerationRequestError(DiagramGenerationError):
     pass
 
-
 class DiagramGenerationSourceNotFoundError(DiagramGenerationError):
     pass
-
 
 @dataclass(frozen=True)
 class DiagramClass:
@@ -57,19 +131,16 @@ class DiagramClass:
     attributes: list[str]
     methods: list[str]
 
-
 @dataclass(frozen=True)
 class DiagramRelationship:
     source: str
     target: str
     label: str
 
-
 @dataclass(frozen=True)
 class ClassDiagramModel:
     classes: list[DiagramClass]
     relationships: list[DiagramRelationship]
-
 
 @dataclass(frozen=True)
 class ClassDiagramContext:
@@ -77,7 +148,6 @@ class ClassDiagramContext:
     requirements: list[str]
     source_id: UUID
     source_type: str
-
 
 class ClassDiagramGenerator(Protocol):
     method: str
@@ -87,13 +157,11 @@ class ClassDiagramGenerator(Protocol):
     ) -> ClassDiagramModel:
         """Generate a normalized class diagram model."""
 
-
 def _ensure_project_access(db: Session, *, membership: WorkspaceMember, project_id: UUID) -> None:
     try:
         get_active_project(db, workspace_id=membership.workspace_id, project_id=project_id)
     except ProjectNotFoundError as exc:
         raise DiagramGenerationSourceNotFoundError("Project not found") from exc
-
 
 def normalize_methods(methods: list[str]) -> list[str]:
     normalized = []
@@ -110,26 +178,120 @@ def normalize_methods(methods: list[str]) -> list[str]:
             normalized.append(cleaned)
     return normalized or ["rule_based"]
 
+def _class_name_from_token(token: str) -> str | None:
+    normalized = token.strip("_-.,;:").lower()
+    if len(normalized) < 3 or normalized in ENTITY_STOPWORDS or _normalize_action(normalized):
+        return None
+    if normalized in IRREGULAR_NOUNS:
+        return IRREGULAR_NOUNS[normalized]
+    if normalized.endswith("ies") and len(normalized) > 4:
+        normalized = f"{normalized[:-3]}y"
+    elif normalized.endswith(("ches", "shes", "sses", "xes", "zes")) and len(normalized) > 5:
+        normalized = normalized[:-2]
+    elif normalized.endswith("s") and not normalized.endswith("ss") and len(normalized) > 4:
+        normalized = normalized[:-1]
+    return "".join(part.capitalize() for part in re.split(r"[-_]", normalized) if part)
+
+def _normalize_action(token: str) -> str | None:
+    normalized = token.strip("_-.,;:").lower()
+    candidates = [normalized]
+    if normalized.endswith("ing") and len(normalized) > 5:
+        stem = normalized[:-3]
+        candidates.extend([stem, f"{stem}e"])
+    if normalized.endswith("es") and len(normalized) > 4:
+        candidates.append(normalized[:-2])
+    if normalized.endswith("s") and len(normalized) > 3:
+        candidates.append(normalized[:-1])
+    return next((candidate for candidate in candidates if candidate in ACTION_VERBS), None)
+
+def _method_name(action: str, target: str | None) -> str:
+    if target:
+        return f"{action}{target}()"
+    return f"{action}()"
 
 def _candidate_entities(text: str) -> list[str]:
     entities = []
     for word in re.findall(r"[A-Za-z][A-Za-z0-9_-]*", text):
-        normalized = word.strip("_-.,;:").title()
-        if len(normalized) < 4 or normalized in ENTITY_STOPWORDS:
-            continue
-        if normalized.endswith("s") and len(normalized) > 4:
-            normalized = normalized[:-1]
-        if normalized not in entities:
-            entities.append(normalized)
+        entity = _class_name_from_token(word)
+        if entity and entity not in entities:
+            entities.append(entity)
         if len(entities) == 8:
             break
     return entities
 
+def _extract_rule_based_model(requirements: list[str]) -> ClassDiagramModel:
+    class_names: list[str] = []
+    methods_by_class: dict[str, list[str]] = {}
+    relationships: list[DiagramRelationship] = []
+
+    for requirement in requirements:
+        tokens = [
+            (match.start(), match.group(0), _class_name_from_token(match.group(0)), _normalize_action(match.group(0)))
+            for match in re.finditer(r"[A-Za-z][A-Za-z0-9_-]*", requirement)
+        ]
+        sentence_classes = [(position, class_name) for position, _, class_name, _ in tokens if class_name]
+        sentence_actions = [(position, action) for position, _, _, action in tokens if action]
+
+        for _, class_name in sentence_classes:
+            if class_name not in class_names:
+                class_names.append(class_name)
+            methods_by_class.setdefault(class_name, [])
+
+        for action_position, action in sentence_actions:
+            subject = next(
+                (class_name for position, class_name in reversed(sentence_classes) if position < action_position),
+                None,
+            )
+            target = next(
+                (
+                    class_name
+                    for position, class_name in sentence_classes
+                    if position > action_position and class_name != subject
+                ),
+                None,
+            )
+            owner = subject or (sentence_classes[0][1] if sentence_classes else None)
+            if owner is not None:
+                method = _method_name(action, target)
+                if method not in methods_by_class.setdefault(owner, []):
+                    methods_by_class[owner].append(method)
+            if subject and target and subject != target:
+                relationship = DiagramRelationship(source=subject, target=target, label=action)
+                if relationship not in relationships:
+                    relationships.append(relationship)
+
+        if not sentence_actions and len(sentence_classes) >= 2:
+            source = sentence_classes[0][1]
+            target = sentence_classes[1][1]
+            relationship = DiagramRelationship(source=source, target=target, label="relates to")
+            if source != target and relationship not in relationships:
+                relationships.append(relationship)
+
+    if not class_names:
+        class_names = ["Requirement"]
+        methods_by_class = {"Requirement": ["validate()"]}
+
+    classes = [
+        DiagramClass(
+            name=class_name,
+            attributes=["id", "status"] if methods_by_class.get(class_name) else ["id"],
+            methods=methods_by_class.get(class_name) or ["validate()"],
+        )
+        for class_name in class_names[:8]
+    ]
+    allowed_class_names = {diagram_class.name for diagram_class in classes}
+    return ClassDiagramModel(
+        classes=classes,
+        relationships=[
+            relationship
+            for relationship in relationships
+            if relationship.source in allowed_class_names and relationship.target in allowed_class_names
+        ],
+    )
 
 def _element_id(label: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", label.lower()).strip("-")
     return f"class:{slug or 'requirement'}"
-
 
 def build_class_diagram_context(
     db: Session,
@@ -187,7 +349,6 @@ def build_class_diagram_context(
         source_type="requirement_input",
     )
 
-
 class RuleBasedClassDiagramGenerator:
     method = "rule_based"
 
@@ -195,27 +356,7 @@ class RuleBasedClassDiagramGenerator:
         self, db: Session, *, workspace_id: UUID, project_id: UUID, context: ClassDiagramContext
     ) -> ClassDiagramModel:
         del db, workspace_id, project_id
-        entities = []
-        for requirement in context.requirements:
-            for entity in _candidate_entities(requirement):
-                if entity not in entities:
-                    entities.append(entity)
-        if not entities:
-            entities = ["Requirement", "System"]
-        classes = [
-            DiagramClass(
-                name=entity,
-                attributes=["id", "status"] if index == 0 else ["id"],
-                methods=["create()", "update()"] if index == 0 else ["validate()"],
-            )
-            for index, entity in enumerate(entities[:6])
-        ]
-        relationships = [
-            DiagramRelationship(source=classes[index].name, target=classes[index + 1].name, label="uses")
-            for index in range(len(classes) - 1)
-        ]
-        return ClassDiagramModel(classes=classes, relationships=relationships)
-
+        return _extract_rule_based_model(context.requirements)
 
 class LlmClassDiagramGenerator:
     method = "llm"
@@ -227,7 +368,7 @@ class LlmClassDiagramGenerator:
             db,
             name="class_diagram_generation",
             purpose="class_diagram",
-            template_text="Generate class diagram entities from requirements: {requirements}",
+            template_text="Extract class diagram nouns, verbs, and relationships from requirements: {requirements}",
         )
         execute_llm_call(
             db,
@@ -240,7 +381,6 @@ class LlmClassDiagramGenerator:
         return RuleBasedClassDiagramGenerator().generate(
             db, workspace_id=workspace_id, project_id=project_id, context=context
         )
-
 
 class DiagramGeneratorRegistry:
     def __init__(self) -> None:
@@ -255,13 +395,11 @@ class DiagramGeneratorRegistry:
             raise InvalidDiagramGenerationRequestError("Diagram generator not found")
         return generator
 
-
 def default_generator_registry() -> DiagramGeneratorRegistry:
     registry = DiagramGeneratorRegistry()
     registry.register(RuleBasedClassDiagramGenerator())
     registry.register(LlmClassDiagramGenerator())
     return registry
-
 
 def merge_diagram_models(models: list[ClassDiagramModel]) -> ClassDiagramModel:
     classes_by_name: dict[str, DiagramClass] = {}
@@ -273,7 +411,6 @@ def merge_diagram_models(models: list[ClassDiagramModel]) -> ClassDiagramModel:
             if relationship not in relationships:
                 relationships.append(relationship)
     return ClassDiagramModel(classes=list(classes_by_name.values()), relationships=relationships)
-
 
 def build_drawio_xml(model: ClassDiagramModel) -> str:
     cells = [
@@ -313,7 +450,6 @@ def build_drawio_xml(model: ClassDiagramModel) -> str:
         + '</root></mxGraphModel></diagram></mxfile>'
     )
 
-
 def _load_extracted_requirements_for_srs(
     db: Session, *, workspace_id: UUID, project_id: UUID, srs_document_id: UUID | None
 ) -> list[ExtractedRequirement]:
@@ -331,7 +467,6 @@ def _load_extracted_requirements_for_srs(
         )
     )
 
-
 def _best_class_for_requirement(requirement: ExtractedRequirement, model: ClassDiagramModel) -> DiagramClass | None:
     if not model.classes:
         return None
@@ -345,7 +480,6 @@ def _best_class_for_requirement(requirement: ExtractedRequirement, model: ClassD
             if diagram_class.name.lower() == candidate.lower():
                 return diagram_class
     return model.classes[0]
-
 
 def _build_traceability_payload(
     requirements: list[ExtractedRequirement], model: ClassDiagramModel
@@ -364,7 +498,6 @@ def _build_traceability_payload(
             }
         )
     return payload
-
 
 def _create_requirement_links(
     db: Session,
@@ -398,7 +531,6 @@ def _create_requirement_links(
                 confidence_score=0.78,
             )
         )
-
 
 def generate_class_diagram(
     db: Session,
@@ -444,6 +576,11 @@ def generate_class_diagram(
         "methods": normalized_methods,
         "classes": [diagram_class.__dict__ for diagram_class in merged.classes],
         "relationships": [relationship.__dict__ for relationship in merged.relationships],
+        "rule_based_extraction": {
+            "classes": [diagram_class.name for diagram_class in merged.classes],
+            "methods_by_class": {diagram_class.name: diagram_class.methods for diagram_class in merged.classes},
+            "relationships": [relationship.__dict__ for relationship in merged.relationships],
+        },
         "traceability": _build_traceability_payload(requirements, merged),
         "generation_metadata": {
             "generation_methods": normalized_methods,
