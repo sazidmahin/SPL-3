@@ -115,6 +115,29 @@ type CheckoutResponse = {
   subscription: Subscription
 }
 
+type GenerationJob = {
+  id: string
+  workspace_id: string
+  project_id: string
+  requirement_input_id: string
+  job_type: 'srs' | 'class_diagram' | 'full'
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'partially_completed'
+  progress_percent: number
+  generate_class_diagram: boolean
+  diagram_methods: string[]
+  result_payload: Record<string, unknown> | null
+  error_message: string | null
+  created_by_user_id: string
+  created_at: string
+  updated_at: string
+  started_at: string | null
+  completed_at: string | null
+}
+
+type SrsGenerateResponse = {
+  job: GenerationJob
+}
+
 type AuthSession = {
   access_token: string
   token_type: string
@@ -165,6 +188,7 @@ function App() {
   const [projects, setProjects] = useState<Project[]>([])
   const [diagrams, setDiagrams] = useState<Diagram[]>([])
   const [diagramVersions, setDiagramVersions] = useState<DiagramVersion[]>([])
+  const [generationJobs, setGenerationJobs] = useState<GenerationJob[]>([])
   const [plans, setPlans] = useState<Plan[]>([])
   const [subscription, setSubscription] = useState<Subscription | null>(null)
   const [usage, setUsage] = useState<Usage | null>(null)
@@ -187,14 +211,19 @@ function App() {
   const [diagramTitle, setDiagramTitle] = useState('')
   const [diagramType, setDiagramType] = useState('class')
   const [diagramXml, setDiagramXml] = useState(BLANK_DRAWIO_XML)
+  const [srsTitle, setSrsTitle] = useState('')
+  const [srsRawText, setSrsRawText] = useState('')
+  const [generateClassDiagram, setGenerateClassDiagram] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isLoadingMe, setIsLoadingMe] = useState(false)
   const [isLoadingProjects, setIsLoadingProjects] = useState(false)
   const [isLoadingDiagrams, setIsLoadingDiagrams] = useState(false)
   const [isLoadingBilling, setIsLoadingBilling] = useState(false)
+  const [isLoadingGenerationJobs, setIsLoadingGenerationJobs] = useState(false)
   const [isSavingDiagram, setIsSavingDiagram] = useState(false)
   const [isCheckingOut, setIsCheckingOut] = useState(false)
+  const [isStartingGeneration, setIsStartingGeneration] = useState(false)
   const [isCreatingWorkspace, setIsCreatingWorkspace] = useState(false)
   const [isCreatingProject, setIsCreatingProject] = useState(false)
   const [isCreatingDiagram, setIsCreatingDiagram] = useState(false)
@@ -224,6 +253,8 @@ function App() {
     [activeDiagramId, diagrams],
   )
 
+  const latestGenerationJob = generationJobs[0]
+
   async function loadBilling(authSession: AuthSession, workspaceId: string) {
     setIsLoadingBilling(true)
     setError(null)
@@ -248,6 +279,23 @@ function App() {
       setError(caught instanceof Error ? caught.message : 'Unable to load billing')
     } finally {
       setIsLoadingBilling(false)
+    }
+  }
+
+  async function loadGenerationJobs(authSession: AuthSession, workspaceId: string, projectId: string) {
+    setIsLoadingGenerationJobs(true)
+    setError(null)
+    try {
+      const nextJobs = await parseApiResponse<GenerationJob[]>(
+        await fetch(`${API_BASE_URL}/workspaces/${workspaceId}/projects/${projectId}/srs/jobs`, {
+          headers: { Authorization: `Bearer ${authSession.access_token}` },
+        }),
+      )
+      setGenerationJobs(nextJobs)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Unable to load generation jobs')
+    } finally {
+      setIsLoadingGenerationJobs(false)
     }
   }
 
@@ -320,6 +368,7 @@ function App() {
       if (nextProjectId) {
         window.localStorage.setItem(PROJECT_STORAGE_KEY, nextProjectId)
         await loadDiagrams(authSession, workspaceId, nextProjectId)
+        await loadGenerationJobs(authSession, workspaceId, nextProjectId)
       } else {
         setDiagrams([])
         setDiagramVersions([])
@@ -458,6 +507,7 @@ function App() {
     window.localStorage.removeItem(DIAGRAM_STORAGE_KEY)
     if (session && activeWorkspace) {
       await loadDiagrams(session, activeWorkspace.workspace.id, projectId)
+      await loadGenerationJobs(session, activeWorkspace.workspace.id, projectId)
     }
   }
 
@@ -587,6 +637,42 @@ function App() {
       setError(caught instanceof Error ? caught.message : 'Unable to start checkout')
     } finally {
       setIsCheckingOut(false)
+    }
+  }
+
+  async function startSrsGeneration(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!session || !activeWorkspace || !activeProject) {
+      return
+    }
+
+    setIsStartingGeneration(true)
+    setError(null)
+    try {
+      const response = await parseApiResponse<SrsGenerateResponse>(
+        await fetch(`${API_BASE_URL}/workspaces/${activeWorkspace.workspace.id}/projects/${activeProject.id}/srs/generate`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            title: srsTitle,
+            raw_text: srsRawText,
+            generate_class_diagram: generateClassDiagram,
+            diagram_methods: generateClassDiagram ? ['llm'] : [],
+          }),
+        }),
+      )
+      setGenerationJobs([response.job, ...generationJobs])
+      setSrsTitle('')
+      setSrsRawText('')
+      setGenerateClassDiagram(false)
+      await loadBilling(session, activeWorkspace.workspace.id)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Unable to start generation')
+    } finally {
+      setIsStartingGeneration(false)
     }
   }
 
@@ -886,6 +972,84 @@ function App() {
                 {isCreatingProject ? 'Creating' : 'Create project'}
               </button>
             </form>
+          </article>
+
+          <article className="panel srs-panel">
+            <div className="panel-heading">
+              <span className="panel-label">SRS generation</span>
+              <button
+                className="text-button"
+                type="button"
+                onClick={() =>
+                  activeWorkspace &&
+                  activeProject &&
+                  void loadGenerationJobs(session, activeWorkspace.workspace.id, activeProject.id)
+                }
+                disabled={!activeWorkspace || !activeProject || isLoadingGenerationJobs}
+              >
+                {isLoadingGenerationJobs ? 'Loading' : 'Reload'}
+              </button>
+            </div>
+
+            <div className="srs-layout">
+              <form className="srs-form" onSubmit={startSrsGeneration}>
+                <label>
+                  Title
+                  <input
+                    value={srsTitle}
+                    onChange={(event) => setSrsTitle(event.target.value)}
+                    required
+                  />
+                </label>
+                <label>
+                  Requirements
+                  <textarea
+                    value={srsRawText}
+                    onChange={(event) => setSrsRawText(event.target.value)}
+                    rows={5}
+                    required
+                  />
+                </label>
+                <label className="inline-toggle">
+                  <input
+                    checked={generateClassDiagram}
+                    type="checkbox"
+                    onChange={(event) => setGenerateClassDiagram(event.target.checked)}
+                  />
+                  Class diagram
+                </label>
+                <button
+                  className="primary-button"
+                  type="submit"
+                  disabled={!activeProject || isStartingGeneration}
+                >
+                  {isStartingGeneration ? 'Starting' : 'Start generation'}
+                </button>
+              </form>
+
+              <div className="generation-status">
+                <span className="panel-label">Latest status</span>
+                <h2>{latestGenerationJob?.status ?? 'No jobs yet'}</h2>
+                {latestGenerationJob ? (
+                  <p>
+                    {latestGenerationJob.job_type} / {latestGenerationJob.progress_percent}% /{' '}
+                    {new Date(latestGenerationJob.created_at).toLocaleString()}
+                  </p>
+                ) : (
+                  <p>Submit requirements to create a generation job.</p>
+                )}
+                <div className="generation-list" aria-label="Generation jobs">
+                  {generationJobs.map((job) => (
+                    <button className="generation-option" key={job.id} type="button">
+                      <span>{job.status}</span>
+                      <small>
+                        {job.job_type} / {new Date(job.created_at).toLocaleDateString()}
+                      </small>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
           </article>
 
           <article className="panel diagrams-panel">
