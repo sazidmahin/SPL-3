@@ -1,11 +1,16 @@
-import re
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
+from app.domain.srs import (
+    RequirementDraft,
+    build_summary_sections,
+    build_srs_document,
+    classify_requirement_drafts,
+    extract_requirement_drafts,
+)
 from app.db.models import (
     Diagram,
     ExtractedRequirement,
@@ -29,29 +34,6 @@ GENERATION_MUTATION_ROLES = {"owner", "admin", "member"}
 DIAGRAM_METHODS = {"llm", "rule_based"}
 ACTIVE_DOCUMENT_STATUS = "active"
 
-NFR_KEYWORDS = {
-    "security": "Security",
-    "secure": "Security",
-    "auth": "Security",
-    "permission": "Security",
-    "performance": "Performance",
-    "fast": "Performance",
-    "response": "Performance",
-    "within": "Performance",
-    "available": "Availability",
-    "availability": "Availability",
-    "usable": "Usability",
-    "usability": "Usability",
-    "accessible": "Usability",
-    "scale": "Scalability",
-    "scalable": "Scalability",
-    "maintain": "Maintainability",
-    "portable": "Portability",
-    "legal": "Legal",
-    "fault": "Fault Tolerance",
-    "operate": "Operational",
-}
-
 
 class SrsError(Exception):
     """Base class for expected SRS generation failures."""
@@ -68,16 +50,6 @@ class GenerationJobNotFoundError(SrsError):
 class SrsDocumentNotFoundError(SrsError):
     pass
 
-
-@dataclass(frozen=True)
-class RequirementDraft:
-    requirement_code: str
-    requirement_text: str
-    source_trace: str
-    extraction_reason: str
-    confidence_score: float
-    requirement_type: str = "functional"
-    nfr_subtype: str | None = None
 
 
 def _clean_required(value: str, message: str) -> str:
@@ -106,14 +78,6 @@ def _normalize_diagram_methods(methods: list[str]) -> list[str]:
             normalized.append(cleaned)
     return normalized
 
-
-def _sentences(raw_text: str) -> list[str]:
-    candidates = re.split(r"[\n.;]+", raw_text)
-    return [candidate.strip(" -\t") for candidate in candidates if candidate.strip(" -\t")]
-
-
-def _words(raw_text: str) -> list[str]:
-    return re.findall(r"[A-Za-z][A-Za-z0-9_-]*", raw_text)
 
 
 def create_requirement_input(
@@ -163,34 +127,7 @@ def generate_summary_sections(
         variables={"raw_text": raw_text},
     )
 
-    sentences = _sentences(raw_text)
-    first_sentence = sentences[0] if sentences else raw_text.strip()
-    lower_text = raw_text.lower()
-    stakeholders = ["Users"]
-    if any(keyword in lower_text for keyword in ["admin", "manager", "owner"]):
-        stakeholders.append("Administrators")
-    if any(keyword in lower_text for keyword in ["customer", "client"]):
-        stakeholders.append("Customers")
-
-    use_cases = [f"UC-{index:03d}: {sentence}" for index, sentence in enumerate(sentences[:5], start=1)]
-    glossary_terms = []
-    for word in _words(raw_text):
-        normalized = word.strip().lower()
-        if len(normalized) >= 7 and normalized not in glossary_terms:
-            glossary_terms.append(normalized)
-        if len(glossary_terms) == 6:
-            break
-
-    return {
-        "introduction": first_sentence,
-        "stakeholders": stakeholders,
-        "use_cases": use_cases or ["UC-001: Review submitted requirements"],
-        "glossary": [
-            {"term": term.title(), "definition": f"Domain term identified from requirement input: {term}."}
-            for term in glossary_terms
-        ],
-    }
-
+    return build_summary_sections(raw_text)
 
 def extract_structured_requirements(
     db: Session,
@@ -215,35 +152,7 @@ def extract_structured_requirements(
         variables={"raw_text": raw_text},
     )
 
-    drafts = []
-    for index, sentence in enumerate(_sentences(raw_text), start=1):
-        cleaned = sentence.rstrip(".")
-        if len(cleaned.split()) < 2:
-            continue
-        requirement_text = cleaned
-        if not cleaned.lower().startswith("the system shall"):
-            requirement_text = f"The system shall support {cleaned[0].lower()}{cleaned[1:]}"
-        drafts.append(
-            RequirementDraft(
-                requirement_code=f"REQ-{index:03d}",
-                requirement_text=requirement_text,
-                source_trace=sentence,
-                extraction_reason="Sentence expresses an actor, capability, constraint, or expected behavior.",
-                confidence_score=0.86,
-            )
-        )
-
-    if not drafts:
-        drafts.append(
-            RequirementDraft(
-                requirement_code="REQ-001",
-                requirement_text="The system shall capture the submitted requirement input for review.",
-                source_trace=raw_text.strip(),
-                extraction_reason="Fallback requirement created from unstructured input.",
-                confidence_score=0.7,
-            )
-        )
-    return drafts
+    return extract_requirement_drafts(raw_text)
 
 
 def classify_requirements(
@@ -269,71 +178,7 @@ def classify_requirements(
         variables={"requirements": "\n".join(item.requirement_text for item in requirements)},
     )
 
-    classified = []
-    for item in requirements:
-        lower_text = item.requirement_text.lower()
-        subtype = next(
-            (nfr_subtype for keyword, nfr_subtype in NFR_KEYWORDS.items() if keyword in lower_text),
-            None,
-        )
-        classified.append(
-            RequirementDraft(
-                requirement_code=item.requirement_code,
-                requirement_text=item.requirement_text,
-                source_trace=item.source_trace,
-                extraction_reason=item.extraction_reason,
-                confidence_score=item.confidence_score,
-                requirement_type="non_functional" if subtype else "functional",
-                nfr_subtype=subtype,
-            )
-        )
-    return classified
-
-
-def build_srs_document(title: str, summary: dict, requirements: list[RequirementDraft]) -> tuple[str, dict]:
-    functional = [item for item in requirements if item.requirement_type == "functional"]
-    non_functional = [item for item in requirements if item.requirement_type == "non_functional"]
-    glossary_lines = [
-        f"- **{item['term']}**: {item['definition']}" for item in summary.get("glossary", [])
-    ]
-    markdown_lines = [
-        f"# {title}",
-        "",
-        "## Introduction",
-        summary["introduction"],
-        "",
-        "## Stakeholders",
-        *[f"- {stakeholder}" for stakeholder in summary["stakeholders"]],
-        "",
-        "## Use Cases",
-        *[f"- {use_case}" for use_case in summary["use_cases"]],
-        "",
-        "## Functional Requirements",
-        *[f"- {item.requirement_code}: {item.requirement_text}" for item in functional],
-        "",
-        "## Non-Functional Requirements",
-        *[
-            f"- {item.requirement_code} ({item.nfr_subtype}): {item.requirement_text}"
-            for item in non_functional
-        ],
-        "",
-        "## Glossary",
-        *(glossary_lines or ["- No glossary terms identified."]),
-    ]
-    content_json = {
-        "summary": summary,
-        "requirements": [item.__dict__ for item in requirements],
-        "traceability": [
-            {
-                "requirement_code": item.requirement_code,
-                "source_trace": item.source_trace,
-                "confidence_score": item.confidence_score,
-            }
-            for item in requirements
-        ],
-    }
-    return "\n".join(markdown_lines), content_json
-
+    return classify_requirement_drafts(requirements)
 
 
 
@@ -363,6 +208,7 @@ def _generation_metadata(db: Session, *, workspace_id: UUID, project_id: UUID, g
             for call in calls
         ],
     }
+
 def start_generation_job(
     db: Session,
     *,
@@ -522,7 +368,6 @@ def start_generation_job(
         generated_diagrams,
     )
 
-
 def list_generation_jobs(
     db: Session, *, membership: WorkspaceMember, project_id: UUID
 ) -> list[GenerationJob]:
@@ -537,7 +382,6 @@ def list_generation_jobs(
             .order_by(GenerationJob.created_at.desc())
         )
     )
-
 
 def get_generation_job(
     db: Session, *, membership: WorkspaceMember, project_id: UUID, job_id: UUID
@@ -554,7 +398,6 @@ def get_generation_job(
         raise GenerationJobNotFoundError("Generation job not found")
     return job
 
-
 def list_srs_documents(
     db: Session, *, membership: WorkspaceMember, project_id: UUID
 ) -> list[SrsDocument]:
@@ -570,7 +413,6 @@ def list_srs_documents(
             .order_by(SrsDocument.created_at.desc())
         )
     )
-
 
 def get_srs_document(
     db: Session, *, membership: WorkspaceMember, project_id: UUID, srs_document_id: UUID
