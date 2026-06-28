@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_workspace_membership, get_db
@@ -13,7 +13,7 @@ from app.schemas.diagram import (
     DiagramVersionCreateRequest,
     DiagramVersionRead,
 )
-from app.services.billing_service import BillingError
+from app.services.billing_service import BillingError, require_feature_access
 from app.services.diagram_generation_service import (
     DiagramGenerationError,
     DiagramGenerationSourceNotFoundError,
@@ -75,23 +75,15 @@ def create_diagram(
             drawio_xml=payload.drawio_xml,
             diagram_json=payload.diagram_json,
         )
-        return _load_detail_response(
-            db, membership=membership, project_id=project_id, diagram_id=diagram.id
-        )
+        return _load_detail_response(db, membership=membership, project_id=project_id, diagram_id=diagram.id)
     except WorkspacePermissionError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     except BillingError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=str(exc),
-        ) from exc
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
     except DiagramNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except InvalidDiagramError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=str(exc),
-        ) from exc
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
 
 
 @router.post("/class/generate", response_model=DiagramDetailRead, status_code=status.HTTP_201_CREATED)
@@ -110,23 +102,15 @@ def generate_class_diagram_route(
             srs_document_id=payload.srs_document_id,
             methods=payload.methods,
         )
-        return _load_detail_response(
-            db, membership=membership, project_id=project_id, diagram_id=diagram.id
-        )
+        return _load_detail_response(db, membership=membership, project_id=project_id, diagram_id=diagram.id)
     except WorkspacePermissionError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     except BillingError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=str(exc),
-        ) from exc
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
     except DiagramGenerationSourceNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except (DiagramGenerationError, InvalidDiagramGenerationRequestError) as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=str(exc),
-        ) from exc
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
 
 
 @router.get("", response_model=list[DiagramRead])
@@ -138,12 +122,34 @@ def list_diagrams(
     try:
         return list_active_diagrams(db, membership=membership, project_id=project_id)
     except BillingError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=str(exc),
-        ) from exc
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
     except DiagramNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+@router.get("/{diagram_id}/export", response_class=Response)
+def export_diagram(
+    project_id: UUID,
+    diagram_id: UUID,
+    membership: WorkspaceMember = Depends(get_current_workspace_membership),
+    db: Session = Depends(get_db),
+) -> Response:
+    try:
+        require_feature_access(db, workspace_id=membership.workspace_id, feature="export_diagrams")
+        diagram, current = get_diagram_detail(
+            db, membership=membership, project_id=project_id, diagram_id=diagram_id
+        )
+    except BillingError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    except DiagramNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    filename = f"{diagram.title.strip().replace(' ', '-') or 'diagram'}.drawio"
+    return Response(
+        content=current.drawio_xml,
+        media_type="application/xml; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get("/{diagram_id}", response_model=DiagramDetailRead)
@@ -154,14 +160,9 @@ def get_diagram(
     db: Session = Depends(get_db),
 ) -> DiagramDetailRead:
     try:
-        return _load_detail_response(
-            db, membership=membership, project_id=project_id, diagram_id=diagram_id
-        )
+        return _load_detail_response(db, membership=membership, project_id=project_id, diagram_id=diagram_id)
     except BillingError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=str(exc),
-        ) from exc
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
     except DiagramNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
@@ -190,17 +191,11 @@ def create_diagram_version(
     except WorkspacePermissionError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     except BillingError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=str(exc),
-        ) from exc
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
     except DiagramNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except InvalidDiagramError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=str(exc),
-        ) from exc
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
 
 
 @router.get("/{diagram_id}/versions", response_model=list[DiagramVersionRead])
@@ -215,9 +210,6 @@ def get_versions(
             db, membership=membership, project_id=project_id, diagram_id=diagram_id
         )
     except BillingError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=str(exc),
-        ) from exc
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
     except DiagramNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc

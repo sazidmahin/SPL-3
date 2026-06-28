@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_workspace_membership, get_db
@@ -15,7 +15,7 @@ from app.schemas.srs import (
     SrsGenerateRequest,
     SrsGenerateResponse,
 )
-from app.services.billing_service import BillingError
+from app.services.billing_service import BillingError, require_feature_access
 from app.services.diagram_service import get_diagram_detail, list_diagram_requirement_links
 from app.services.srs_service import (
     GenerationJobNotFoundError,
@@ -70,10 +70,7 @@ def submit_requirement_input(
     except GenerationJobNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except InvalidSrsRequestError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=str(exc),
-        ) from exc
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
 
 
 @router.post("/generate", response_model=SrsGenerateResponse, status_code=status.HTTP_201_CREATED)
@@ -98,15 +95,9 @@ def generate_srs(
     except GenerationJobNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except BillingError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=str(exc),
-        ) from exc
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
     except InvalidSrsRequestError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=str(exc),
-        ) from exc
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
 
     return SrsGenerateResponse(
         requirement_input=requirement_input,
@@ -139,9 +130,7 @@ def get_job(
     db: Session = Depends(get_db),
 ) -> GenerationJob:
     try:
-        return get_generation_job(
-            db, membership=membership, project_id=project_id, job_id=job_id
-        )
+        return get_generation_job(db, membership=membership, project_id=project_id, job_id=job_id)
     except GenerationJobNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
@@ -156,6 +145,34 @@ def get_srs_documents(
         return list_srs_documents(db, membership=membership, project_id=project_id)
     except GenerationJobNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
+@router.get("/{srs_document_id}/export", response_class=Response)
+def export_srs_document(
+    project_id: UUID,
+    srs_document_id: UUID,
+    membership: WorkspaceMember = Depends(get_current_workspace_membership),
+    db: Session = Depends(get_db),
+) -> Response:
+    try:
+        require_feature_access(db, workspace_id=membership.workspace_id, feature="export_srs")
+        document = get_srs_document(
+            db,
+            membership=membership,
+            project_id=project_id,
+            srs_document_id=srs_document_id,
+        )
+    except BillingError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    except (GenerationJobNotFoundError, SrsDocumentNotFoundError) as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    filename = f"{document.title.strip().replace(' ', '-') or 'srs-document'}.md"
+    return Response(
+        content=document.content_markdown,
+        media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get("/{srs_document_id}", response_model=SrsDocumentDetailRead)

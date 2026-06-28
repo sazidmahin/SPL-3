@@ -205,3 +205,13 @@
     width: 100%;
   }
 }
+.upgrade-prompt {
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: var(--surface-muted);
+  color: var(--text-strong);
+  font-size: 13px;
+  font-weight: 700;
+}

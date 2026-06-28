@@ -49,3 +49,17 @@ export async function generateSrs(
     }),
   )
 }
+export async function exportSrsDocument(accessToken: string, workspaceId: string, projectId: string, documentId: string) {
+  const response = await fetch(`${API_BASE_URL}/workspaces/${workspaceId}/projects/${projectId}/srs/${documentId}/export`, {
+    headers: authHeaders(accessToken),
+  })
+  if (!response.ok) {
+    const body = await response.json().catch(() => null)
+    const detail = body && typeof body.detail === 'string' ? body.detail : 'Unable to export SRS'
+    throw new Error(detail)
+  }
+  return {
+    content: await response.text(),
+    filename: response.headers.get('content-disposition'),
+  }
+}

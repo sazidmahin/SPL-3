@@ -9,6 +9,7 @@ import type { Plan, Subscription, Usage } from './domains/billing/types'
 import {
   createDiagramVersion,
   createManualDiagram,
+  exportDiagram,
   fetchDiagramDetail,
   fetchDiagrams,
   fetchDiagramVersions,
@@ -19,6 +20,7 @@ import type { ClassDiagramMethod, Diagram, DiagramDetail, DiagramVersion } from 
 import { createProject as createProjectRequest, fetchProjects } from './domains/project/api'
 import type { Project } from './domains/project/types'
 import {
+  exportSrsDocument,
   fetchGenerationJobs,
   fetchSrsDocumentDetail,
   fetchSrsDocuments,
@@ -27,6 +29,7 @@ import {
 import type { GenerationJob, SrsDocument } from './domains/srs/types'
 import { createWorkspace as createWorkspaceRequest } from './domains/workspace/api'
 import type { WorkspaceMembership } from './domains/workspace/types'
+import { filenameFromContentDisposition, downloadTextFile } from './shared/download'
 import { PROJECT_STORAGE_KEY, DIAGRAM_STORAGE_KEY, WORKSPACE_STORAGE_KEY } from './shared/storage'
 import { AuthView } from './features/auth/AuthView'
 import { BillingPanel } from './features/billing/BillingPanel'
@@ -101,6 +104,13 @@ function App() {
     () => diagrams.find((diagram) => diagram.id === activeDiagramId) ?? diagrams[0],
     [activeDiagramId, diagrams],
   )
+
+  const activePlan = subscription?.plan
+  const canUseManualDrawio = Boolean(activePlan?.can_use_manual_drawio)
+  const canGenerateSrs = Boolean(activePlan?.can_generate_srs)
+  const canGenerateAiDiagrams = Boolean(activePlan?.can_generate_ai_diagrams)
+  const canExportSrs = Boolean(activePlan?.can_export_srs)
+  const canExportDiagrams = Boolean(activePlan?.can_export_diagrams)
 
   function clearProjectState() {
     setProjects([])
@@ -504,6 +514,50 @@ function App() {
     }
   }
 
+
+  async function exportCurrentSrsDocument() {
+    if (!session || !activeWorkspace || !activeProject || !activeSrsDocument) {
+      return
+    }
+    setError(null)
+    try {
+      const exported = await exportSrsDocument(
+        session.access_token,
+        activeWorkspace.workspace.id,
+        activeProject.id,
+        activeSrsDocument.id,
+      )
+      downloadTextFile(
+        filenameFromContentDisposition(exported.filename, `${activeSrsDocument.title}.md`),
+        exported.content,
+        'text/markdown;charset=utf-8',
+      )
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Unable to export SRS')
+    }
+  }
+
+  async function exportCurrentDiagram() {
+    if (!session || !activeWorkspace || !activeProject || !activeDiagram) {
+      return
+    }
+    setError(null)
+    try {
+      const exported = await exportDiagram(
+        session.access_token,
+        activeWorkspace.workspace.id,
+        activeProject.id,
+        activeDiagram.id,
+      )
+      downloadTextFile(
+        filenameFromContentDisposition(exported.filename, `${activeDiagram.title}.drawio`),
+        exported.content,
+        'application/xml;charset=utf-8',
+      )
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Unable to export diagram')
+    }
+  }
   function openGeneratedDiagram(diagram: DiagramDetail) {
     setDiagrams((current) => [diagram, ...current.filter((item) => item.id !== diagram.id)])
     setDiagramVersions([diagram.current])
@@ -673,6 +727,9 @@ function App() {
           isLoadingSrsDocuments={isLoadingSrsDocuments}
           isStartingGeneration={isStartingGeneration}
           isGeneratingClassDiagram={isGeneratingClassDiagram}
+          canGenerateSrs={canGenerateSrs}
+          canGenerateAiDiagrams={canGenerateAiDiagrams}
+          canExportSrs={canExportSrs}
           onReload={() => {
             if (activeWorkspace && activeProject) {
               void Promise.all([
@@ -691,6 +748,7 @@ function App() {
             }
           }}
           onGenerateClassDiagram={(methods) => void generateClassDiagramFromSrs(methods)}
+          onExportSrs={() => void exportCurrentSrsDocument()}
           onOpenGeneratedDiagram={openGeneratedDiagram}
         />
 
@@ -703,6 +761,8 @@ function App() {
           diagramXml={diagramXml}
           isLoadingDiagrams={isLoadingDiagrams}
           isSavingDiagram={isSavingDiagram}
+          canUseManualDrawio={canUseManualDrawio}
+          canExportDiagrams={canExportDiagrams}
           onReload={() => {
             if (activeWorkspace && activeProject) {
               void loadDiagrams(session, activeWorkspace.workspace.id, activeProject.id)
@@ -712,6 +772,7 @@ function App() {
           onDiagramXmlChange={setDiagramXml}
           onResetXml={() => setDiagramXml(BLANK_DRAWIO_XML)}
           onSaveVersion={() => void saveDiagramVersion()}
+          onExportDiagram={() => void exportCurrentDiagram()}
         />
 
         <CreateDiagramPanel
@@ -719,6 +780,7 @@ function App() {
           diagramTitle={diagramTitle}
           diagramType={diagramType}
           isCreatingDiagram={isCreatingDiagram}
+          canUseManualDrawio={canUseManualDrawio}
           onDiagramTitleChange={setDiagramTitle}
           onDiagramTypeChange={setDiagramType}
           onSubmit={createDiagram}

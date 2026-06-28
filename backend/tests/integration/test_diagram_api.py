@@ -102,7 +102,7 @@ def create_diagram(
     return response.json()
 
 
-def test_manual_diagram_flow_persists_versions_and_current_xml(client: TestClient) -> None:
+def test_manual_diagram_flow_persists_versions_and_current_xml(client: TestClient, db_session: Session) -> None:
     token = register(client, "owner@example.com", "Owner User")
     workspace_id = personal_workspace_id(client, token)
     project = create_project(client, token, workspace_id, "Claims Portal")
@@ -144,6 +144,21 @@ def test_manual_diagram_flow_persists_versions_and_current_xml(client: TestClien
     )
     assert versions_response.status_code == 200
     assert [version["version_number"] for version in versions_response.json()] == [1, 2]
+    blocked_export_response = client.get(
+        f"/api/v1/workspaces/{workspace_id}/projects/{project['id']}/diagrams/{diagram['id']}/export",
+        headers=auth_header(token),
+    )
+    assert blocked_export_response.status_code == 422
+    assert blocked_export_response.json()["detail"] == "Current plan does not allow this feature"
+
+    upgrade_personal_workspace(db_session, workspace_id)
+    export_response = client.get(
+        f"/api/v1/workspaces/{workspace_id}/projects/{project['id']}/diagrams/{diagram['id']}/export",
+        headers=auth_header(token),
+    )
+    assert export_response.status_code == 200
+    assert "<mxfile><diagram>v2</diagram></mxfile>" in export_response.text
+    assert export_response.headers["content-disposition"].endswith('.drawio"')
 
 
 def test_diagram_access_is_scoped_to_workspace_and_project(client: TestClient) -> None:
@@ -249,7 +264,9 @@ def test_generate_class_diagram_from_srs_document_persists_drawio_xml(
         json={"srs_document_id": srs_document_id, "methods": ["llm"]},
     )
     assert llm_response.status_code == 201
-    assert json.loads(llm_response.json()["current"]["diagram_json"])["methods"] == ["llm"]
+    llm_diagram_json = json.loads(llm_response.json()["current"]["diagram_json"])
+    assert llm_diagram_json["methods"] == ["llm"]
+    assert llm_diagram_json["generation_metadata"]["model_name"] == "deterministic-srs-v1"
 
     counter = db_session.scalar(
         select(UsageCounter).where(UsageCounter.workspace_id == UUID(workspace_id))
