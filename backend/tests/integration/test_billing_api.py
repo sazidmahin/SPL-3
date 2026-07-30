@@ -53,8 +53,15 @@ def register(client: TestClient, email: str, full_name: str) -> str:
         "/api/v1/auth/register",
         json={"email": email, "password": "correct-horse", "full_name": full_name},
     )
-    assert response.status_code == 201
-    return response.json()["access_token"]
+    assert response.status_code == 202
+    code = response.json()["verification_code"]
+    assert code
+
+    verify_response = client.post(
+        "/api/v1/auth/verify-email", json={"email": email, "code": code}
+    )
+    assert verify_response.status_code == 200
+    return verify_response.json()["access_token"]
 
 
 def personal_workspace_id(client: TestClient, token: str) -> str:

@@ -1,4 +1,6 @@
+import sys
 from collections.abc import Generator
+from types import ModuleType
 from uuid import uuid4
 
 import pytest
@@ -9,10 +11,14 @@ from sqlalchemy.pool import StaticPool
 from app.db import models  # noqa: F401
 from app.db.base import Base
 from app.services.llm_service import (
+    DeterministicLlmClient,
+    LangChainOpenAIClient,
+    LlmConfigurationError,
     LlmExecutionError,
     LlmRequest,
-    get_or_create_prompt_template,
+    build_llm_client,
     execute_llm_call,
+    get_or_create_prompt_template,
     render_prompt,
 )
 
@@ -41,6 +47,76 @@ class FailingClient:
 
     def generate(self, request: LlmRequest):
         raise RuntimeError("provider unavailable")
+
+
+def test_auto_provider_without_key_uses_deterministic_client() -> None:
+    client = build_llm_client(
+        provider="auto",
+        openai_api_key=None,
+        openai_model="gpt-test",
+        openai_temperature=0,
+        openai_timeout_seconds=30,
+        openai_max_retries=2,
+    )
+
+    assert isinstance(client, DeterministicLlmClient)
+
+
+def test_openai_provider_requires_api_key() -> None:
+    with pytest.raises(LlmConfigurationError):
+        build_llm_client(
+            provider="openai",
+            openai_api_key=None,
+            openai_model="gpt-test",
+            openai_temperature=0,
+            openai_timeout_seconds=30,
+            openai_max_retries=2,
+        )
+
+
+def test_langchain_openai_client_invokes_chat_model(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+    fake_module = ModuleType("langchain_openai")
+
+    class FakeMessage:
+        content = [{"type": "text", "text": "generated content"}]
+        usage_metadata = {"input_tokens": 3, "output_tokens": 5}
+        response_metadata = {"token_usage": {"total_tokens": 8}}
+
+    class FakeChatOpenAI:
+        def __init__(self, **kwargs: object) -> None:
+            captured["kwargs"] = kwargs
+
+        def invoke(self, prompt: str) -> FakeMessage:
+            captured["prompt"] = prompt
+            return FakeMessage()
+
+    fake_module.ChatOpenAI = FakeChatOpenAI
+    monkeypatch.setitem(sys.modules, "langchain_openai", fake_module)
+
+    client = LangChainOpenAIClient(
+        api_key="sk-test",
+        model_name="gpt-test",
+        temperature=0,
+        timeout_seconds=30,
+        max_retries=2,
+    )
+    response = client.generate(LlmRequest(prompt="Summarize claims", purpose="summary"))
+
+    assert captured["kwargs"] == {
+        "model": "gpt-test",
+        "api_key": "sk-test",
+        "temperature": 0,
+        "timeout": 30,
+        "max_retries": 2,
+    }
+    assert captured["prompt"] == "Summarize claims"
+    assert response.content == "generated content"
+    assert response.prompt_tokens == 3
+    assert response.completion_tokens == 5
+    assert response.total_tokens == 8
+    assert response.response_payload["provider"] == "openai"
+    assert response.response_payload["model_name"] == "gpt-test"
 
 
 def test_prompt_template_is_versioned_and_renders_variables(db_session: Session) -> None:

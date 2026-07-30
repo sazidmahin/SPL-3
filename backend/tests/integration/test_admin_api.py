@@ -1,4 +1,4 @@
-﻿from collections.abc import Generator
+from collections.abc import Generator
 
 import pytest
 from fastapi.testclient import TestClient
@@ -54,8 +54,15 @@ def register(client: TestClient, email: str, full_name: str) -> str:
         "/api/v1/auth/register",
         json={"email": email, "password": "correct-horse", "full_name": full_name},
     )
-    assert response.status_code == 201
-    return response.json()["access_token"]
+    assert response.status_code == 202
+    code = response.json()["verification_code"]
+    assert code
+
+    verify_response = client.post(
+        "/api/v1/auth/verify-email", json={"email": email, "code": code}
+    )
+    assert verify_response.status_code == 200
+    return verify_response.json()["access_token"]
 
 
 def promote_to_super_admin(db_session: Session, email: str) -> User:
@@ -206,3 +213,4 @@ def test_ensure_super_admin_promotes_existing_user_and_blocks_second_admin(
     )
     assert second is None
     assert db_session.scalar(select(User).where(User.email == "second@example.com")) is None
+

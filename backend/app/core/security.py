@@ -10,6 +10,8 @@ from uuid import UUID
 from app.core.config import settings
 
 _PASSWORD_ITERATIONS = 260000
+_ACCESS_TOKEN_PURPOSE = "access"
+_PASSWORD_RESET_TOKEN_PURPOSE = "password_reset"
 
 
 def _base64url_encode(value: bytes) -> str:
@@ -51,13 +53,12 @@ def verify_password(password: str, password_hash: str) -> bool:
     return hmac.compare_digest(_base64url_encode(digest), expected)
 
 
-def create_access_token(subject: UUID, expires_delta: timedelta | None = None) -> str:
-    expires_at = int(
-        time.time()
-        + (expires_delta or timedelta(minutes=settings.access_token_expire_minutes)).total_seconds()
-    )
+def _create_signed_token(
+    subject: UUID, *, purpose: str, expires_delta: timedelta
+) -> str:
+    expires_at = int(time.time() + expires_delta.total_seconds())
     header = {"alg": "HS256", "typ": "JWT"}
-    payload = {"sub": str(subject), "exp": expires_at}
+    payload = {"sub": str(subject), "exp": expires_at, "purpose": purpose}
     signing_input = ".".join(
         [
             _base64url_encode(json.dumps(header, separators=(",", ":")).encode("utf-8")),
@@ -70,7 +71,7 @@ def create_access_token(subject: UUID, expires_delta: timedelta | None = None) -
     return f"{signing_input}.{_base64url_encode(signature)}"
 
 
-def decode_access_token(token: str) -> UUID | None:
+def _decode_signed_token(token: str, *, expected_purpose: str) -> UUID | None:
     try:
         header, payload, signature = token.split(".", 2)
         signing_input = f"{header}.{payload}"
@@ -83,6 +84,32 @@ def decode_access_token(token: str) -> UUID | None:
         claims = json.loads(_base64url_decode(payload))
         if int(claims.get("exp", 0)) < int(time.time()):
             return None
+        if claims.get("purpose", _ACCESS_TOKEN_PURPOSE) != expected_purpose:
+            return None
         return UUID(str(claims["sub"]))
     except (KeyError, TypeError, ValueError, json.JSONDecodeError):
         return None
+
+
+def create_access_token(subject: UUID, expires_delta: timedelta | None = None) -> str:
+    return _create_signed_token(
+        subject,
+        purpose=_ACCESS_TOKEN_PURPOSE,
+        expires_delta=expires_delta or timedelta(minutes=settings.access_token_expire_minutes),
+    )
+
+
+def decode_access_token(token: str) -> UUID | None:
+    return _decode_signed_token(token, expected_purpose=_ACCESS_TOKEN_PURPOSE)
+
+
+def create_password_reset_token(subject: UUID) -> str:
+    return _create_signed_token(
+        subject,
+        purpose=_PASSWORD_RESET_TOKEN_PURPOSE,
+        expires_delta=timedelta(minutes=settings.password_reset_token_expire_minutes),
+    )
+
+
+def decode_password_reset_token(token: str) -> UUID | None:
+    return _decode_signed_token(token, expected_purpose=_PASSWORD_RESET_TOKEN_PURPOSE)
