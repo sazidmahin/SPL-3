@@ -20,6 +20,17 @@ class RequirementInput(Base):
     )
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     raw_text: Mapped[str] = mapped_column(Text, nullable=False)
+    clarification_status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="not_required", server_default="not_required", index=True
+    )
+    clarifying_questions: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSON, nullable=False, default=list
+    )
+    clarification_answers: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSON, nullable=False, default=list
+    )
+    refined_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    refinement_metadata: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     created_by_user_id: Mapped[uuid.UUID] = mapped_column(
         Uuid, ForeignKey("users.id"), nullable=False, index=True
     )

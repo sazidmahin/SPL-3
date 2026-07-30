@@ -48,8 +48,15 @@ def register(client: TestClient, email: str, full_name: str) -> str:
         "/api/v1/auth/register",
         json={"email": email, "password": "correct-horse", "full_name": full_name},
     )
-    assert response.status_code == 201
-    return response.json()["access_token"]
+    assert response.status_code == 202
+    code = response.json()["verification_code"]
+    assert code
+
+    verify_response = client.post(
+        "/api/v1/auth/verify-email", json={"email": email, "code": code}
+    )
+    assert verify_response.status_code == 200
+    return verify_response.json()["access_token"]
 
 
 def auth_header(token: str) -> dict[str, str]:
@@ -164,3 +171,4 @@ def test_owner_can_invite_registered_user_and_member_cannot_manage_members(
         f"/api/v1/workspaces/{workspace_id}/members", headers=auth_header(member_token)
     )
     assert forbidden_response.status_code == 403
+

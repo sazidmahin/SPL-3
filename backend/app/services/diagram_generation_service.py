@@ -18,7 +18,11 @@ from app.db.models import (
     WorkspaceMember,
 )
 from app.services.billing_service import record_feature_usage
-from app.services.llm_service import execute_llm_call, get_or_create_prompt_template
+from app.services.llm_service import (
+    configured_llm_model_name,
+    execute_llm_call,
+    get_or_create_prompt_template,
+)
 from app.services.project_service import ProjectNotFoundError, get_active_project
 from app.services.workspace_service import require_workspace_role
 
@@ -584,7 +588,7 @@ def generate_class_diagram(
         "traceability": _build_traceability_payload(requirements, merged),
         "generation_metadata": {
             "generation_methods": normalized_methods,
-            "model_name": "deterministic-srs-v1" if "llm" in normalized_methods else None,
+            "model_name": configured_llm_model_name() if "llm" in normalized_methods else None,
             "source_type": context.source_type,
             "source_id": str(context.source_id),
         },

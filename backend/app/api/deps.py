@@ -1,8 +1,9 @@
-﻿from collections.abc import Generator
+from collections.abc import Generator
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import Depends, Header, HTTPException, Path, status
+from fastapi import Depends, HTTPException, Path, Security, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
 from app.core.security import decode_access_token
@@ -16,6 +17,8 @@ from app.services.workspace_service import (
     require_workspace_role,
 )
 
+bearer_scheme = HTTPBearer(auto_error=False)
+
 
 def get_db() -> Generator[Session, None, None]:
     """Provide a database session for the duration of a request."""
@@ -27,15 +30,16 @@ def get_db() -> Generator[Session, None, None]:
 
 
 def get_current_user(
-    authorization: str | None = Header(default=None), db: Session = Depends(get_db)
+    credentials: HTTPAuthorizationCredentials | None = Security(bearer_scheme),
+    db: Session = Depends(get_db),
 ) -> User:
-    if authorization is None or not authorization.lower().startswith("bearer "):
+    if credentials is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Missing bearer token",
         )
 
-    token = authorization.split(" ", 1)[1].strip()
+    token = credentials.credentials
     user_id = decode_access_token(token)
     if user_id is None:
         raise HTTPException(

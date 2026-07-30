@@ -1,7 +1,7 @@
-﻿import uuid
+import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, String, Text, Uuid, func
+from sqlalchemy import Boolean, DateTime, Integer, String, Text, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -17,6 +17,20 @@ class User(Base):
     avatar_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(
         String(32), nullable=False, default="active", server_default="active"
+    )
+    email_verified: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
+    email_verification_code_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    email_verification_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    email_verification_attempts: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    email_verification_sent_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
     platform_role: Mapped[str] = mapped_column(
         String(32), nullable=False, default="user", server_default="user", index=True

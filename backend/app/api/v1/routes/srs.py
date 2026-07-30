@@ -7,6 +7,8 @@ from app.api.deps import get_current_workspace_membership, get_db
 from app.db.models import Diagram, GenerationJob, RequirementInput, SrsDocument, WorkspaceMember
 from app.schemas.diagram import DiagramDetailRead
 from app.schemas.srs import (
+    ClarificationAnswerRequest,
+    ClarificationAnswerResponse,
     GenerationJobRead,
     RequirementInputCreateRequest,
     RequirementInputRead,
@@ -14,6 +16,8 @@ from app.schemas.srs import (
     SrsDocumentRead,
     SrsGenerateRequest,
     SrsGenerateResponse,
+    SrsIntakeRequest,
+    SrsIntakeResponse,
 )
 from app.services.billing_service import BillingError, require_feature_access
 from app.services.diagram_service import get_diagram_detail, list_diagram_requirement_links
@@ -21,7 +25,9 @@ from app.services.srs_service import (
     GenerationJobNotFoundError,
     InvalidSrsRequestError,
     SrsDocumentNotFoundError,
+    answer_requirement_clarifications,
     create_requirement_input,
+    create_requirement_intake,
     get_generation_job,
     get_srs_document,
     list_generation_jobs,
@@ -73,6 +79,69 @@ def submit_requirement_input(
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
 
 
+@router.post("/intake", response_model=SrsIntakeResponse, status_code=status.HTTP_201_CREATED)
+def intake_requirement(
+    project_id: UUID,
+    payload: SrsIntakeRequest,
+    membership: WorkspaceMember = Depends(get_current_workspace_membership),
+    db: Session = Depends(get_db),
+) -> SrsIntakeResponse:
+    try:
+        requirement_input, needs_clarification, draft = create_requirement_intake(
+            db,
+            membership=membership,
+            project_id=project_id,
+            title=payload.title,
+            raw_text=payload.raw_text,
+        )
+    except WorkspacePermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except GenerationJobNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except InvalidSrsRequestError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+
+    return SrsIntakeResponse(
+        requirement_input=requirement_input,
+        needs_clarification=needs_clarification,
+        clarifying_questions=requirement_input.clarifying_questions,
+        draft_requirement=draft,
+    )
+
+
+@router.post(
+    "/inputs/{requirement_input_id}/clarifications",
+    response_model=ClarificationAnswerResponse,
+)
+def answer_clarifications(
+    project_id: UUID,
+    requirement_input_id: UUID,
+    payload: ClarificationAnswerRequest,
+    membership: WorkspaceMember = Depends(get_current_workspace_membership),
+    db: Session = Depends(get_db),
+) -> ClarificationAnswerResponse:
+    try:
+        requirement_input, refined = answer_requirement_clarifications(
+            db,
+            membership=membership,
+            project_id=project_id,
+            requirement_input_id=requirement_input_id,
+            answers=[item.model_dump() for item in payload.answers],
+        )
+    except WorkspacePermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except GenerationJobNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except InvalidSrsRequestError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+
+    return ClarificationAnswerResponse(
+        requirement_input=requirement_input,
+        needs_clarification=False,
+        refined_requirement=refined,
+    )
+
+
 @router.post("/generate", response_model=SrsGenerateResponse, status_code=status.HTTP_201_CREATED)
 def generate_srs(
     project_id: UUID,
@@ -85,6 +154,7 @@ def generate_srs(
             db,
             membership=membership,
             project_id=project_id,
+            requirement_input_id=payload.requirement_input_id,
             title=payload.title,
             raw_text=payload.raw_text,
             generate_class_diagram=payload.generate_class_diagram,

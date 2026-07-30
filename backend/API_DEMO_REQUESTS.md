@@ -26,6 +26,8 @@ No request body.
 
 ### POST `/auth/register`
 
+Creates an inactive user, creates the personal workspace, and sends a 6 digit verification code by email. In `EMAIL_DELIVERY_MODE=console`, the response also includes `verification_code` for local Swagger testing.
+
 ```json
 {
   "email": "demo@example.com",
@@ -34,7 +36,28 @@ No request body.
 }
 ```
 
+### POST `/auth/verify-email`
+
+Activates the user and returns the bearer token.
+
+```json
+{
+  "email": "demo@example.com",
+  "code": "123456"
+}
+```
+
+### POST `/auth/resend-verification-code`
+
+```json
+{
+  "email": "demo@example.com"
+}
+```
+
 ### POST `/auth/login`
+
+Only active, verified users can log in.
 
 ```json
 {
@@ -43,10 +66,32 @@ No request body.
 }
 ```
 
+### POST `/auth/logout`
+
+Protected endpoint. No request body. Client should delete the stored bearer token after this succeeds.
+
+### POST `/auth/forgot-password`
+
+For local Swagger testing, the response includes `reset_token` when the email belongs to an active user. In production, send this token by email instead of returning it directly.
+
+```json
+{
+  "email": "demo@example.com"
+}
+```
+
+### POST `/auth/reset-password`
+
+```json
+{
+  "token": "<reset_token_from_forgot_password>",
+  "new_password": "newPassword123"
+}
+```
+
 ### GET `/auth/me`
 
 No request body.
-
 ## Workspaces
 
 ### GET `/workspaces`
@@ -279,3 +324,5 @@ Example endpoint: `/admin/platform-settings/maintenance_mode`
   "description": "Enable or disable platform maintenance mode"
 }
 ```
+
+

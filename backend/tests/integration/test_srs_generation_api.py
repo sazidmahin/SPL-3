@@ -53,8 +53,15 @@ def register(client: TestClient, email: str, full_name: str) -> str:
         "/api/v1/auth/register",
         json={"email": email, "password": "correct-horse", "full_name": full_name},
     )
-    assert response.status_code == 201
-    return response.json()["access_token"]
+    assert response.status_code == 202
+    code = response.json()["verification_code"]
+    assert code
+
+    verify_response = client.post(
+        "/api/v1/auth/verify-email", json={"email": email, "code": code}
+    )
+    assert verify_response.status_code == 200
+    return verify_response.json()["access_token"]
 
 
 def personal_workspace_id(client: TestClient, token: str) -> str:
@@ -233,3 +240,89 @@ def test_generation_job_access_is_scoped_to_workspace_and_project(
         headers=auth_header(owner_token),
     )
     assert wrong_project_response.status_code == 404
+
+
+def test_srs_intake_clarification_answer_then_generate_with_refined_text(
+    client: TestClient, db_session: Session
+) -> None:
+    token = register(client, "clarify-owner@example.com", "Clarify Owner")
+    workspace_id = personal_workspace_id(client, token)
+    project = create_project(client, token, workspace_id, "Doctor Appointment")
+
+    intake_response = client.post(
+        f"/api/v1/workspaces/{workspace_id}/projects/{project['id']}/srs/intake",
+        headers=auth_header(token),
+        json={"title": "Doctor Appointment", "raw_text": "I want a doctor appointment system."},
+    )
+
+    assert intake_response.status_code == 201
+    intake = intake_response.json()
+    assert intake["needs_clarification"] is True
+    assert intake["requirement_input"]["clarification_status"] == "pending"
+    assert intake["clarifying_questions"]
+    requirement_input_id = intake["requirement_input"]["id"]
+
+    answers = [
+        {
+            "question_id": question["id"],
+            "answer": "Patients can search doctors, book appointments, reschedule appointments, and cancel appointments. Doctors can view upcoming appointments. Admins can manage doctors and schedules.",
+        }
+        for question in intake["clarifying_questions"]
+    ]
+    clarification_response = client.post(
+        f"/api/v1/workspaces/{workspace_id}/projects/{project['id']}/srs/inputs/{requirement_input_id}/clarifications",
+        headers=auth_header(token),
+        json={"answers": answers},
+    )
+
+    assert clarification_response.status_code == 200
+    clarified = clarification_response.json()
+    assert clarified["needs_clarification"] is False
+    assert clarified["requirement_input"]["clarification_status"] == "clarified"
+    assert "Patients can search doctors" in clarified["refined_requirement"]
+
+    client.get(
+        f"/api/v1/workspaces/{workspace_id}/billing/subscription",
+        headers=auth_header(token),
+    )
+    upgrade_personal_workspace(db_session, workspace_id)
+
+    generate_response = client.post(
+        f"/api/v1/workspaces/{workspace_id}/projects/{project['id']}/srs/generate",
+        headers=auth_header(token),
+        json={
+            "requirement_input_id": requirement_input_id,
+            "generate_class_diagram": False,
+            "diagram_methods": [],
+        },
+    )
+
+    assert generate_response.status_code == 201
+    body = generate_response.json()
+    assert body["requirement_input"]["id"] == requirement_input_id
+    assert body["job"]["status"] == "completed"
+    assert body["job"]["result_payload"]["used_refined_text"] is True
+    assert body["srs_document"]["content_json"]["requirement_source"]["used_refined_text"] is True
+    assert "Patients can search doctors" in body["srs_document"]["content_markdown"]
+
+
+def test_srs_intake_marks_clear_requirement_as_not_required(client: TestClient) -> None:
+    token = register(client, "clear-owner@example.com", "Clear Owner")
+    workspace_id = personal_workspace_id(client, token)
+    project = create_project(client, token, workspace_id, "Library System")
+
+    response = client.post(
+        f"/api/v1/workspaces/{workspace_id}/projects/{project['id']}/srs/intake",
+        headers=auth_header(token),
+        json={
+            "title": "Library System",
+            "raw_text": "Library members shall log in, search books, borrow available books, return borrowed books, and receive email confirmations for each borrowing action.",
+        },
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["needs_clarification"] is False
+    assert body["clarifying_questions"] == []
+    assert body["requirement_input"]["clarification_status"] == "not_required"
+    assert body["requirement_input"]["refined_text"]
