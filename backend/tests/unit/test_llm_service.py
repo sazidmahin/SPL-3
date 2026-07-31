@@ -135,7 +135,7 @@ def test_prompt_template_is_versioned_and_renders_variables(db_session: Session)
 
     assert same_template.id == template.id
     assert template.version == 1
-    assert render_prompt(template, {"raw_text": "claims workflow"}) == "Summarize claims workflow"
+    assert render_prompt(template, {"raw_text": "claims workflow"}) == "Ignored update claims workflow"
 
 
 def test_execute_llm_call_logs_completed_call(db_session: Session) -> None:
@@ -153,6 +153,7 @@ def test_execute_llm_call_logs_completed_call(db_session: Session) -> None:
         generation_job_id=None,
         template=template,
         variables={"raw_text": "users submit claims"},
+        client=DeterministicLlmClient(),
     )
 
     assert call.status == "completed"
@@ -161,7 +162,7 @@ def test_execute_llm_call_logs_completed_call(db_session: Session) -> None:
     assert call.prompt_tokens > 0
     assert call.total_tokens == call.prompt_tokens + call.completion_tokens
     assert call.response_payload is not None
-    assert "summary" in call.response_payload["content"]
+    assert "introduction" in call.response_payload["content"]
 
 
 def test_execute_llm_call_logs_failed_call(db_session: Session) -> None:

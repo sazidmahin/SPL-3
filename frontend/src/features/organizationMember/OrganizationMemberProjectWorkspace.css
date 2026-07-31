@@ -1,0 +1,534 @@
+﻿.org-member-workspace-page {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+.member-workspace-topbar {
+  display: grid;
+  grid-template-columns: 270px minmax(340px, 1fr) auto;
+  align-items: center;
+  gap: 18px;
+  min-height: 72px;
+  margin: -28px -28px 0;
+  padding: 0 28px;
+  border-bottom: 1px solid #e5e7eb;
+  background: #ffffff;
+}
+
+.member-workspace-select,
+.member-workspace-search,
+.member-workspace-toolbar button,
+.member-workspace-panel header button,
+.workspace-activity-card header button,
+.document-preview-card header button {
+  border: 1px solid #dfe5ee;
+  border-radius: 7px;
+  background: #ffffff;
+  color: #334155;
+  font: inherit;
+}
+
+.member-workspace-select,
+.member-workspace-search,
+.member-workspace-toolbar,
+.member-workspace-toolbar button,
+.member-workspace-hero,
+.workspace-tabs,
+.workspace-stat-card,
+.member-workspace-panel > header,
+.member-workspace-panel > header > div,
+.member-workspace-panel header button,
+.workspace-requirement-row,
+.workspace-artifact-row,
+.document-preview-card > header,
+.document-preview-card > header > div,
+.workspace-task-row,
+.project-progress-card > header,
+.project-progress-card > header > div,
+.workspace-activity-card > header,
+.workspace-activity-card > header > div,
+.workspace-comment,
+.workspace-comment button {
+  display: flex;
+  align-items: center;
+}
+
+.member-workspace-select {
+  justify-content: space-between;
+  min-height: 40px;
+  padding: 0 13px;
+  font-weight: 820;
+}
+
+.member-workspace-search {
+  gap: 10px;
+  min-height: 40px;
+  padding: 0 13px;
+  color: #64748b;
+}
+
+.member-workspace-search input {
+  min-width: 0;
+  width: 100%;
+  border: 0;
+  outline: 0;
+  color: #0f172a;
+}
+
+.member-workspace-search kbd {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.member-workspace-toolbar {
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.member-workspace-toolbar button {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border: 0;
+  border-radius: 999px;
+}
+
+.member-workspace-toolbar button span {
+  position: absolute;
+  top: -6px;
+  right: -4px;
+  display: grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  border: 2px solid #ffffff;
+  border-radius: 999px;
+  background: #6d28d9;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.workspace-user-avatar {
+  background: linear-gradient(135deg, #f97316, #38bdf8) !important;
+  color: #ffffff !important;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.member-workspace-hero {
+  justify-content: space-between;
+  gap: 20px;
+  border: 1px solid #e1e6ef;
+  border-radius: 8px;
+  padding: 20px;
+  background: #ffffff;
+}
+
+.member-workspace-hero span {
+  color: #6d28d9;
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.member-workspace-hero h1 {
+  margin: 5px 0 6px;
+  color: #0f172a;
+  font-size: 31px;
+  line-height: 1.12;
+}
+
+.member-workspace-hero p {
+  color: #64748b;
+}
+
+.workspace-tabs {
+  gap: 8px;
+  min-height: 46px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.workspace-tabs a {
+  position: relative;
+  min-height: 46px;
+  padding: 0 12px;
+  color: #475569;
+  font-weight: 820;
+}
+
+.workspace-tabs a.active {
+  color: #6d28d9;
+}
+
+.workspace-tabs a.active::after {
+  content: '';
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: -1px;
+  height: 3px;
+  border-radius: 999px;
+  background: #6d28d9;
+}
+
+.workspace-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.workspace-stat-card,
+.member-workspace-panel,
+.document-preview-card,
+.project-progress-card,
+.workspace-activity-card {
+  min-width: 0;
+  border: 1px solid #e1e6ef;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: rgba(15, 23, 42, 0.045) 0 10px 24px;
+}
+
+.workspace-stat-card {
+  gap: 12px;
+  min-height: 82px;
+  padding: 16px;
+}
+
+.workspace-stat-icon,
+.artifact-workspace-icon,
+.task-dot,
+.comment-avatar {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+}
+
+.workspace-stat-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 8px;
+}
+
+.tone-purple { background: #ede9fe; color: #6d28d9; }
+.tone-blue { background: #dbeafe; color: #2563eb; }
+.tone-green { background: #dcfce7; color: #15803d; }
+.tone-orange { background: #ffedd5; color: #ea580c; }
+.tone-red { background: #fee2e2; color: #dc2626; }
+.tone-slate { background: #f1f5f9; color: #475569; }
+
+.workspace-stat-card strong {
+  display: block;
+  color: #0f172a;
+  font-size: 26px;
+  line-height: 1;
+}
+
+.workspace-stat-card small {
+  display: block;
+  margin-top: 4px;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 790;
+}
+
+.member-workspace-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 390px;
+  gap: 16px;
+  align-items: start;
+}
+
+.member-workspace-main,
+.workspace-columns,
+.workspace-bottom-grid {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+.workspace-columns {
+  grid-template-columns: minmax(0, 1fr) 340px 340px;
+  align-items: start;
+}
+
+.member-workspace-panel,
+.document-preview-card,
+.project-progress-card,
+.workspace-activity-card {
+  overflow: hidden;
+}
+
+.member-workspace-panel > header,
+.document-preview-card > header,
+.project-progress-card > header,
+.workspace-activity-card > header {
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 54px;
+  padding: 0 16px;
+  border-bottom: 1px solid #edf2f7;
+}
+
+.member-workspace-panel > header > div,
+.document-preview-card > header > div,
+.project-progress-card > header > div,
+.workspace-activity-card > header > div {
+  gap: 9px;
+  color: #6d28d9;
+}
+
+.member-workspace-panel h2,
+.document-preview-card h2,
+.project-progress-card h2,
+.workspace-activity-card h2 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 16px;
+  font-weight: 850;
+}
+
+.member-workspace-panel header button,
+.workspace-activity-card header button,
+.document-preview-card header button {
+  gap: 6px;
+  min-height: 30px;
+  padding: 0 10px;
+  color: #6d28d9;
+  font-size: 12px;
+  font-weight: 830;
+}
+
+.workspace-requirement-list,
+.workspace-artifact-list,
+.workspace-task-list,
+.workspace-comment-list {
+  display: grid;
+  padding: 6px 16px 16px;
+}
+
+.workspace-requirement-row,
+.workspace-artifact-row,
+.workspace-task-row,
+.workspace-comment {
+  gap: 12px;
+  min-height: 58px;
+  border-top: 1px solid #edf2f7;
+}
+
+.workspace-requirement-row:first-child,
+.workspace-artifact-row:first-child,
+.workspace-task-row:first-child,
+.workspace-comment:first-child {
+  border-top: 0;
+}
+
+.workspace-requirement-row div,
+.workspace-artifact-row div,
+.workspace-task-row div,
+.workspace-comment div {
+  min-width: 0;
+  flex: 1;
+}
+
+.workspace-requirement-row span:first-child {
+  color: #6d28d9;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.workspace-requirement-row strong,
+.workspace-artifact-row strong,
+.workspace-task-row strong,
+.workspace-comment strong {
+  display: block;
+  overflow: hidden;
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 830;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-requirement-row p,
+.workspace-artifact-row small,
+.workspace-task-row small,
+.workspace-comment small,
+.workspace-comment time {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.workspace-status-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 25px;
+  border-radius: 6px;
+  padding: 0 9px;
+  font-size: 12px;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.artifact-workspace-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 7px;
+}
+
+.workspace-panel-link {
+  display: inline-flex;
+  margin: 0 16px 16px;
+  color: #6d28d9;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.document-preview-card article {
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+}
+
+.document-preview-card h3 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 16px;
+}
+
+.document-preview-card p {
+  color: #475569;
+  line-height: 1.6;
+}
+
+.workspace-bottom-grid {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 290px;
+}
+
+.task-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+}
+
+.project-progress-card > div {
+  display: grid;
+  gap: 10px;
+  padding: 18px;
+}
+
+.project-progress-card strong {
+  color: #0f172a;
+  font-size: 30px;
+  line-height: 1;
+}
+
+.project-progress {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e9edf5;
+}
+
+.project-progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #6d28d9;
+}
+
+.project-progress-card p {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.workspace-activity-card {
+  position: sticky;
+  top: 18px;
+}
+
+.workspace-comment {
+  align-items: flex-start;
+  padding: 12px 0;
+}
+
+.comment-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.workspace-comment p {
+  margin-top: 7px;
+  color: #334155;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.workspace-comment button {
+  margin-top: 8px;
+  gap: 4px;
+  border: 0;
+  background: transparent;
+  color: #6d28d9;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.workspace-comment time {
+  white-space: nowrap;
+}
+
+@media (max-width: 1500px) {
+  .workspace-columns,
+  .workspace-bottom-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .member-workspace-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .workspace-activity-card {
+    position: static;
+  }
+}
+
+@media (max-width: 980px) {
+  .member-workspace-topbar,
+  .workspace-stat-grid,
+  .workspace-columns,
+  .workspace-bottom-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .member-workspace-toolbar {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 760px) {
+  .member-workspace-topbar {
+    margin: -18px -14px 0;
+    padding: 14px;
+  }
+
+  .member-workspace-hero,
+  .workspace-tabs,
+  .workspace-requirement-row,
+  .workspace-artifact-row,
+  .workspace-task-row,
+  .workspace-comment {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+}

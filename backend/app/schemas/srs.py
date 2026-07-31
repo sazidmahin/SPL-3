@@ -15,7 +15,7 @@ ClarificationStatus = Literal["not_required", "pending", "clarified"]
 
 class RequirementInputCreateRequest(BaseModel):
     title: str = Field(min_length=1, max_length=255)
-    raw_text: str = Field(min_length=1, max_length=50000)
+    raw_text: str = Field(min_length=1, max_length=200000)
 
 
 class ClarifyingQuestion(BaseModel):
@@ -70,7 +70,7 @@ class ClarificationAnswerResponse(BaseModel):
 class SrsGenerateRequest(BaseModel):
     requirement_input_id: UUID | None = None
     title: str | None = Field(default=None, min_length=1, max_length=255)
-    raw_text: str | None = Field(default=None, min_length=1, max_length=50000)
+    raw_text: str | None = Field(default=None, min_length=1, max_length=200000)
     generate_class_diagram: bool = False
     diagram_methods: list[DiagramMethod] = Field(default_factory=list)
 

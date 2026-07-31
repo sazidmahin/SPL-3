@@ -5,6 +5,9 @@ import type { GenerationJob, SrsDocument } from '../../domains/srs/types'
 import type { Project } from '../../domains/project/types'
 import type { WorkspaceMembership } from '../../domains/workspace/types'
 
+const SRS_RAW_TEXT_LIMIT = 200000
+const formatCount = new Intl.NumberFormat('en-US')
+
 type SrsPanelProps = {
   activeWorkspace: WorkspaceMembership | undefined
   activeProject: Project | undefined
@@ -61,6 +64,8 @@ export function SrsPanel({
   onOpenGeneratedDiagram,
 }: SrsPanelProps) {
   const latestGenerationJob = generationJobs[0]
+  const rawTextCount = formatCount.format(srsRawText.length)
+  const rawTextLimit = formatCount.format(SRS_RAW_TEXT_LIMIT)
 
   return (
     <article className="panel srs-panel">
@@ -86,10 +91,14 @@ export function SrsPanel({
             Requirements
             <textarea
               value={srsRawText}
+              maxLength={SRS_RAW_TEXT_LIMIT}
               onChange={(event) => onSrsRawTextChange(event.target.value)}
-              rows={5}
+              rows={10}
               required
             />
+            <small className="srs-input-meter">
+              {rawTextCount} / {rawTextLimit} characters
+            </small>
           </label>
           <label className="inline-toggle">
             <input

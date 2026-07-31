@@ -1,0 +1,116 @@
+﻿.project-workspace {
+  display: grid;
+  gap: 14px;
+}
+
+.workspace-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.workspace-hero-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(82px, 1fr));
+  gap: 8px;
+}
+
+.summary-pill {
+  display: grid;
+  justify-items: center;
+  gap: 3px;
+  min-width: 82px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  background: var(--canvas);
+}
+
+.summary-pill strong {
+  color: var(--text-strong);
+  font-size: 20px;
+  line-height: 1;
+}
+
+.summary-pill span {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 760;
+  text-align: center;
+}
+
+.project-workspace-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 330px;
+  gap: 12px;
+  align-items: start;
+}
+
+.project-side-stack,
+.project-tools-grid {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.requirement-table {
+  display: grid;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.requirement-table-head,
+.requirement-table-row {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr) 96px 96px;
+  gap: 12px;
+  align-items: center;
+  min-height: 48px;
+  padding: 10px 12px;
+}
+
+.requirement-table-head {
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.requirement-table-row {
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.requirement-table-row strong {
+  color: var(--accent);
+}
+
+.requirement-table-row > span {
+  color: var(--text-strong);
+}
+
+@media (max-width: 1080px) {
+  .workspace-hero,
+  .project-workspace-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .workspace-hero-stats {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .workspace-hero-stats,
+  .requirement-table-head,
+  .requirement-table-row {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .requirement-table-head span:nth-child(2),
+  .requirement-table-row > span:first-of-type {
+    grid-column: 1 / -1;
+  }
+}

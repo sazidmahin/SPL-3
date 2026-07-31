@@ -26,6 +26,10 @@ class Settings(BaseSettings):
     openai_temperature: float = 0
     openai_timeout_seconds: int = 30
     openai_max_retries: int = 2
+    backend_cors_origins: str = Field(
+        default="http://localhost:5173,http://127.0.0.1:5173",
+        alias="BACKEND_CORS_ORIGINS",
+    )
     database_url: str = Field(
         default="postgresql+psycopg2://postgres:postgres@localhost:5432/srs_diagram_platform",
         alias="DATABASE_URL",
@@ -33,6 +37,10 @@ class Settings(BaseSettings):
     super_admin_email: str | None = None
     super_admin_password: str | None = None
     super_admin_full_name: str = "Platform Super Admin"
+
+    @property
+    def cors_origins(self) -> list[str]:
+        return [origin.strip() for origin in self.backend_cors_origins.split(",") if origin.strip()]
 
     model_config = SettingsConfigDict(
         env_file=".env",

@@ -1,0 +1,497 @@
+﻿.org-billing-settings-page {
+  display: grid;
+  gap: 18px;
+  min-width: 0;
+}
+
+.org-billing-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.org-billing-header span {
+  color: #6d28d9;
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.org-billing-header h1 {
+  margin: 5px 0 6px;
+  color: #0f172a;
+  font-size: 31px;
+  line-height: 1.12;
+}
+
+.org-billing-header p {
+  color: #64748b;
+}
+
+.org-billing-tabs {
+  display: flex;
+  gap: 8px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.org-billing-tabs button {
+  position: relative;
+  min-height: 44px;
+  border: 0;
+  background: transparent;
+  color: #475569;
+  font: inherit;
+  font-weight: 830;
+}
+
+.org-billing-tabs button.active {
+  color: #6d28d9;
+}
+
+.org-billing-tabs button.active::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 3px;
+  border-radius: 999px;
+  background: #6d28d9;
+}
+
+.org-billing-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(380px, 0.95fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.org-billing-main,
+.workspace-settings-column {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+.current-plan-card,
+.usage-overview-admin-card,
+.credit-trend-card,
+.payment-method-card,
+.invoice-history-card,
+.workspace-settings-card,
+.security-settings-card,
+.default-workspace-card {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #e1e6ef;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: rgba(15, 23, 42, 0.045) 0 10px 24px;
+}
+
+.current-plan-card > header,
+.usage-overview-admin-card > header,
+.credit-trend-card > header,
+.payment-method-card > header,
+.invoice-history-card > header,
+.workspace-settings-card > header,
+.security-settings-card > header,
+.default-workspace-card > header,
+.current-plan-card > header > div,
+.usage-overview-admin-card > header > div,
+.credit-trend-card > header > div,
+.payment-method-card > header > div,
+.invoice-history-card > header > div,
+.workspace-settings-card > header > div,
+.security-settings-card > header > div,
+.default-workspace-card > header > div,
+.current-plan-body,
+.current-plan-body ul li,
+.admin-usage-body,
+.usage-key,
+.payment-method-row,
+.invoice-row,
+.settings-toggle-row,
+.logo-upload-button {
+  display: flex;
+  align-items: center;
+}
+
+.current-plan-card > header,
+.usage-overview-admin-card > header,
+.credit-trend-card > header,
+.payment-method-card > header,
+.invoice-history-card > header,
+.workspace-settings-card > header,
+.security-settings-card > header,
+.default-workspace-card > header {
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 56px;
+  padding: 0 18px;
+  border-bottom: 1px solid #edf2f7;
+}
+
+.current-plan-card > header > div,
+.usage-overview-admin-card > header > div,
+.credit-trend-card > header > div,
+.payment-method-card > header > div,
+.invoice-history-card > header > div,
+.workspace-settings-card > header > div,
+.security-settings-card > header > div,
+.default-workspace-card > header > div {
+  gap: 9px;
+  color: #6d28d9;
+}
+
+.org-billing-settings-page h2 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 17px;
+  font-weight: 850;
+}
+
+.current-plan-card header button,
+.usage-overview-admin-card header button,
+.credit-trend-card header button,
+.payment-method-card header button,
+.invoice-history-card header button,
+.default-workspace-card form > button,
+.logo-upload-button {
+  gap: 7px;
+  min-height: 32px;
+  border: 1px solid #dfe5ee;
+  border-radius: 7px;
+  background: #ffffff;
+  color: #6d28d9;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 830;
+}
+
+.current-plan-body {
+  justify-content: space-between;
+  gap: 20px;
+  padding: 20px;
+}
+
+.current-plan-body strong {
+  color: #0f172a;
+  font-size: 28px;
+}
+
+.current-plan-body p {
+  margin-top: 6px;
+  color: #6d28d9;
+  font-size: 18px;
+  font-weight: 850;
+}
+
+.current-plan-body span {
+  display: block;
+  margin-top: 4px;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 760;
+}
+
+.current-plan-body ul {
+  display: grid;
+  gap: 9px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.current-plan-body li {
+  gap: 8px;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 760;
+}
+
+.current-plan-body li svg {
+  color: #16a34a;
+}
+
+.admin-usage-body {
+  gap: 22px;
+  padding: 20px;
+}
+
+.admin-usage-ring {
+  display: grid;
+  place-items: center;
+  width: 150px;
+  height: 150px;
+  border-radius: 999px;
+  flex: 0 0 auto;
+}
+
+.admin-usage-ring > div {
+  display: grid;
+  place-items: center;
+  width: 104px;
+  height: 104px;
+  border-radius: 999px;
+  background: #ffffff;
+  text-align: center;
+}
+
+.admin-usage-ring strong {
+  color: #0f172a;
+  font-size: 28px;
+  line-height: 1;
+}
+
+.admin-usage-ring span,
+.admin-usage-copy p {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.admin-usage-copy {
+  display: grid;
+  gap: 10px;
+}
+
+.admin-usage-copy > strong {
+  color: #0f172a;
+  font-size: 19px;
+}
+
+.usage-key {
+  gap: 8px;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 780;
+}
+
+.usage-key span {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  background: #6d28d9;
+}
+
+.usage-key.remaining span {
+  background: #ede9fe;
+}
+
+.trend-bars {
+  display: flex;
+  align-items: end;
+  gap: 12px;
+  height: 150px;
+  padding: 22px 22px 18px;
+}
+
+.trend-bars span {
+  flex: 1;
+  min-width: 16px;
+  border-radius: 6px 6px 0 0;
+  background: linear-gradient(180deg, #8b5cf6, #6d28d9);
+}
+
+.payment-method-row {
+  gap: 14px;
+  padding: 18px;
+}
+
+.payment-method-row > span {
+  display: grid;
+  place-items: center;
+  width: 58px;
+  height: 38px;
+  border-radius: 7px;
+  background: #1d4ed8;
+  color: #ffffff;
+  font-weight: 900;
+}
+
+.payment-method-row div {
+  flex: 1;
+}
+
+.payment-method-row strong,
+.invoice-row strong {
+  color: #0f172a;
+  font-size: 13px;
+}
+
+.payment-method-row small,
+.invoice-row small {
+  display: block;
+  margin-top: 3px;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.payment-method-row b,
+.invoice-row em {
+  border-radius: 999px;
+  padding: 5px 9px;
+  background: #dcfce7;
+  color: #15803d;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 850;
+}
+
+.invoice-table {
+  display: grid;
+  padding: 6px 18px 18px;
+}
+
+.invoice-row {
+  grid-template-columns: minmax(150px, 1fr) minmax(150px, 1fr) 72px 64px 34px;
+  gap: 12px;
+  min-height: 58px;
+  border-top: 1px solid #edf2f7;
+  color: #475569;
+  font-size: 13px;
+  font-weight: 760;
+}
+
+.invoice-row:first-child {
+  border-top: 0;
+}
+
+.invoice-row button {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 7px;
+  background: #f8fafc;
+  color: #64748b;
+}
+
+.workspace-settings-card form,
+.default-workspace-card form {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+}
+
+.workspace-settings-card label,
+.default-workspace-card label {
+  display: grid;
+  gap: 7px;
+}
+
+.workspace-settings-card label span,
+.default-workspace-card label span {
+  color: #334155;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.workspace-settings-card input,
+.workspace-settings-card select,
+.default-workspace-card select {
+  width: 100%;
+  min-height: 40px;
+  border: 1px solid #dfe5ee;
+  border-radius: 7px;
+  padding: 0 11px;
+  background: #ffffff;
+  color: #0f172a;
+  font: inherit;
+}
+
+.logo-upload-button {
+  justify-content: center;
+  color: #334155;
+}
+
+.settings-toggle-list {
+  display: grid;
+  padding: 8px 18px 18px;
+}
+
+.settings-toggle-row {
+  gap: 12px;
+  min-height: 54px;
+  border-top: 1px solid #edf2f7;
+}
+
+.settings-toggle-row:first-child {
+  border-top: 0;
+}
+
+.settings-toggle-row > span {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 7px;
+  background: #ede9fe;
+  color: #6d28d9;
+}
+
+.settings-toggle-row strong {
+  flex: 1;
+  color: #0f172a;
+  font-size: 13px;
+}
+
+.settings-toggle-row button {
+  position: relative;
+  width: 42px;
+  height: 24px;
+  border: 0;
+  border-radius: 999px;
+  background: #cbd5e1;
+}
+
+.settings-toggle-row button i {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: #ffffff;
+  transition: transform 0.18s ease;
+}
+
+.settings-toggle-row button.enabled {
+  background: #6d28d9;
+}
+
+.settings-toggle-row button.enabled i {
+  transform: translateX(18px);
+}
+
+.default-workspace-card form > button {
+  justify-content: center;
+  border-color: #6d28d9;
+  background: #6d28d9;
+  color: #ffffff;
+}
+
+@media (max-width: 1320px) {
+  .org-billing-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .org-billing-header,
+  .current-plan-body,
+  .admin-usage-body,
+  .invoice-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .org-billing-tabs {
+    overflow-x: auto;
+  }
+
+  .admin-usage-ring {
+    width: 132px;
+    height: 132px;
+  }
+}

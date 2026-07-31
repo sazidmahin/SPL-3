@@ -6,6 +6,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.db import models  # noqa: F401
 from app.db.base import Base
+from app.services.llm_service import DeterministicLlmClient
 from app.services.srs_service import (
     build_srs_document,
     classify_requirements,
@@ -31,6 +32,7 @@ def test_srs_pipeline_components_create_expected_shape() -> None:
         project_id = uuid4()
         job_id = uuid4()
         raw_text = "Users submit claims. The system must respond within two seconds. Admins approve claims."
+        client = DeterministicLlmClient()
 
         summary = generate_summary_sections(
             session,
@@ -38,6 +40,7 @@ def test_srs_pipeline_components_create_expected_shape() -> None:
             project_id=project_id,
             generation_job_id=job_id,
             raw_text=raw_text,
+            client=client,
         )
         extracted = extract_structured_requirements(
             session,
@@ -45,6 +48,7 @@ def test_srs_pipeline_components_create_expected_shape() -> None:
             project_id=project_id,
             generation_job_id=job_id,
             raw_text=raw_text,
+            client=client,
         )
         classified = classify_requirements(
             session,
@@ -52,11 +56,13 @@ def test_srs_pipeline_components_create_expected_shape() -> None:
             project_id=project_id,
             generation_job_id=job_id,
             requirements=extracted,
+            client=client,
         )
         markdown, content_json = build_srs_document("Claims MVP", summary, classified)
 
-        assert summary["introduction"] == "Users submit claims"
+        assert summary["introduction"]
         assert extracted[0].requirement_code == "REQ-001"
+        assert extracted[0].source_trace == "Users submit claims"
         assert any(item.requirement_type == "non_functional" for item in classified)
         assert "## Non-Functional Requirements" in markdown
         assert content_json["traceability"][0]["requirement_code"] == "REQ-001"

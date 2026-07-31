@@ -17,6 +17,13 @@
   margin-top: 16px;
 }
 
+.srs-input-meter {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-align: right;
+}
+
 .inline-toggle {
   display: flex !important;
   grid-template-columns: none !important;
