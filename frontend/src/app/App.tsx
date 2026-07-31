@@ -1,25 +1,35 @@
 import { useEffect, useState } from 'react'
 import '../App.css'
 import {
+  Activity,
   BarChart3,
+  Bell,
   Bot,
+  ChevronLeft,
+  ChevronRight,
   BriefcaseBusiness,
   Building2,
   CircleDollarSign,
   CreditCard,
   FileClock,
   FileText,
+  Flag,
+  Headphones,
+  HeartPulse,
+  LockKeyhole,
+  Plug,
+  ReceiptText,
+  ShieldAlert,
   Users,
   Folder,
   Home,
-  LayoutDashboard,
   LogOut,
+  MessageSquare,
   Network,
-  ServerCog,
+  RefreshCcw,
   Settings,
   UserCircle,
   WandSparkles,
-  WalletCards,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { AiGenerationJobs } from '../features/aiJobs/AiGenerationJobs'
@@ -29,7 +39,7 @@ import { CreateDiagramPanel, DiagramsPanel } from '../features/diagram/DiagramPa
 import { MemberDashboard } from '../features/dashboard/MemberDashboard'
 import { DiagramEditorMock } from '../features/diagramEditor/DiagramEditor'
 import { ProjectDirectory } from '../features/project/ProjectDirectory'
-import { OrganizationAdminDashboard } from '../features/organizationAdmin/OrganizationAdminDashboard'
+import { PromptTemplatesPage } from '../features/promptTemplates/PromptTemplatesPage'
 import { OrganizationBillingSettings } from '../features/organizationAdmin/OrganizationBillingSettings'
 import { OrganizationMembersRoles } from '../features/organizationAdmin/OrganizationMembersRoles'
 import { OrganizationMemberDashboard } from '../features/organizationMember/OrganizationMemberDashboard'
@@ -68,6 +78,14 @@ type SectionId =
   | 'settings'
   | 'platform-settings'
   | 'audit-logs'
+  | 'feature-flags'
+  | 'integrations'
+  | 'security-events'
+  | 'roles-permissions'
+  | 'system-health'
+  | 'notifications'
+  | 'activity-logs'
+  | 'support-tickets'
   | 'admin'
 
 const validSections = new Set<SectionId>([
@@ -93,6 +111,14 @@ const validSections = new Set<SectionId>([
   'settings',
   'platform-settings',
   'audit-logs',
+  'feature-flags',
+  'integrations',
+  'security-events',
+  'roles-permissions',
+  'system-health',
+  'notifications',
+  'activity-logs',
+  'support-tickets',
   'admin',
 ])
 
@@ -115,6 +141,7 @@ export function App() {
   const controller = useAppController()
   const { session, error, signOut } = controller.shell
   const [activeSection, setActiveSection] = useState<SectionId>(() => sectionFromHash())
+  const [isAdminSidebarCollapsed, setIsAdminSidebarCollapsed] = useState(false)
 
   useEffect(() => {
     const handleHashChange = () => setActiveSection(sectionFromHash())
@@ -137,6 +164,7 @@ export function App() {
     roleLabel === 'organization_admin' ||
     (activeWorkspace?.workspace.type === 'organization' && ['owner', 'admin'].includes(roleLabel))
   const isOrganizationMember = activeWorkspace?.workspace.type === 'organization' && !isOrganizationAdmin && !isSuperAdmin
+  const isPlatformAdminShell = canAccessAdmin
   const memberNavItems: Array<{ id: SectionId; label: string; icon: LucideIcon }> = [
     { id: 'overview', label: 'Dashboard', icon: Home },
     { id: 'projects', label: 'Projects', icon: Folder },
@@ -155,16 +183,52 @@ export function App() {
     { id: 'requirements', label: 'Requirements', icon: BriefcaseBusiness },
     { id: 'exports', label: 'Exports', icon: FileText },
   ]
-  const superAdminNavItems: Array<{ id: SectionId; label: string; icon: LucideIcon }> = [
-    { id: 'overview', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'users', label: 'Users', icon: Users },
-    { id: 'workspaces', label: 'Workspaces', icon: Building2 },
-    { id: 'plans', label: 'Plans', icon: WalletCards },
-    { id: 'subscriptions', label: 'Subscriptions', icon: CreditCard },
-    { id: 'ai-jobs', label: 'AI Generation Jobs', icon: Bot },
-    { id: 'llm-calls', label: 'LLM / API Call Logs', icon: BarChart3 },
-    { id: 'platform-settings', label: 'Platform Settings', icon: ServerCog },
-    { id: 'audit-logs', label: 'Admin Audit Logs', icon: FileClock },
+  const superAdminNavGroups: Array<{ title: string; items: Array<{ id: SectionId; label: string; icon: LucideIcon }> }> = [
+    {
+      title: 'Management',
+      items: [
+        { id: 'overview', label: 'Dashboard', icon: Home },
+        { id: 'users', label: 'Users', icon: Users },
+        { id: 'workspaces', label: 'Workspaces', icon: Building2 },
+        { id: 'plans', label: 'Plans', icon: CreditCard },
+        { id: 'subscriptions', label: 'Subscriptions', icon: RefreshCcw },
+        { id: 'invoices', label: 'Invoices & Payments', icon: ReceiptText },
+      ],
+    },
+    {
+      title: 'Analytics',
+      items: [
+        { id: 'ai-jobs', label: 'Generation Jobs', icon: Activity },
+        { id: 'llm-calls', label: 'LLM Calls', icon: Bot },
+        { id: 'usage', label: 'Usage Analytics', icon: BarChart3 },
+      ],
+    },
+    {
+      title: 'Configuration',
+      items: [
+        { id: 'prompt-templates', label: 'Prompt Templates', icon: MessageSquare },
+        { id: 'platform-settings', label: 'Platform Settings', icon: Settings },
+        { id: 'feature-flags', label: 'Feature Flags', icon: Flag },
+        { id: 'integrations', label: 'Integrations', icon: Plug },
+      ],
+    },
+    {
+      title: 'Security',
+      items: [
+        { id: 'audit-logs', label: 'Admin Audit Logs', icon: FileClock },
+        { id: 'security-events', label: 'Security Events', icon: ShieldAlert },
+        { id: 'roles-permissions', label: 'Roles & Permissions', icon: LockKeyhole },
+      ],
+    },
+    {
+      title: 'Support',
+      items: [
+        { id: 'system-health', label: 'System Health', icon: HeartPulse },
+        { id: 'notifications', label: 'Notifications', icon: Bell },
+        { id: 'activity-logs', label: 'Activity Logs', icon: FileText },
+        { id: 'support-tickets', label: 'Support Tickets', icon: Headphones },
+      ],
+    },
   ]
   const adminNavItems: Array<{ id: SectionId; label: string; icon: LucideIcon }> = [
     { id: 'overview', label: 'Dashboard', icon: Home },
@@ -176,7 +240,7 @@ export function App() {
     { id: 'prompt-templates', label: 'Prompt Templates', icon: BriefcaseBusiness },
     { id: 'billing', label: 'Billing', icon: CircleDollarSign },
   ]
-  const primaryNavItems = isSuperAdmin ? superAdminNavItems : isOrganizationAdmin ? adminNavItems : isOrganizationMember ? organizationMemberNavItems : memberNavItems
+  const primaryNavItems = isOrganizationAdmin ? adminNavItems : isOrganizationMember ? organizationMemberNavItems : memberNavItems
   const billingNavItems: Array<{ id: SectionId; label: string; icon: LucideIcon }> = isSuperAdmin
     ? []
     : isOrganizationAdmin
@@ -248,6 +312,10 @@ export function App() {
         )
       }
 
+      if (activeSection === 'prompt-templates') {
+        return <PromptTemplatesPage />
+      }
+
       return (
         <SuperAdminPlatformDashboard
           user={currentUser}
@@ -260,6 +328,21 @@ export function App() {
           usage={controller.billingPanel.usage}
         />
       )
+    }
+
+    if (!isSuperAdmin && canAccessAdmin) {
+      const adminPlatformSection = superAdminSectionFrom(activeSection)
+
+      if (adminPlatformSection) {
+        return (
+          <SuperAdminPlatformPage
+            section={adminPlatformSection}
+            user={currentUser}
+            activeWorkspace={activeWorkspace}
+            generationJobs={controller.srsPanel.generationJobs}
+          />
+        )
+      }
     }
 
     if (activeSection === 'projects' && isOrganizationMember) {
@@ -345,6 +428,10 @@ export function App() {
       )
     }
 
+    if (activeSection === 'prompt-templates' && isOrganizationAdmin) {
+      return <PromptTemplatesPage />
+    }
+
     if (activeSection === 'settings' && isOrganizationAdmin) {
       return (
         <OrganizationBillingSettings
@@ -355,7 +442,7 @@ export function App() {
       )
     }
 
-    if (['profile', 'settings', 'admin', 'members', 'prompt-templates'].includes(activeSection)) {
+    if (['profile', 'settings', 'admin', 'members'].includes(activeSection)) {
       return (
         <section className="workbench-layout">
           <div className="workbench-main"><SettingsProfile user={currentUser} /></div>
@@ -366,7 +453,7 @@ export function App() {
 
     if (isOrganizationAdmin) {
       return (
-        <OrganizationAdminDashboard
+        <SuperAdminPlatformDashboard
           user={currentUser}
           activeWorkspace={activeWorkspace}
           projects={controller.projectsPanel.projects}
@@ -419,38 +506,84 @@ export function App() {
     return (
       <a className={navLinkClass(item.id)} href={`#${item.id}`} key={item.id}>
         <Icon size={20} />
-        {item.label}
+        <span className="nav-item-label">{item.label}</span>
       </a>
     )
   }
 
+  function renderSuperAdminNav() {
+    return superAdminNavGroups.map((group) => (
+      <section className="admin-sidebar-group" key={group.title}>
+        <h2>{group.title}</h2>
+        <div>
+          {group.items.map(renderNavItem)}
+        </div>
+      </section>
+    ))
+  }
+
   return (
-    <main className="platform-shell target-user-shell">
+    <main className={`platform-shell target-user-shell ${isPlatformAdminShell ? 'platform-admin-shell' : ''} ${isPlatformAdminShell && isAdminSidebarCollapsed ? 'platform-admin-shell-collapsed' : ''}`}>
       <aside className="platform-sidebar" aria-label="Primary">
+        {isPlatformAdminShell ? (
+          <button
+            className="admin-sidebar-toggle"
+            type="button"
+            aria-label={isAdminSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            onClick={() => setIsAdminSidebarCollapsed((collapsed) => !collapsed)}
+          >
+            {isAdminSidebarCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
+          </button>
+        ) : null}
         <div className="brand-lockup">
           <span className="brand-mark"><Network size={22} /></span>
           <div>
             <strong>SRS Platform</strong>
+            {isPlatformAdminShell ? <small>Platform Admin</small> : null}
           </div>
         </div>
 
         <nav className="sidebar-nav" aria-label="Dashboard sections">
-          {primaryNavItems.map(renderNavItem)}
-          <span className="sidebar-divider" />
-          {billingNavItems.map(renderNavItem)}
-          {billingNavItems.length > 0 ? <span className="sidebar-divider" /> : null}
-          {accountNavItems.map(renderNavItem)}
-          {canAccessAdmin && !isSuperAdmin ? renderNavItem({ id: 'admin', label: 'Admin', icon: Settings }) : null}
+          {isPlatformAdminShell ? (
+            renderSuperAdminNav()
+          ) : (
+            <>
+              {primaryNavItems.map(renderNavItem)}
+              <span className="sidebar-divider" />
+              {billingNavItems.map(renderNavItem)}
+              {billingNavItems.length > 0 ? <span className="sidebar-divider" /> : null}
+              {accountNavItems.map(renderNavItem)}
+              {canAccessAdmin ? renderNavItem({ id: 'admin', label: 'Admin', icon: Settings }) : null}
+              <button className="sidebar-logout-button" type="button" onClick={signOut}>
+                <LogOut size={20} />
+                Logout
+              </button>
+            </>
+          )}
         </nav>
 
         <div className="sidebar-context pro-plan-card">
-          <span>{isSuperAdmin ? 'Platform Control' : 'Pro Plan'}</span>
-          <p>{isSuperAdmin ? 'All systems operational' : 'Renews on Jun 18, 2025'}</p>
-          <button type="button">{isSuperAdmin ? 'Collapse' : 'Manage Subscription'}</button>
-          <button className="sidebar-logout-button" type="button" onClick={signOut}>
-            <LogOut size={17} />
-            Logout
-          </button>
+          {isPlatformAdminShell ? (
+            <div className="admin-profile-stack">
+              <div className="admin-profile-card">
+                <span>{isSuperAdmin ? 'SA' : 'PA'}</span>
+                <div>
+                  <strong>{isSuperAdmin ? 'Super Admin' : 'Platform Admin'}</strong>
+                  <p>{currentUser.email || 'superadmin@srs.com'}</p>
+                </div>
+              </div>
+              <button className="admin-sidebar-logout" type="button" onClick={signOut}>
+                <LogOut size={18} />
+                <span>Logout</span>
+              </button>
+            </div>
+          ) : (
+            <>
+              <span>Pro Plan</span>
+              <p>Renews on Jun 18, 2025</p>
+              <button type="button">Manage Subscription</button>
+            </>
+          )}
         </div>
       </aside>
 
@@ -462,3 +595,22 @@ export function App() {
     </main>
   )
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

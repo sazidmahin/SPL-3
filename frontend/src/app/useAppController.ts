@@ -33,18 +33,6 @@ import { useProjectCreation } from './hooks/useProjectCreation'
 import { useWorkspaceCreation } from './hooks/useWorkspaceCreation'
 import { errorMessage } from './support/errors'
 import { PROJECT_STORAGE_KEY, DIAGRAM_STORAGE_KEY, WORKSPACE_STORAGE_KEY } from '../shared/storage'
-import {
-  mockDiagramDetail,
-  mockDiagrams,
-  mockGenerationJobs,
-  mockPlan,
-  mockProjects,
-  mockSession,
-  mockSrsDocuments,
-  mockSubscription,
-  mockUsage,
-  mockWorkspaceMemberships,
-} from './mockUserData'
 
 export function useAppController() {
   const [session, setSession] = useState<AuthSession | null>(() => readStoredSession())
@@ -550,35 +538,6 @@ export function useAppController() {
     }
   }
 
-  function loginWithMockUser() {
-    const workspaceId = mockWorkspaceMemberships[0].workspace.id
-    const projectId = mockProjects[0].id
-    const diagramId = mockDiagrams[0].id
-
-    setSession(mockSession)
-    setWorkspaces(mockWorkspaceMemberships)
-    setActiveWorkspaceId(workspaceId)
-    setProjects(mockProjects)
-    setActiveProjectId(projectId)
-    setDiagrams(mockDiagrams)
-    setActiveDiagramId(diagramId)
-    setDiagramVersions([mockDiagramDetail.current])
-    setDiagramXml(mockDiagramDetail.current.drawio_xml)
-    setActiveReviewDiagrams([mockDiagramDetail])
-    setGenerationJobs(mockGenerationJobs)
-    setSrsDocuments(mockSrsDocuments)
-    setActiveSrsDocument(mockSrsDocuments[0])
-    setPlans([mockPlan])
-    setSubscription(mockSubscription)
-    setUsage(mockUsage)
-    setError(null)
-    authForm.clearPassword()
-
-    writeStoredSession(mockSession)
-    window.localStorage.setItem(WORKSPACE_STORAGE_KEY, workspaceId)
-    window.localStorage.setItem(PROJECT_STORAGE_KEY, projectId)
-    window.localStorage.setItem(DIAGRAM_STORAGE_KEY, diagramId)
-  }
   async function handleAuthenticated(nextSession: AuthSession) {
     setSession(nextSession)
     writeStoredSession(nextSession)
@@ -668,7 +627,6 @@ export function useAppController() {
       onVerificationCodeChange: authForm.setVerificationCode,
       onSubmit: authForm.submitAuth,
       onVerifyEmail: authForm.submitVerification,
-      onMockLogin: loginWithMockUser,
     },
     workspacePanel: {
       workspaces,

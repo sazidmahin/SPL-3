@@ -1,5 +1,33 @@
 import type { DiagramDetail } from '../diagram/types'
 
+export type ClarificationStatus = 'not_required' | 'pending' | 'clarified'
+
+export type ClarifyingQuestion = {
+  id: string
+  question: string
+  reason: string
+}
+
+export type ClarificationAnswer = {
+  question_id: string
+  answer: string
+}
+
+export type RequirementInput = {
+  id: string
+  workspace_id: string
+  project_id: string
+  title: string
+  raw_text: string
+  clarification_status: ClarificationStatus
+  clarifying_questions: ClarifyingQuestion[]
+  clarification_answers: ClarificationAnswer[]
+  refined_text: string | null
+  refinement_metadata: Record<string, unknown> | null
+  created_by_user_id: string
+  created_at: string
+}
+
 export type GenerationJob = {
   id: string
   workspace_id: string
@@ -53,7 +81,20 @@ export type SrsDocument = {
 }
 
 export type SrsGenerateResponse = {
+  requirement_input: RequirementInput
   job: GenerationJob
   srs_document: SrsDocument
+  diagrams: DiagramDetail[]
+}
+
+export type SrsPipelineResponse = {
+  status: 'needs_clarification' | 'completed'
+  requirement_input: RequirementInput
+  needs_clarification: boolean
+  clarifying_questions: ClarifyingQuestion[]
+  draft_requirement: string | null
+  refined_requirement: string | null
+  job: GenerationJob | null
+  srs_document: SrsDocument | null
   diagrams: DiagramDetail[]
 }

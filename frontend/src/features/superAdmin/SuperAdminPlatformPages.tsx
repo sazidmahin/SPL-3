@@ -2,7 +2,6 @@
   AlertTriangle,
   ArrowDownRight,
   ArrowUpRight,
-  Ban,
   Bell,
   Bot,
   Building2,
@@ -10,6 +9,9 @@
   ChevronDown,
   CreditCard,
   Database,
+  Download,
+  Edit3,
+  ExternalLink,
   Eye,
   FileClock,
   Filter,
@@ -18,17 +20,23 @@
   KeyRound,
   LockKeyhole,
   MoreHorizontal,
+  PauseCircle,
+  Plus,
   RefreshCw,
   Search,
   ServerCog,
   ShieldCheck,
   SlidersHorizontal,
   Sparkles,
+  UserCheck,
   UserCog,
+  UserPlus,
   Users,
+  UserX,
   WalletCards,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
+import { Cell, Pie, PieChart, ResponsiveContainer } from 'recharts'
 import type { ReactNode } from 'react'
 import type { AuthUser } from '../../domains/auth/types'
 import type { GenerationJob } from '../../domains/srs/types'
@@ -55,12 +63,53 @@ type SuperAdminPlatformPageProps = {
 type Tone = 'violet' | 'emerald' | 'blue' | 'amber' | 'rose' | 'slate' | 'cyan'
 
 const users = [
-  { name: 'Sarah Johnson', email: 'sarah.johnson@innovate.io', role: 'Organization Owner', workspace: 'Innovate Labs', status: 'Active', joined: 'May 28, 2025', tone: 'emerald' as const },
-  { name: 'Marcus Chen', email: 'marcus@nextgen.ai', role: 'Organization Admin', workspace: 'NextGen Analytics', status: 'Active', joined: 'May 26, 2025', tone: 'blue' as const },
-  { name: 'Aven Wong', email: 'aven@brightpath.com', role: 'Member', workspace: 'BrightPath Solutions', status: 'Invited', joined: 'May 25, 2025', tone: 'amber' as const },
-  { name: 'Jerin Mason', email: 'jerin@oldco.com', role: 'Viewer', workspace: 'OldCo Solutions', status: 'Suspended', joined: 'May 21, 2025', tone: 'rose' as const },
+  { name: 'Super Admin', email: 'superadmin@srs.com', role: 'Super Admin', workspace: 'Platform', status: 'Active', lastActive: '2m ago', joined: 'Jan 1, 2024', avatar: 'SA', tone: 'violet' as const },
+  { name: 'Jane Smith', email: 'jane.smith@acmecorp.com', role: 'Org Admin', workspace: 'Acme Corp', status: 'Active', lastActive: '15m ago', joined: 'Mar 12, 2024', avatar: 'JS', tone: 'blue' as const },
+  { name: 'Robert Johnson', email: 'robert.j@globex.com', role: 'Org Admin', workspace: 'Globex Inc.', status: 'Active', lastActive: '1h ago', joined: 'Jan 18, 2024', avatar: 'RJ', tone: 'blue' as const },
+  { name: 'Emily Chen', email: 'emily.chen@initech.com', role: 'Org Member', workspace: 'Initech', status: 'Active', lastActive: '2h ago', joined: 'Apr 2, 2024', avatar: 'EC', tone: 'cyan' as const },
+  { name: 'Michael Brown', email: 'michael.b@soylent.com', role: 'Org Member', workspace: 'Soylent Corp', status: 'Pending', lastActive: '-', joined: 'May 20, 2024', avatar: 'MB', tone: 'amber' as const },
+  { name: 'Sarah Davis', email: 'sarah.d@umbrella.com', role: 'Org Admin', workspace: 'Umbrella Corp', status: 'Active', lastActive: '3h ago', joined: 'Feb 28, 2024', avatar: 'SD', tone: 'blue' as const },
+  { name: 'David Wilson', email: 'david.w@starkindustries.com', role: 'Org Member', workspace: 'Stark Industries', status: 'Suspended', lastActive: '2d ago', joined: 'Nov 11, 2023', avatar: 'DW', tone: 'rose' as const },
+  { name: 'Lisa Martinez', email: 'lisa.m@wayneenterprises.com', role: 'Org Member', workspace: 'Wayne Enterprises', status: 'Active', lastActive: '5m ago', joined: 'Apr 5, 2024', avatar: 'LM', tone: 'cyan' as const },
+  { name: 'James Taylor', email: 'james.t@hooli.com', role: 'Org Admin', workspace: 'Hooli', status: 'Active', lastActive: '30m ago', joined: 'Jan 29, 2024', avatar: 'JT', tone: 'blue' as const },
+  { name: 'Jennifer Lee', email: 'jennifer.lee@cyberdyne.com', role: 'Org Member', workspace: 'Cyberdyne Systems', status: 'Pending', lastActive: '-', joined: 'May 22, 2024', avatar: 'JL', tone: 'amber' as const },
 ]
 
+const roleDistribution = [
+  { name: 'Super Admin', value: 12, share: '0.1%', color: '#6335f5' },
+  { name: 'Org Admin', value: 1245, share: '9.7%', color: '#4a9cff' },
+  { name: 'Org Member', value: 10890, share: '84.9%', color: '#45c4b8' },
+  { name: 'Pending', value: 412, share: '3.2%', color: '#ffb22d' },
+  { name: 'Suspended', value: 246, share: '1.9%', color: '#ef476f' },
+]
+
+const recentInvitations = [
+  { name: 'Michael Brown', email: 'michael.b@soylent.com', role: 'Org Member', status: 'Pending', invited: 'Invited 3h ago', avatar: 'MB', tone: 'cyan' as const },
+  { name: 'Jennifer Lee', email: 'jennifer.lee@cyberdyne.com', role: 'Org Member', status: 'Pending', invited: 'Invited 6h ago', avatar: 'JL', tone: 'blue' as const },
+  { name: 'Alex Parker', email: 'alex.p@starkindustries.com', role: 'Org Member', status: 'Pending', invited: 'Invited 1d ago', avatar: 'AP', tone: 'violet' as const },
+]
+
+const accountOverview = [
+  { label: 'Email Verified', value: '11,982 (93.3%)', icon: CheckCircle2, tone: 'emerald' as const },
+  { label: 'MFA Enabled', value: '9,104 (70.9%)', icon: ShieldCheck, tone: 'emerald' as const },
+  { label: 'Pending Invitations', value: '412 (3.2%)', icon: RefreshCw, tone: 'slate' as const },
+  { label: 'Suspended Accounts', value: '246 (1.9%)', icon: AlertTriangle, tone: 'rose' as const },
+]
+
+const recentUserEvents = [
+  { label: 'David Wilson was suspended', time: '2 hours ago', icon: AlertTriangle, tone: 'rose' as const },
+  { label: 'Michael Brown invited', time: '3 hours ago', icon: UserPlus, tone: 'emerald' as const },
+  { label: 'Lisa Martinez role updated', time: '5 hours ago', icon: ShieldCheck, tone: 'cyan' as const },
+  { label: 'Jennifer Lee invited', time: '6 hours ago', icon: UserCog, tone: 'blue' as const },
+  { label: 'Robert Johnson updated profile', time: '7 hours ago', icon: UserCheck, tone: 'blue' as const },
+]
+
+const userQuickActions = [
+  { label: 'Invite User', detail: 'Send invitation to new user', icon: UserPlus },
+  { label: 'Review Suspended Accounts', detail: 'Manage suspended user accounts', icon: PauseCircle },
+  { label: 'Manage Roles', detail: 'Create and edit user roles', icon: ShieldCheck },
+  { label: 'Export Users', detail: 'Download users list', icon: Download },
+]
 const workspaces = [
   { name: 'Innovate Labs', owner: 'Sarah Johnson', plan: 'Enterprise', members: 634, usage: '75,210', status: 'Active', tone: 'violet' as const },
   { name: 'NextGen Analytics', owner: 'Marcus Chen', plan: 'Enterprise', members: 275, usage: '67,432', status: 'Active', tone: 'blue' as const },
@@ -160,36 +209,153 @@ function renderSection(section: SuperAdminSection, generationJobs: GenerationJob
 }
 
 function UsersPage() {
+  const selectedUser = users[0]
+
   return (
-    <PageBody
-      stats={[
-        { label: 'Total Users', value: '12,845', detail: '248 new this month', icon: Users, tone: 'violet' },
-        { label: 'Platform Admins', value: '326', detail: 'highest access users', icon: ShieldCheck, tone: 'blue' },
-        { label: 'Active Members', value: '12,248', detail: '96.3% active', icon: CheckCircle2, tone: 'emerald' },
-        { label: 'Suspended', value: '24', detail: 'security restricted', icon: Ban, tone: 'rose' },
-      ]}
-      tabs={['All Users', 'Admins', 'Organization Owners', 'Invited', 'Suspended']}
-    >
-      <SectionPanel title="User Directory" icon={Users} action="Filter">
-        <Toolbar placeholder="Search user, email, role or workspace" />
-        <div className="super-data-table users-table" role="table" aria-label="Platform users">
-          <div className="super-table-head" role="row"><span>User</span><span>Role</span><span>Workspace</span><span>Status</span><span>Joined</span><span /></div>
-          {users.map((item) => (
-            <article className="super-table-row" role="row" key={item.email}>
-              <span><Avatar name={item.name} tone={item.tone} /><b>{item.name}</b><small>{item.email}</small></span>
-              <span>{item.role}</span>
-              <span>{item.workspace}</span>
-              <span><Status tone={item.tone}>{item.status}</Status></span>
-              <span>{item.joined}</span>
-              <span><IconButton icon={MoreHorizontal} label="User actions" /></span>
+    <section className="platform-users-page">
+      <div className="users-filter-row">
+        <label><Search size={18} /><span>Search by name or email...</span></label>
+        <button type="button">All Roles <ChevronDown size={16} /></button>
+        <button type="button">All Statuses <ChevronDown size={16} /></button>
+        <button type="button"><Filter size={16} /> Filters</button>
+        <button className="users-add-button" type="button"><Plus size={18} /> Add User</button>
+      </div>
+
+      <div className="users-kpi-row">
+        <UserMetric icon={Users} label="Total Users" value="12,842" delta="8.4%" compare="vs last 30 days" tone="violet" />
+        <UserMetric icon={UserCheck} label="Active Users" value="11,032" delta="7.1%" compare="vs last 30 days" tone="blue" />
+        <UserMetric icon={UserX} label="Suspended Users" value="246" delta="3.2%" compare="vs last 30 days" tone="rose" negative />
+        <UserMetric icon={UserPlus} label="New This Month" value="412" delta="12.6%" compare="vs last month" tone="emerald" />
+      </div>
+
+      <div className="users-management-grid">
+        <section className="users-table-card">
+          <header><h2>Users <span>(12,842)</span></h2></header>
+          <div className="users-table" role="table" aria-label="Users management table">
+            <div className="users-table-head" role="row">
+              <span>Name</span><span>Email</span><span>Role</span><span>Workspace Type</span><span>Status</span><span>Last Active</span><span>Joined Date</span><span>Actions</span>
+            </div>
+            {users.map((item) => (
+              <article className="users-table-row" role="row" key={item.email}>
+                <span><UserAvatar label={item.avatar} tone={item.tone} /><strong>{item.name}</strong></span>
+                <span>{item.email}</span>
+                <span><UserPill tone={item.role === 'Super Admin' ? 'violet' : item.role === 'Org Admin' ? 'blue' : 'cyan'}>{item.role}</UserPill></span>
+                <span>{item.workspace}</span>
+                <span><UserPill tone={item.status === 'Active' ? 'emerald' : item.status === 'Pending' ? 'amber' : 'rose'}>{item.status}</UserPill></span>
+                <span>{item.lastActive !== '-' ? <i /> : null}{item.lastActive}</span>
+                <span>{item.joined}</span>
+                <span className="users-action-cell">
+                  <IconButton icon={Eye} label="View user" />
+                  <IconButton icon={item.status === 'Suspended' ? RefreshCw : Edit3} label="Edit user" />
+                  <IconButton icon={MoreHorizontal} label="More user actions" />
+                </span>
+              </article>
+            ))}
+          </div>
+          <footer className="users-table-footer">
+            <span>Showing 1 to 10 of 12,842 users</span>
+            <nav aria-label="Users pagination"><button type="button">‹</button><button type="button">‹</button><button className="active" type="button">1</button><button type="button">2</button><button type="button">3</button><button type="button">4</button><button type="button">5</button><span>...</span><button type="button">1,285</button><button type="button">›</button></nav>
+            <button type="button">10 / page <ChevronDown size={15} /></button>
+          </footer>
+        </section>
+
+        <aside className="users-side-stack">
+          <section className="selected-user-card">
+            <header><h2>Selected User Details</h2><button type="button" aria-label="Close details">×</button></header>
+            <div className="selected-user-head">
+              <UserAvatar label={selectedUser.avatar} tone="violet" large />
+              <div><strong>{selectedUser.name}</strong><small>{selectedUser.email}</small></div>
+              <UserPill tone="emerald">Active</UserPill>
+            </div>
+            <dl>
+              <div><dt>Role</dt><dd><b>Super Admin</b></dd></div>
+              <div><dt>Workspace</dt><dd>Platform</dd></div>
+              <div><dt>Joined Date</dt><dd>Jan 1, 2024</dd></div>
+              <div><dt>Last Active</dt><dd><i />2m ago</dd></div>
+              <div><dt>MFA Status</dt><dd><CheckCircle2 size={15} /> Enabled</dd></div>
+            </dl>
+            <button className="view-profile-button" type="button">View Full Profile <ExternalLink size={15} /></button>
+          </section>
+
+          <section className="role-distribution-card">
+            <h2>Role Distribution</h2>
+            <div className="role-distribution-body">
+              <div className="role-donut">
+                <ResponsiveContainer width="100%" height={210}>
+                  <PieChart>
+                    <Pie data={roleDistribution} dataKey="value" innerRadius={58} outerRadius={86} stroke="none">
+                      {roleDistribution.map((role) => <Cell fill={role.color} key={role.name} />)}
+                    </Pie>
+                  </PieChart>
+                </ResponsiveContainer>
+                <div><strong>12,842</strong><span>Total</span></div>
+              </div>
+              <div className="role-legend">
+                {roleDistribution.map((role) => <p key={role.name}><i style={{ background: role.color }} /><span>{role.name}</span><strong>{role.value.toLocaleString()} ({role.share})</strong></p>)}
+              </div>
+            </div>
+            <a href="#roles-permissions">View all roles <ChevronDown size={15} /></a>
+          </section>
+        </aside>
+      </div>
+
+      <div className="users-lower-grid">
+        <UsersInfoCard title="Recent Invitations" action="View all">
+          {recentInvitations.map((invite) => (
+            <article className="invitation-row" key={invite.email}>
+              <UserAvatar label={invite.avatar} tone={invite.tone} />
+              <div><strong>{invite.name}</strong><small>{invite.email}</small></div>
+              <UserPill tone="blue">{invite.role}</UserPill>
+              <UserPill tone="amber">{invite.status}</UserPill>
+              <time>{invite.invited}</time>
+              <MoreHorizontal size={16} />
             </article>
           ))}
+        </UsersInfoCard>
+
+        <UsersInfoCard title="Account Overview">
+          {accountOverview.map((item) => {
+            const Icon = item.icon
+            return <article className="account-row" key={item.label}><span className={`user-soft-${item.tone}`}><Icon size={16} /></span><strong>{item.label}</strong><em>{item.value}</em></article>
+          })}
+        </UsersInfoCard>
+
+        <UsersInfoCard title="Recent User Events" action="View all">
+          {recentUserEvents.map((event) => {
+            const Icon = event.icon
+            return <article className="user-event-row" key={event.label}><span className={`user-soft-${event.tone}`}><Icon size={15} /></span><strong>{event.label}</strong><time>{event.time}</time></article>
+          })}
+        </UsersInfoCard>
+      </div>
+
+      <section className="users-quick-actions">
+        <h2>Quick Actions</h2>
+        <div>
+          {userQuickActions.map((action) => {
+            const Icon = action.icon
+            return <button type="button" key={action.label}><span><Icon size={21} /></span><div><strong>{action.label}</strong><small>{action.detail}</small></div><ChevronDown size={17} /></button>
+          })}
         </div>
-      </SectionPanel>
-    </PageBody>
+      </section>
+    </section>
   )
 }
 
+function UserMetric({ icon: Icon, label, value, delta, compare, tone, negative = false }: { icon: LucideIcon; label: string; value: string; delta: string; compare: string; tone: Tone; negative?: boolean }) {
+  return <article className="users-kpi-card"><span className={`user-soft-${tone}`}><Icon size={28} /></span><div><small>{label}</small><strong>{value}</strong><p className={negative ? 'negative' : undefined}>{negative ? '?' : '?'} {delta} <em>{compare}</em></p></div></article>
+}
+
+function UserAvatar({ label, tone, large = false }: { label: string; tone: Tone; large?: boolean }) {
+  return <i className={`user-avatar user-avatar-${tone} ${large ? 'large' : ''}`}>{label}</i>
+}
+
+function UserPill({ tone, children }: { tone: Tone; children: string }) {
+  return <b className={`user-pill user-pill-${tone}`}>{children}</b>
+}
+
+function UsersInfoCard({ title, action, children }: { title: string; action?: string; children: ReactNode }) {
+  return <section className="users-info-card"><header><h2>{title}</h2>{action ? <a href="#users">{action}</a> : null}</header><div>{children}</div></section>
+}
 function WorkspacesPage() {
   return (
     <PageBody
@@ -520,4 +686,10 @@ function initials(name: string) {
     .map((part) => part[0]?.toUpperCase())
     .join('') || 'SA'
 }
+
+
+
+
+
+
 
