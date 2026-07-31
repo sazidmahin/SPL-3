@@ -7,21 +7,26 @@ from app.api.deps import get_current_workspace_membership, get_db
 from app.db.models import Diagram, GenerationJob, RequirementInput, SrsDocument, WorkspaceMember
 from app.schemas.diagram import DiagramDetailRead
 from app.schemas.srs import (
+    AiSrsGenerateRequest,
+    AiSrsGenerateResponse,
     ClarificationAnswerRequest,
     ClarificationAnswerResponse,
     GenerationJobRead,
     RequirementInputCreateRequest,
     RequirementInputRead,
+    SrsClarificationRequest,
     SrsDocumentDetailRead,
     SrsDocumentRead,
     SrsGenerateRequest,
     SrsGenerateResponse,
     SrsIntakeRequest,
     SrsIntakeResponse,
+    SrsPipelineResponse,
 )
 from app.services.billing_service import BillingError, require_feature_access
 from app.services.diagram_service import get_diagram_detail, list_diagram_requirement_links
 from app.services.srs_service import (
+    generate_ai_srs_preview,
     GenerationJobNotFoundError,
     InvalidSrsRequestError,
     SrsDocumentNotFoundError,
@@ -35,6 +40,7 @@ from app.services.srs_service import (
     start_generation_job,
 )
 from app.services.workspace_service import WorkspacePermissionError
+from app.services.llm_service import LlmExecutionError
 
 router = APIRouter(
     prefix="/workspaces/{workspace_id}/projects/{project_id}/srs",
@@ -56,7 +62,152 @@ def _diagram_detail_response(
     )
 
 
-@router.post("/inputs", response_model=RequirementInputRead, status_code=status.HTTP_201_CREATED)
+def _pipeline_completed_response(
+    db: Session,
+    *,
+    membership: WorkspaceMember,
+    project_id: UUID,
+    requirement_input: RequirementInput,
+    job: GenerationJob,
+    srs_document: SrsDocument,
+    diagrams: list[Diagram],
+    refined_requirement: str | None = None,
+) -> SrsPipelineResponse:
+    return SrsPipelineResponse(
+        status="completed",
+        requirement_input=requirement_input,
+        needs_clarification=False,
+        clarifying_questions=[],
+        draft_requirement=requirement_input.refined_text,
+        refined_requirement=refined_requirement,
+        job=job,
+        srs_document=srs_document,
+        diagrams=[
+            _diagram_detail_response(db, membership=membership, project_id=project_id, diagram=diagram)
+            for diagram in diagrams
+        ],
+    )
+
+
+
+@router.post("/ai-generate", response_model=AiSrsGenerateResponse, status_code=status.HTTP_201_CREATED)
+def generate_ai_srs_without_job(
+    project_id: UUID,
+    payload: AiSrsGenerateRequest,
+    membership: WorkspaceMember = Depends(get_current_workspace_membership),
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        return generate_ai_srs_preview(
+            db,
+            membership=membership,
+            project_id=project_id,
+            title=payload.title,
+            raw_text=payload.raw_text,
+        )
+    except WorkspacePermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except GenerationJobNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except (InvalidSrsRequestError, LlmExecutionError) as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
+@router.post("/intake", response_model=SrsIntakeResponse, status_code=status.HTTP_201_CREATED)
+def intake_requirement(
+    project_id: UUID,
+    payload: SrsIntakeRequest,
+    membership: WorkspaceMember = Depends(get_current_workspace_membership),
+    db: Session = Depends(get_db),
+) -> SrsPipelineResponse:
+    try:
+        requirement_input, needs_clarification, draft = create_requirement_intake(
+            db,
+            membership=membership,
+            project_id=project_id,
+            title=payload.title,
+            raw_text=payload.raw_text,
+        )
+        if needs_clarification:
+            return SrsPipelineResponse(
+                status="needs_clarification",
+                requirement_input=requirement_input,
+                needs_clarification=True,
+                clarifying_questions=requirement_input.clarifying_questions,
+                draft_requirement=draft,
+            )
+
+        requirement_input, job, srs_document, diagrams = start_generation_job(
+            db,
+            membership=membership,
+            project_id=project_id,
+            requirement_input_id=requirement_input.id,
+            generate_class_diagram=payload.generate_class_diagram,
+            diagram_methods=payload.diagram_methods,
+        )
+    except WorkspacePermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except GenerationJobNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except BillingError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
+    except InvalidSrsRequestError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
+
+    return _pipeline_completed_response(
+        db,
+        membership=membership,
+        project_id=project_id,
+        requirement_input=requirement_input,
+        job=job,
+        srs_document=srs_document,
+        diagrams=diagrams,
+    )
+
+
+@router.post("/clarifications", response_model=ClarificationAnswerResponse, status_code=status.HTTP_201_CREATED)
+def submit_clarifications(
+    project_id: UUID,
+    payload: SrsClarificationRequest,
+    membership: WorkspaceMember = Depends(get_current_workspace_membership),
+    db: Session = Depends(get_db),
+) -> SrsPipelineResponse:
+    try:
+        requirement_input, refined = answer_requirement_clarifications(
+            db,
+            membership=membership,
+            project_id=project_id,
+            requirement_input_id=payload.requirement_input_id,
+            answers=[item.model_dump() for item in payload.answers],
+        )
+        requirement_input, job, srs_document, diagrams = start_generation_job(
+            db,
+            membership=membership,
+            project_id=project_id,
+            requirement_input_id=requirement_input.id,
+            generate_class_diagram=payload.generate_class_diagram,
+            diagram_methods=payload.diagram_methods,
+        )
+    except WorkspacePermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except GenerationJobNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except BillingError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
+    except InvalidSrsRequestError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
+
+    return _pipeline_completed_response(
+        db,
+        membership=membership,
+        project_id=project_id,
+        requirement_input=requirement_input,
+        job=job,
+        srs_document=srs_document,
+        diagrams=diagrams,
+        refined_requirement=refined,
+    )
+
+
+@router.post("/inputs", response_model=RequirementInputRead, status_code=status.HTTP_201_CREATED, include_in_schema=False)
 def submit_requirement_input(
     project_id: UUID,
     payload: RequirementInputCreateRequest,
@@ -79,39 +230,10 @@ def submit_requirement_input(
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
 
 
-@router.post("/intake", response_model=SrsIntakeResponse, status_code=status.HTTP_201_CREATED)
-def intake_requirement(
-    project_id: UUID,
-    payload: SrsIntakeRequest,
-    membership: WorkspaceMember = Depends(get_current_workspace_membership),
-    db: Session = Depends(get_db),
-) -> SrsIntakeResponse:
-    try:
-        requirement_input, needs_clarification, draft = create_requirement_intake(
-            db,
-            membership=membership,
-            project_id=project_id,
-            title=payload.title,
-            raw_text=payload.raw_text,
-        )
-    except WorkspacePermissionError as exc:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
-    except GenerationJobNotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    except InvalidSrsRequestError as exc:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
-
-    return SrsIntakeResponse(
-        requirement_input=requirement_input,
-        needs_clarification=needs_clarification,
-        clarifying_questions=requirement_input.clarifying_questions,
-        draft_requirement=draft,
-    )
-
-
 @router.post(
     "/inputs/{requirement_input_id}/clarifications",
     response_model=ClarificationAnswerResponse,
+    include_in_schema=False,
 )
 def answer_clarifications(
     project_id: UUID,
@@ -119,30 +241,16 @@ def answer_clarifications(
     payload: ClarificationAnswerRequest,
     membership: WorkspaceMember = Depends(get_current_workspace_membership),
     db: Session = Depends(get_db),
-) -> ClarificationAnswerResponse:
-    try:
-        requirement_input, refined = answer_requirement_clarifications(
-            db,
-            membership=membership,
-            project_id=project_id,
-            requirement_input_id=requirement_input_id,
-            answers=[item.model_dump() for item in payload.answers],
-        )
-    except WorkspacePermissionError as exc:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
-    except GenerationJobNotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    except InvalidSrsRequestError as exc:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
-
-    return ClarificationAnswerResponse(
-        requirement_input=requirement_input,
-        needs_clarification=False,
-        refined_requirement=refined,
+) -> SrsPipelineResponse:
+    return submit_clarifications(
+        project_id=project_id,
+        payload=SrsClarificationRequest(requirement_input_id=requirement_input_id, answers=payload.answers),
+        membership=membership,
+        db=db,
     )
 
 
-@router.post("/generate", response_model=SrsGenerateResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/generate", response_model=SrsGenerateResponse, status_code=status.HTTP_201_CREATED, include_in_schema=False)
 def generate_srs(
     project_id: UUID,
     payload: SrsGenerateRequest,
@@ -180,7 +288,7 @@ def generate_srs(
     )
 
 
-@router.get("/jobs", response_model=list[GenerationJobRead])
+@router.get("/jobs", response_model=list[GenerationJobRead], include_in_schema=False)
 def get_jobs(
     project_id: UUID,
     membership: WorkspaceMember = Depends(get_current_workspace_membership),
@@ -192,7 +300,7 @@ def get_jobs(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
 
-@router.get("/jobs/{job_id}", response_model=GenerationJobRead)
+@router.get("/jobs/{job_id}", response_model=GenerationJobRead, include_in_schema=False)
 def get_job(
     project_id: UUID,
     job_id: UUID,

@@ -6,13 +6,13 @@ from sqlalchemy.pool import StaticPool
 
 from app.db import models  # noqa: F401
 from app.db.base import Base
-from app.services.llm_service import DeterministicLlmClient
 from app.services.srs_service import (
     build_srs_document,
     classify_requirements,
     extract_structured_requirements,
     generate_summary_sections,
 )
+from tests.unit.fake_llm import FakeStructuredLlmClient
 
 
 def session_factory():
@@ -32,7 +32,7 @@ def test_srs_pipeline_components_create_expected_shape() -> None:
         project_id = uuid4()
         job_id = uuid4()
         raw_text = "Users submit claims. The system must respond within two seconds. Admins approve claims."
-        client = DeterministicLlmClient()
+        client = FakeStructuredLlmClient()
 
         summary = generate_summary_sections(
             session,

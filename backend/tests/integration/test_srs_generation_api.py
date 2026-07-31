@@ -10,8 +10,10 @@ from sqlalchemy.pool import StaticPool
 from app.api.deps import get_db
 from app.db import models  # noqa: F401
 from app.db.base import Base
-from app.db.models import Diagram, DiagramRequirementLink, ExtractedRequirement, Plan, SrsDocument, Subscription, UsageCounter
+from app.db.models import Diagram, DiagramRequirementLink, ExtractedRequirement, GenerationJob, Plan, SrsDocument, Subscription, UsageCounter
 from app.main import app
+import app.services.llm_service as llm_service
+from tests.unit.fake_llm import FakeStructuredLlmClient
 
 
 @pytest.fixture()
@@ -43,6 +45,11 @@ def client(db_session: Session) -> Generator[TestClient, None, None]:
     finally:
         app.dependency_overrides.clear()
 
+
+
+@pytest.fixture(autouse=True)
+def fake_openai_client(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(llm_service, "build_default_llm_client", lambda: FakeStructuredLlmClient())
 
 def auth_header(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
@@ -108,6 +115,87 @@ def test_requirement_input_can_be_submitted_for_project(client: TestClient) -> N
     assert response.json()["raw_text"] == "Users submit and track claims."
 
 
+def test_requirement_input_marks_vague_text_as_pending_clarification(client: TestClient) -> None:
+    token = register(client, "vague-owner@example.com", "Vague Owner")
+    workspace_id = personal_workspace_id(client, token)
+    project = create_project(client, token, workspace_id, "SRS Platform")
+
+    response = client.post(
+        f"/api/v1/workspaces/{workspace_id}/projects/{project['id']}/srs/inputs",
+        headers=auth_header(token),
+        json={"title": "LLM Driven SRS Generation Platform", "raw_text": "I Want To generate a srs generation platform"},
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["clarification_status"] == "pending"
+    assert body["clarifying_questions"]
+    assert body["refined_text"] is None
+    assert body["refinement_metadata"]["engine"] == "llm_guardrail_v1"
+
+
+def test_pending_requirement_input_cannot_generate_srs(client: TestClient, db_session: Session) -> None:
+    token = register(client, "pending-owner@example.com", "Pending Owner")
+    workspace_id = personal_workspace_id(client, token)
+    project = create_project(client, token, workspace_id, "SRS Platform")
+    intake_response = client.post(
+        f"/api/v1/workspaces/{workspace_id}/projects/{project['id']}/srs/intake",
+        headers=auth_header(token),
+        json={"title": "LLM Driven SRS Generation Platform", "raw_text": "I Want To generate a srs generation platform"},
+    )
+    assert intake_response.status_code == 201
+    requirement_input_id = intake_response.json()["requirement_input"]["id"]
+
+    client.get(
+        f"/api/v1/workspaces/{workspace_id}/billing/subscription",
+        headers=auth_header(token),
+    )
+    upgrade_personal_workspace(db_session, workspace_id)
+
+    response = client.post(
+        f"/api/v1/workspaces/{workspace_id}/projects/{project['id']}/srs/generate",
+        headers=auth_header(token),
+        json={"requirement_input_id": requirement_input_id},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "Requirement input needs clarification before SRS generation"
+
+
+
+def test_ai_generate_returns_full_llm_pipeline_without_generation_job(client: TestClient, db_session: Session) -> None:
+    token = register(client, "ai-preview@example.com", "AI Preview Owner")
+    workspace_id = personal_workspace_id(client, token)
+    project = create_project(client, token, workspace_id, "AI SRS Preview")
+
+    response = client.post(
+        f"/api/v1/workspaces/{workspace_id}/projects/{project['id']}/srs/ai-generate",
+        headers=auth_header(token),
+        json={
+            "title": "Claims Portal",
+            "raw_text": "Users shall log in, submit claims, track claims, receive email confirmations, and admins shall approve or reject claims.",
+        },
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["status"] == "completed"
+    assert body["summary"]
+    assert body["extracted_requirements"]
+    assert body["classified_requirements"]
+    assert "## Functional Requirements" in body["content_markdown"]
+    assert [step["step"] for step in body["pipeline_steps"]] == [
+        "input_guardrail",
+        "requirement_sufficiency",
+        "summary",
+        "requirement_extraction",
+        "requirement_classification",
+        "srs_builder",
+    ]
+    assert len(body["llm_calls"]) == 5
+    assert db_session.scalar(select(GenerationJob).where(GenerationJob.project_id == UUID(project["id"]))) is None
+    assert db_session.scalar(select(SrsDocument).where(SrsDocument.project_id == UUID(project["id"]))) is None
+
 def test_srs_generation_requires_paid_plan_then_creates_completed_document(
     client: TestClient, db_session: Session
 ) -> None:
@@ -116,7 +204,7 @@ def test_srs_generation_requires_paid_plan_then_creates_completed_document(
     project = create_project(client, token, workspace_id, "Claims Portal")
     payload = {
         "title": "Claims MVP",
-        "raw_text": "Users submit claims and admins approve them.",
+        "raw_text": "Users shall log in, submit claims, track claims, receive email confirmations, and admins shall approve or reject claims.",
         "generate_class_diagram": True,
         "diagram_methods": ["llm", "rule_based"],
     }
@@ -224,7 +312,7 @@ def test_generation_job_access_is_scoped_to_workspace_and_project(
     response = client.post(
         f"/api/v1/workspaces/{workspace_id}/projects/{project['id']}/srs/generate",
         headers=auth_header(owner_token),
-        json={"title": "Claims", "raw_text": "Track claims."},
+        json={"title": "Claims", "raw_text": "Users shall log in, track claims, receive email notifications, and admins shall manage claim statuses."},
     )
     assert response.status_code == 201
     job_id = response.json()["job"]["id"]
@@ -242,7 +330,7 @@ def test_generation_job_access_is_scoped_to_workspace_and_project(
     assert wrong_project_response.status_code == 404
 
 
-def test_srs_intake_clarification_answer_then_generate_with_refined_text(
+def test_srs_clarification_answers_auto_generate_with_refined_text(
     client: TestClient, db_session: Session
 ) -> None:
     token = register(client, "clarify-owner@example.com", "Clarify Owner")
@@ -257,10 +345,17 @@ def test_srs_intake_clarification_answer_then_generate_with_refined_text(
 
     assert intake_response.status_code == 201
     intake = intake_response.json()
+    assert intake["status"] == "needs_clarification"
     assert intake["needs_clarification"] is True
     assert intake["requirement_input"]["clarification_status"] == "pending"
     assert intake["clarifying_questions"]
     requirement_input_id = intake["requirement_input"]["id"]
+
+    client.get(
+        f"/api/v1/workspaces/{workspace_id}/billing/subscription",
+        headers=auth_header(token),
+    )
+    upgrade_personal_workspace(db_session, workspace_id)
 
     answers = [
         {
@@ -270,46 +365,35 @@ def test_srs_intake_clarification_answer_then_generate_with_refined_text(
         for question in intake["clarifying_questions"]
     ]
     clarification_response = client.post(
-        f"/api/v1/workspaces/{workspace_id}/projects/{project['id']}/srs/inputs/{requirement_input_id}/clarifications",
+        f"/api/v1/workspaces/{workspace_id}/projects/{project['id']}/srs/clarifications",
         headers=auth_header(token),
-        json={"answers": answers},
+        json={"requirement_input_id": requirement_input_id, "answers": answers},
     )
 
-    assert clarification_response.status_code == 200
-    clarified = clarification_response.json()
-    assert clarified["needs_clarification"] is False
-    assert clarified["requirement_input"]["clarification_status"] == "clarified"
-    assert "Patients can search doctors" in clarified["refined_requirement"]
-
-    client.get(
-        f"/api/v1/workspaces/{workspace_id}/billing/subscription",
-        headers=auth_header(token),
-    )
-    upgrade_personal_workspace(db_session, workspace_id)
-
-    generate_response = client.post(
-        f"/api/v1/workspaces/{workspace_id}/projects/{project['id']}/srs/generate",
-        headers=auth_header(token),
-        json={
-            "requirement_input_id": requirement_input_id,
-            "generate_class_diagram": False,
-            "diagram_methods": [],
-        },
-    )
-
-    assert generate_response.status_code == 201
-    body = generate_response.json()
+    assert clarification_response.status_code == 201
+    body = clarification_response.json()
+    assert body["status"] == "completed"
+    assert body["needs_clarification"] is False
     assert body["requirement_input"]["id"] == requirement_input_id
+    assert body["requirement_input"]["clarification_status"] == "clarified"
+    assert "Patients can search doctors" in body["refined_requirement"]
     assert body["job"]["status"] == "completed"
     assert body["job"]["result_payload"]["used_refined_text"] is True
     assert body["srs_document"]["content_json"]["requirement_source"]["used_refined_text"] is True
     assert "Patients can search doctors" in body["srs_document"]["content_markdown"]
 
 
-def test_srs_intake_marks_clear_requirement_as_not_required(client: TestClient) -> None:
+def test_srs_intake_auto_generates_when_requirement_is_clear(
+    client: TestClient, db_session: Session
+) -> None:
     token = register(client, "clear-owner@example.com", "Clear Owner")
     workspace_id = personal_workspace_id(client, token)
     project = create_project(client, token, workspace_id, "Library System")
+    client.get(
+        f"/api/v1/workspaces/{workspace_id}/billing/subscription",
+        headers=auth_header(token),
+    )
+    upgrade_personal_workspace(db_session, workspace_id)
 
     response = client.post(
         f"/api/v1/workspaces/{workspace_id}/projects/{project['id']}/srs/intake",
@@ -322,7 +406,11 @@ def test_srs_intake_marks_clear_requirement_as_not_required(client: TestClient) 
 
     assert response.status_code == 201
     body = response.json()
+    assert body["status"] == "completed"
     assert body["needs_clarification"] is False
     assert body["clarifying_questions"] == []
     assert body["requirement_input"]["clarification_status"] == "not_required"
     assert body["requirement_input"]["refined_text"]
+    assert body["job"]["status"] == "completed"
+    assert body["srs_document"]["title"] == "Library System"
+    assert "## Functional Requirements" in body["srs_document"]["content_markdown"]

@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     smtp_use_tls: bool = True
     email_verification_code_expire_minutes: int = 10
     email_verification_resend_cooldown_seconds: int = 60
-    llm_provider: str = "auto"
+    llm_provider: str = "openai"
     openai_api_key: str | None = None
     openai_model: str = "gpt-4o-mini"
     openai_temperature: float = 0
