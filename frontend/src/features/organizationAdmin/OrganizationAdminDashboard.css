@@ -1,0 +1,502 @@
+﻿.org-admin-dashboard {
+  display: grid;
+  gap: 18px;
+  min-width: 0;
+}
+
+.org-admin-topbar {
+  display: grid;
+  grid-template-columns: 260px minmax(340px, 1fr) auto;
+  align-items: center;
+  gap: 18px;
+  min-height: 72px;
+  margin: -28px -28px 0;
+  padding: 0 28px;
+  border-bottom: 1px solid #e5e7eb;
+  background: #ffffff;
+}
+
+.org-workspace-button,
+.org-admin-search,
+.org-admin-toolbar button,
+.org-admin-user,
+.org-admin-title-row button,
+.org-admin-panel header button,
+.pending-invite-row button,
+.artifact-row button,
+.subscription-summary > button {
+  border: 1px solid #dfe5ee;
+  border-radius: 7px;
+  background: #ffffff;
+  color: #334155;
+  font: inherit;
+}
+
+.org-workspace-button,
+.org-admin-toolbar,
+.org-admin-toolbar button,
+.org-admin-user,
+.org-admin-title-row,
+.org-admin-title-row button,
+.org-admin-panel > header,
+.org-admin-panel > header > div,
+.member-activity-row,
+.pending-invite-row,
+.org-project-row,
+.artifact-row,
+.subscription-plan-row,
+.billing-row,
+.usage-line > div:first-child {
+  display: flex;
+  align-items: center;
+}
+
+.org-workspace-button {
+  justify-content: space-between;
+  min-height: 40px;
+  padding: 0 13px;
+  font-weight: 820;
+}
+
+.org-admin-search {
+  min-height: 40px;
+  padding: 0 14px;
+  color: #7c8495;
+}
+
+.org-admin-toolbar {
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.org-admin-toolbar button {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border: 0;
+  border-radius: 999px;
+}
+
+.org-admin-toolbar button span {
+  position: absolute;
+  top: -6px;
+  right: -4px;
+  display: grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  border: 2px solid #ffffff;
+  border-radius: 999px;
+  background: #6d28d9;
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.org-admin-user {
+  gap: 9px;
+  border: 0;
+  background: transparent;
+}
+
+.org-admin-user > span {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #f97316, #38bdf8);
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.org-admin-user div {
+  display: grid;
+  gap: 1px;
+}
+
+.org-admin-user strong {
+  color: #0f172a;
+  font-size: 13px;
+}
+
+.org-admin-user small {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 760;
+}
+
+.org-admin-title-row {
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.org-admin-title-row span {
+  display: block;
+  margin-bottom: 6px;
+  color: #6d28d9;
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.org-admin-title-row h1 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 31px;
+  line-height: 1.12;
+}
+
+.org-admin-title-row button,
+.subscription-summary > button {
+  gap: 8px;
+  min-height: 42px;
+  border: 0;
+  padding: 0 16px;
+  background: #6d28d9;
+  color: #ffffff;
+  font-weight: 830;
+}
+
+.org-admin-metrics {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.org-admin-metric-card,
+.org-admin-panel {
+  min-width: 0;
+  border: 1px solid #e1e6ef;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: rgba(15, 23, 42, 0.045) 0 10px 24px;
+}
+
+.org-admin-metric-card {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  min-height: 104px;
+  padding: 17px 16px;
+}
+
+.metric-badge,
+.avatar-dot,
+.project-icon,
+.artifact-icon,
+.pending-invite-row > span {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+}
+
+.metric-badge {
+  width: 42px;
+  height: 42px;
+  border-radius: 8px;
+}
+
+.tone-purple { background: #ede9fe; color: #6d28d9; }
+.tone-green { background: #dcfce7; color: #15803d; }
+.tone-blue { background: #dbeafe; color: #2563eb; }
+.tone-orange { background: #ffedd5; color: #ea580c; }
+.tone-red { background: #fee2e2; color: #dc2626; }
+.tone-slate { background: #f1f5f9; color: #475569; }
+
+.org-admin-metric-card small {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 790;
+}
+
+.org-admin-metric-card strong {
+  display: block;
+  margin-top: 4px;
+  color: #0f172a;
+  font-size: 25px;
+  line-height: 1;
+}
+
+.org-admin-metric-card p {
+  margin-top: 8px;
+  color: #16a34a;
+  font-size: 12px;
+  font-weight: 760;
+}
+
+.usage-admin-card {
+  grid-template-columns: 38px minmax(0, 1fr);
+}
+
+.admin-progress {
+  height: 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e9edf5;
+}
+
+.admin-progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #6d28d9;
+}
+
+.usage-admin-card .admin-progress {
+  margin-top: 10px;
+}
+
+.org-admin-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(310px, 0.85fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.org-admin-panel {
+  display: grid;
+  overflow: hidden;
+}
+
+.member-activity-card,
+.recent-artifacts-card {
+  grid-column: span 1;
+}
+
+.org-admin-panel > header {
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 56px;
+  padding: 0 18px;
+  border-bottom: 1px solid #edf2f7;
+}
+
+.org-admin-panel > header > div {
+  gap: 9px;
+  color: #6d28d9;
+}
+
+.org-admin-panel h2 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 17px;
+  font-weight: 850;
+}
+
+.org-admin-panel header button,
+.pending-invite-row button,
+.artifact-row button {
+  min-height: 30px;
+  padding: 0 10px;
+  color: #6d28d9;
+  font-size: 12px;
+  font-weight: 820;
+}
+
+.member-activity-list,
+.pending-invite-list,
+.org-project-list,
+.artifact-list,
+.subscription-summary {
+  display: grid;
+  padding: 6px 18px 18px;
+}
+
+.member-activity-row,
+.pending-invite-row,
+.org-project-row,
+.artifact-row {
+  gap: 12px;
+  min-height: 62px;
+  border-top: 1px solid #edf2f7;
+}
+
+.member-activity-row:first-child,
+.pending-invite-row:first-child,
+.org-project-row:first-child,
+.artifact-row:first-child {
+  border-top: 0;
+}
+
+.avatar-dot {
+  width: 38px;
+  height: 38px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.member-activity-row div,
+.pending-invite-row div,
+.org-project-row div,
+.artifact-row div {
+  min-width: 0;
+  flex: 1;
+}
+
+.member-activity-row strong,
+.pending-invite-row strong,
+.org-project-row strong,
+.artifact-row strong {
+  display: block;
+  overflow: hidden;
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 830;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.member-activity-row small,
+.pending-invite-row small,
+.org-project-row small,
+.artifact-row small,
+.member-activity-row time {
+  display: block;
+  margin-top: 2px;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.member-activity-row p {
+  margin-top: 5px;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 740;
+}
+
+.member-activity-row time {
+  white-space: nowrap;
+}
+
+.pending-invite-row > span,
+.project-icon,
+.artifact-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 7px;
+}
+
+.org-status-tag {
+  display: inline-flex;
+  align-items: center;
+  min-height: 25px;
+  border-radius: 6px;
+  padding: 0 9px;
+  font-size: 12px;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.quick-actions-card,
+.subscription-overview-card {
+  grid-column: span 1;
+}
+
+.quick-action-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  padding: 18px;
+}
+
+.quick-action {
+  display: grid;
+  place-items: center;
+  gap: 9px;
+  min-height: 88px;
+  border: 1px solid currentColor;
+  border-radius: 8px;
+  background: #ffffff;
+  font: inherit;
+  font-weight: 820;
+}
+
+.quick-action span {
+  color: #0f172a;
+  font-size: 13px;
+}
+
+.subscription-summary {
+  gap: 16px;
+}
+
+.subscription-plan-row,
+.billing-row,
+.usage-line > div:first-child {
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.subscription-plan-row span,
+.billing-row span,
+.usage-line span {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 780;
+}
+
+.subscription-plan-row strong {
+  display: block;
+  margin-top: 3px;
+  color: #0f172a;
+  font-size: 20px;
+}
+
+.billing-row strong,
+.usage-line strong {
+  color: #0f172a;
+  font-size: 13px;
+}
+
+.usage-line {
+  display: grid;
+  gap: 8px;
+}
+
+@media (max-width: 1540px) {
+  .org-admin-metrics {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .org-admin-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1060px) {
+  .org-admin-topbar,
+  .org-admin-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .org-admin-toolbar,
+  .org-admin-title-row {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 760px) {
+  .org-admin-topbar {
+    margin: -18px -14px 0;
+    padding: 14px;
+  }
+
+  .org-admin-metrics,
+  .quick-action-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .member-activity-row,
+  .pending-invite-row,
+  .org-project-row,
+  .artifact-row {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+}

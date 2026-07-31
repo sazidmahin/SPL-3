@@ -1,4 +1,41 @@
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api/v1'
+const trimTrailingSlashes = (value: string) => value.replace(/\/+$/, '')
+
+const normalizeApiPrefix = (value: string | undefined) => {
+  const trimmed = value?.trim()
+  if (!trimmed) {
+    return '/api/v1'
+  }
+
+  const withLeadingSlash = trimmed.startsWith('/') ? trimmed : `/${trimmed}`
+  return trimTrailingSlashes(withLeadingSlash)
+}
+
+function resolveApiBaseUrl() {
+  const apiOrigin = import.meta.env.VITE_API_ORIGIN?.trim()
+  const apiPrefix = import.meta.env.VITE_API_PREFIX?.trim()
+  const legacyApiBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim()
+
+  if (apiOrigin || apiPrefix) {
+    return `${apiOrigin ? trimTrailingSlashes(apiOrigin) : ''}${normalizeApiPrefix(apiPrefix)}`
+  }
+
+  if (legacyApiBaseUrl) {
+    try {
+      const parsed = new URL(legacyApiBaseUrl)
+      if (parsed.pathname === '/' || parsed.pathname === '') {
+        return `${trimTrailingSlashes(legacyApiBaseUrl)}/api/v1`
+      }
+    } catch {
+      return trimTrailingSlashes(legacyApiBaseUrl)
+    }
+
+    return trimTrailingSlashes(legacyApiBaseUrl)
+  }
+
+  return '/api/v1'
+}
+
+export const API_BASE_URL = resolveApiBaseUrl()
 
 export async function parseApiResponse<T>(response: Response): Promise<T> {
   const body = await response.json().catch(() => null)

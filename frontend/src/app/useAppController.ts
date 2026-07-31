@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { fetchCurrentUser } from '../domains/auth/api'
 import { clearStoredSession, readStoredSession, writeStoredSession } from '../domains/auth/sessionStorage'
@@ -33,6 +33,18 @@ import { useProjectCreation } from './hooks/useProjectCreation'
 import { useWorkspaceCreation } from './hooks/useWorkspaceCreation'
 import { errorMessage } from './support/errors'
 import { PROJECT_STORAGE_KEY, DIAGRAM_STORAGE_KEY, WORKSPACE_STORAGE_KEY } from '../shared/storage'
+import {
+  mockDiagramDetail,
+  mockDiagrams,
+  mockGenerationJobs,
+  mockPlan,
+  mockProjects,
+  mockSession,
+  mockSrsDocuments,
+  mockSubscription,
+  mockUsage,
+  mockWorkspaceMemberships,
+} from './mockUserData'
 
 export function useAppController() {
   const [session, setSession] = useState<AuthSession | null>(() => readStoredSession())
@@ -71,6 +83,7 @@ export function useAppController() {
   const [isCheckingOut, setIsCheckingOut] = useState(false)
   const [isStartingGeneration, setIsStartingGeneration] = useState(false)
   const [isGeneratingClassDiagram, setIsGeneratingClassDiagram] = useState(false)
+  const didValidateStoredSession = useRef(false)
 
   const activeWorkspace = useMemo(
     () => workspaces.find((membership) => membership.workspace.id === activeWorkspaceId) ?? workspaces[0],
@@ -96,6 +109,7 @@ export function useAppController() {
 
   const authForm = useAuthForm({
     onAuthenticated: handleAuthenticated,
+    onRegistered: () => undefined,
     setError,
   })
   const workspaceCreation = useWorkspaceCreation({
@@ -117,6 +131,19 @@ export function useAppController() {
     onCreated: handleDiagramCreated,
     setError,
   })
+
+  useEffect(() => {
+    if (didValidateStoredSession.current) {
+      return
+    }
+
+    didValidateStoredSession.current = true
+    if (session && workspaces.length === 0) {
+      void loadCurrentUser(session)
+    }
+    // Stored sessions should be checked once on startup; later refreshes are user-driven.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   function clearProjectState() {
     setProjects([])
@@ -289,6 +316,15 @@ export function useAppController() {
         window.localStorage.removeItem(WORKSPACE_STORAGE_KEY)
       }
     } catch (caught) {
+      clearStoredSession()
+      window.localStorage.removeItem(WORKSPACE_STORAGE_KEY)
+      clearProjectState()
+      setSession(null)
+      setWorkspaces([])
+      setPlans([])
+      setSubscription(null)
+      setUsage(null)
+      setActiveWorkspaceId(null)
       setError(errorMessage(caught, 'Unable to load session'))
     } finally {
       setIsLoadingMe(false)
@@ -304,6 +340,7 @@ export function useAppController() {
     setPlans([])
     setSubscription(null)
     setUsage(null)
+    setActiveWorkspaceId(null)
     authForm.clearPassword()
     setError(null)
   }
@@ -401,6 +438,7 @@ export function useAppController() {
       setGenerateClassDiagramFromSrsInput(false)
       await loadBilling(session, activeWorkspace.workspace.id)
     } catch (caught) {
+      await loadGenerationJobs(session, activeWorkspace.workspace.id, activeProject.id).catch(() => undefined)
       setError(errorMessage(caught, 'Unable to start generation'))
     } finally {
       setIsStartingGeneration(false)
@@ -511,6 +549,36 @@ export function useAppController() {
       setIsSavingDiagram(false)
     }
   }
+
+  function loginWithMockUser() {
+    const workspaceId = mockWorkspaceMemberships[0].workspace.id
+    const projectId = mockProjects[0].id
+    const diagramId = mockDiagrams[0].id
+
+    setSession(mockSession)
+    setWorkspaces(mockWorkspaceMemberships)
+    setActiveWorkspaceId(workspaceId)
+    setProjects(mockProjects)
+    setActiveProjectId(projectId)
+    setDiagrams(mockDiagrams)
+    setActiveDiagramId(diagramId)
+    setDiagramVersions([mockDiagramDetail.current])
+    setDiagramXml(mockDiagramDetail.current.drawio_xml)
+    setActiveReviewDiagrams([mockDiagramDetail])
+    setGenerationJobs(mockGenerationJobs)
+    setSrsDocuments(mockSrsDocuments)
+    setActiveSrsDocument(mockSrsDocuments[0])
+    setPlans([mockPlan])
+    setSubscription(mockSubscription)
+    setUsage(mockUsage)
+    setError(null)
+    authForm.clearPassword()
+
+    writeStoredSession(mockSession)
+    window.localStorage.setItem(WORKSPACE_STORAGE_KEY, workspaceId)
+    window.localStorage.setItem(PROJECT_STORAGE_KEY, projectId)
+    window.localStorage.setItem(DIAGRAM_STORAGE_KEY, diagramId)
+  }
   async function handleAuthenticated(nextSession: AuthSession) {
     setSession(nextSession)
     writeStoredSession(nextSession)
@@ -590,13 +658,17 @@ export function useAppController() {
       email: authForm.email,
       password: authForm.password,
       fullName: authForm.fullName,
+      verificationCode: authForm.verificationCode,
       error,
       isSubmitting: authForm.isSubmitting,
       onModeChange: authForm.setMode,
       onEmailChange: authForm.setEmail,
       onPasswordChange: authForm.setPassword,
       onFullNameChange: authForm.setFullName,
+      onVerificationCodeChange: authForm.setVerificationCode,
       onSubmit: authForm.submitAuth,
+      onVerifyEmail: authForm.submitVerification,
+      onMockLogin: loginWithMockUser,
     },
     workspacePanel: {
       workspaces,

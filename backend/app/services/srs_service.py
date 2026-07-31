@@ -1,16 +1,15 @@
+import json
+import re
+from collections.abc import Callable
 from datetime import UTC, datetime
+from typing import Any, TypedDict
 from uuid import UUID
 
+from langgraph.graph import END, START, StateGraph
 from sqlalchemy import select
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session, selectinload, sessionmaker
 
-from app.domain.srs import (
-    RequirementDraft,
-    build_summary_sections,
-    build_srs_document,
-    classify_requirement_drafts,
-    extract_requirement_drafts,
-)
+from app.domain.srs import RequirementDraft, build_srs_document
 from app.db.models import (
     Diagram,
     ExtractedRequirement,
@@ -26,7 +25,12 @@ from app.services.diagram_generation_service import (
     InvalidDiagramGenerationRequestError,
     generate_class_diagram as generate_class_diagram_artifact,
 )
-from app.services.llm_service import execute_llm_call, get_or_create_prompt_template
+from app.services.llm_service import (
+    LlmClient,
+    LlmExecutionError,
+    execute_llm_call,
+    get_or_create_prompt_template,
+)
 from app.services.project_service import ProjectNotFoundError, get_active_project
 from app.services.workspace_service import require_workspace_role
 
@@ -36,32 +40,79 @@ ACTIVE_DOCUMENT_STATUS = "active"
 CLARIFICATION_NOT_REQUIRED = "not_required"
 CLARIFICATION_PENDING = "pending"
 CLARIFICATION_CLARIFIED = "clarified"
-SRS_SUMMARY_PROMPT_TEMPLATE = (
-    "You are a requirements assistant generating summary-type SRS sections from "
-    "stakeholder natural language. Follow the source text closely and do not invent "
-    "unsupported stakeholders, use cases, or glossary terms. Write the Introduction, "
-    "Stakeholders/Users, Use Cases, and Glossary sections. Annotate stakeholders and "
-    "important terms with source evidence when possible.\n\nSource text:\n{raw_text}"
-)
-SRS_REQUIREMENT_EXTRACTION_PROMPT_TEMPLATE = (
-    "You are a requirements assistant extracting atomic software requirements from "
-    "stakeholder natural language. A requirement is a capability, constraint, "
-    "condition, or quality that the system must satisfy. Express each requirement in "
-    "the pattern: The <subject clause> shall <action verb clause> <object clause> "
-    "<optional qualifying clause>, when <condition clause>. For every requirement, "
-    "include the source sentence and the reason it was extracted so the output remains "
-    "traceable.\n\nSource text:\n{raw_text}"
-)
-SRS_REQUIREMENT_CLASSIFICATION_PROMPT_TEMPLATE = (
-    "You are a requirements classification assistant. Classify each requirement as "
-    "functional when it describes system behavior or non-functional when it describes "
-    "a quality attribute, constraint, operating condition, or compliance concern. "
-    "For non-functional requirements, choose the most specific subtype from Security, "
-    "Performance, Availability, Usability, Scalability, Maintainability, Portability, "
-    "Legal, Fault Tolerance, Operational, or Look & Feel. Preserve the original "
-    "requirement text and include classification rationale grounded in the requirement "
-    "itself.\n\nRequirements:\n{requirements}"
-)
+SRS_SUMMARY_PROMPT_TEMPLATE = """
+You are a requirements assistant following the REQINONE Summary Task.
+Generate only summary-type SRS sections from the provided stakeholder natural language.
+Do not invent unsupported stakeholders, use cases, or glossary terms. Every item must be grounded in the source text.
+
+Return valid JSON only, with this exact shape:
+{
+  "introduction": "one concise paragraph grounded in the source",
+  "stakeholders": ["stakeholder or user group with source evidence"],
+  "use_cases": ["UC-001: use case grounded in source evidence"],
+  "glossary": [
+    {"term": "domain term", "definition": "definition grounded in source text"}
+  ]
+}
+
+Source text:
+{raw_text}
+"""
+SRS_REQUIREMENT_EXTRACTION_PROMPT_TEMPLATE = """
+You are a requirements assistant following the REQINONE Requirement Extraction Task.
+Extract atomic software requirements from stakeholder natural language.
+A requirement is a capability, constraint, condition, or quality the system must satisfy.
+Express each requirement using this INCOSE-style pattern where possible:
+The <subject clause> shall <action verb clause> <object clause> <optional qualifying clause>, when <condition clause>.
+For every requirement, include the source sentence and extraction reason to preserve traceability and reduce hallucination.
+
+Return valid JSON only, with this exact shape:
+{
+  "requirements": [
+    {
+      "requirement_code": "REQ-001",
+      "requirement_text": "The system shall ...",
+      "source_trace": "source sentence from the input",
+      "extraction_reason": "why this is a requirement grounded in source text",
+      "confidence_score": 0.0
+    }
+  ]
+}
+
+Source text:
+{raw_text}
+"""
+SRS_REQUIREMENT_CLASSIFICATION_PROMPT_TEMPLATE = """
+You are a requirements classification assistant following the REQINONE Requirement Classification Task.
+Classify each requirement as functional or non-functional.
+Functional requirements describe system behavior. Non-functional requirements describe quality attributes, constraints, operating conditions, or compliance concerns.
+For non-functional requirements, choose the most specific subtype from: Security, Performance, Availability, Usability, Scalability, Maintainability, Portability, Legal, Fault Tolerance, Operational, Look & Feel.
+Preserve requirement_code, requirement_text, source_trace, extraction_reason, and confidence_score from the input. Add a grounded classification rationale.
+
+Examples:
+- "The system shall allow users to reset passwords" -> functional.
+- "The system shall respond within two seconds" -> non_functional, Performance.
+- "The system shall encrypt stored passwords" -> non_functional, Security.
+
+Return valid JSON only, with this exact shape:
+{
+  "requirements": [
+    {
+      "requirement_code": "REQ-001",
+      "requirement_text": "The system shall ...",
+      "source_trace": "source sentence from the input",
+      "extraction_reason": "why this is a requirement grounded in source text",
+      "confidence_score": 0.0,
+      "requirement_type": "functional",
+      "nfr_subtype": null,
+      "classification_rationale": "why this classification is correct"
+    }
+  ]
+}
+
+Requirements JSON:
+{requirements}
+"""
 
 
 class SrsError(Exception):
@@ -78,6 +129,161 @@ class GenerationJobNotFoundError(SrsError):
 
 class SrsDocumentNotFoundError(SrsError):
     pass
+
+
+class InvalidLlmSrsOutputError(InvalidSrsRequestError):
+    pass
+
+
+class SrsPipelineStageError(InvalidSrsRequestError):
+    def __init__(self, stage: str, exc: Exception) -> None:
+        self.stage = stage
+        super().__init__(str(exc))
+
+
+class SrsGenerationGraphState(TypedDict, total=False):
+    workspace_id: UUID
+    project_id: UUID
+    generation_job_id: UUID
+    raw_text: str
+    summary: dict[str, Any]
+    extracted: list[RequirementDraft]
+    classified: list[RequirementDraft]
+
+
+JSON_OBJECT_PATTERN = re.compile(r"\{.*\}", re.DOTALL)
+ALLOWED_REQUIREMENT_TYPES = {"functional", "non_functional"}
+ALLOWED_NFR_SUBTYPES = {
+    "Security",
+    "Performance",
+    "Availability",
+    "Usability",
+    "Scalability",
+    "Maintainability",
+    "Portability",
+    "Legal",
+    "Fault Tolerance",
+    "Operational",
+    "Look & Feel",
+}
+
+
+def _llm_content(call: LlmCall) -> str:
+    payload = call.response_payload or {}
+    content = payload.get("content")
+    if not isinstance(content, str) or not content.strip():
+        raise InvalidLlmSrsOutputError("LLM response did not contain text content")
+    return content.strip()
+
+
+def _parse_llm_json(content: str) -> dict[str, Any]:
+    cleaned = content.strip()
+    if cleaned.startswith("```"):
+        cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\s*```$", "", cleaned)
+
+    try:
+        parsed = json.loads(cleaned)
+    except json.JSONDecodeError:
+        match = JSON_OBJECT_PATTERN.search(cleaned)
+        if match is None:
+            raise InvalidLlmSrsOutputError("LLM response was not valid JSON") from None
+        try:
+            parsed = json.loads(match.group(0))
+        except json.JSONDecodeError as exc:
+            raise InvalidLlmSrsOutputError("LLM response JSON could not be parsed") from exc
+
+    if not isinstance(parsed, dict):
+        raise InvalidLlmSrsOutputError("LLM response JSON must be an object")
+    return parsed
+
+
+def _required_string(payload: dict[str, Any], key: str) -> str:
+    value = payload.get(key)
+    if not isinstance(value, str) or not value.strip():
+        raise InvalidLlmSrsOutputError(f"LLM response missing required string: {key}")
+    return value.strip()
+
+
+def _string_list(payload: dict[str, Any], key: str) -> list[str]:
+    value = payload.get(key)
+    if not isinstance(value, list):
+        raise InvalidLlmSrsOutputError(f"LLM response missing required list: {key}")
+    items = [str(item).strip() for item in value if str(item).strip()]
+    if not items:
+        raise InvalidLlmSrsOutputError(f"LLM response list cannot be empty: {key}")
+    return items
+
+
+def _parse_summary_payload(call: LlmCall) -> dict[str, Any]:
+    payload = _parse_llm_json(_llm_content(call))
+    glossary = payload.get("glossary", [])
+    if not isinstance(glossary, list):
+        raise InvalidLlmSrsOutputError("LLM summary glossary must be a list")
+
+    normalized_glossary = []
+    for item in glossary:
+        if not isinstance(item, dict):
+            raise InvalidLlmSrsOutputError("LLM summary glossary items must be objects")
+        normalized_glossary.append(
+            {
+                "term": _required_string(item, "term"),
+                "definition": _required_string(item, "definition"),
+            }
+        )
+
+    return {
+        "introduction": _required_string(payload, "introduction"),
+        "stakeholders": _string_list(payload, "stakeholders"),
+        "use_cases": _string_list(payload, "use_cases"),
+        "glossary": normalized_glossary,
+    }
+
+
+def _confidence(value: Any) -> float:
+    try:
+        score = float(value)
+    except (TypeError, ValueError):
+        raise InvalidLlmSrsOutputError("LLM requirement confidence_score must be numeric") from None
+    return max(0.0, min(1.0, score))
+
+
+def _parse_requirement_item(item: Any, *, index: int, classified: bool) -> RequirementDraft:
+    if not isinstance(item, dict):
+        raise InvalidLlmSrsOutputError("LLM requirement items must be objects")
+
+    requirement_type = str(item.get("requirement_type", "functional")).strip().lower()
+    nfr_subtype = item.get("nfr_subtype")
+    if classified:
+        if requirement_type not in ALLOWED_REQUIREMENT_TYPES:
+            raise InvalidLlmSrsOutputError("LLM requirement_type must be functional or non_functional")
+        if requirement_type == "non_functional":
+            if not isinstance(nfr_subtype, str) or nfr_subtype.strip() not in ALLOWED_NFR_SUBTYPES:
+                raise InvalidLlmSrsOutputError("LLM non-functional requirement needs a valid nfr_subtype")
+            normalized_subtype = nfr_subtype.strip()
+        else:
+            normalized_subtype = None
+    else:
+        requirement_type = "functional"
+        normalized_subtype = None
+
+    return RequirementDraft(
+        requirement_code=str(item.get("requirement_code") or f"REQ-{index:03d}").strip(),
+        requirement_text=_required_string(item, "requirement_text"),
+        source_trace=_required_string(item, "source_trace"),
+        extraction_reason=_required_string(item, "extraction_reason"),
+        confidence_score=_confidence(item.get("confidence_score", 0.8)),
+        requirement_type=requirement_type,
+        nfr_subtype=normalized_subtype,
+    )
+
+
+def _parse_requirements_payload(call: LlmCall, *, classified: bool) -> list[RequirementDraft]:
+    payload = _parse_llm_json(_llm_content(call))
+    items = payload.get("requirements")
+    if not isinstance(items, list) or not items:
+        raise InvalidLlmSrsOutputError("LLM response must include at least one requirement")
+    return [_parse_requirement_item(item, index=index, classified=classified) for index, item in enumerate(items, start=1)]
 
 
 def _clean_required(value: str, message: str) -> str:
@@ -304,6 +510,7 @@ def generate_summary_sections(
     project_id: UUID,
     generation_job_id: UUID,
     raw_text: str,
+    client: LlmClient | None = None,
 ) -> dict:
     template = get_or_create_prompt_template(
         db,
@@ -311,16 +518,17 @@ def generate_summary_sections(
         purpose="summary",
         template_text=SRS_SUMMARY_PROMPT_TEMPLATE,
     )
-    execute_llm_call(
+    call = execute_llm_call(
         db,
         workspace_id=workspace_id,
         project_id=project_id,
         generation_job_id=generation_job_id,
         template=template,
         variables={"raw_text": raw_text},
+        client=client,
     )
 
-    return build_summary_sections(raw_text)
+    return _parse_summary_payload(call)
 
 
 def extract_structured_requirements(
@@ -330,6 +538,7 @@ def extract_structured_requirements(
     project_id: UUID,
     generation_job_id: UUID,
     raw_text: str,
+    client: LlmClient | None = None,
 ) -> list[RequirementDraft]:
     template = get_or_create_prompt_template(
         db,
@@ -337,16 +546,17 @@ def extract_structured_requirements(
         purpose="requirement_extraction",
         template_text=SRS_REQUIREMENT_EXTRACTION_PROMPT_TEMPLATE,
     )
-    execute_llm_call(
+    call = execute_llm_call(
         db,
         workspace_id=workspace_id,
         project_id=project_id,
         generation_job_id=generation_job_id,
         template=template,
         variables={"raw_text": raw_text},
+        client=client,
     )
 
-    return extract_requirement_drafts(raw_text)
+    return _parse_requirements_payload(call, classified=False)
 
 
 def classify_requirements(
@@ -356,6 +566,7 @@ def classify_requirements(
     project_id: UUID,
     generation_job_id: UUID,
     requirements: list[RequirementDraft],
+    client: LlmClient | None = None,
 ) -> list[RequirementDraft]:
     template = get_or_create_prompt_template(
         db,
@@ -363,16 +574,138 @@ def classify_requirements(
         purpose="requirement_classification",
         template_text=SRS_REQUIREMENT_CLASSIFICATION_PROMPT_TEMPLATE,
     )
-    execute_llm_call(
+    requirements_payload = json.dumps(
+        {"requirements": [item.__dict__ for item in requirements]},
+        ensure_ascii=True,
+    )
+    call = execute_llm_call(
         db,
         workspace_id=workspace_id,
         project_id=project_id,
         generation_job_id=generation_job_id,
         template=template,
-        variables={"requirements": "\n".join(item.requirement_text for item in requirements)},
+        variables={"requirements": requirements_payload},
+        client=client,
     )
 
-    return classify_requirement_drafts(requirements)
+    return _parse_requirements_payload(call, classified=True)
+
+
+def _run_srs_llm_graph(
+    db: Session,
+    *,
+    workspace_id: UUID,
+    project_id: UUID,
+    generation_job_id: UUID,
+    raw_text: str,
+) -> tuple[dict[str, Any], list[RequirementDraft], list[RequirementDraft]]:
+    _sync_srs_prompt_templates(db)
+    session_factory = sessionmaker(bind=db.get_bind(), autocommit=False, autoflush=False)
+
+    def with_branch_db(stage: str, callback: Callable[[Session], Any]) -> Any:
+        branch_db = session_factory()
+        try:
+            return callback(branch_db)
+        except (InvalidSrsRequestError, LlmExecutionError) as exc:
+            raise SrsPipelineStageError(stage, exc) from exc
+        finally:
+            branch_db.close()
+
+    def summary_node(state: SrsGenerationGraphState) -> dict[str, Any]:
+        summary = with_branch_db(
+            "summary",
+            lambda branch_db: generate_summary_sections(
+                branch_db,
+                workspace_id=state["workspace_id"],
+                project_id=state["project_id"],
+                generation_job_id=state["generation_job_id"],
+                raw_text=state["raw_text"],
+            ),
+        )
+        return {"summary": summary}
+
+    def extraction_node(state: SrsGenerationGraphState) -> dict[str, Any]:
+        extracted = with_branch_db(
+            "requirement_extraction",
+            lambda branch_db: extract_structured_requirements(
+                branch_db,
+                workspace_id=state["workspace_id"],
+                project_id=state["project_id"],
+                generation_job_id=state["generation_job_id"],
+                raw_text=state["raw_text"],
+            ),
+        )
+        return {"extracted": extracted}
+
+    def classification_node(state: SrsGenerationGraphState) -> dict[str, Any]:
+        extracted = state.get("extracted")
+        if not extracted:
+            raise SrsPipelineStageError(
+                "requirement_classification",
+                InvalidLlmSrsOutputError("Requirement extraction produced no requirements"),
+            )
+        classified = with_branch_db(
+            "requirement_classification",
+            lambda branch_db: classify_requirements(
+                branch_db,
+                workspace_id=state["workspace_id"],
+                project_id=state["project_id"],
+                generation_job_id=state["generation_job_id"],
+                requirements=extracted,
+            ),
+        )
+        return {"classified": classified}
+
+    workflow = StateGraph(SrsGenerationGraphState)
+    workflow.add_node("summary", summary_node)
+    workflow.add_node("requirement_extraction", extraction_node)
+    workflow.add_node("requirement_classification", classification_node)
+    workflow.add_edge(START, "summary")
+    workflow.add_edge(START, "requirement_extraction")
+    workflow.add_edge("summary", END)
+    workflow.add_edge("requirement_extraction", "requirement_classification")
+    workflow.add_edge("requirement_classification", END)
+
+    invoke_config = {"max_concurrency": 1} if db.get_bind().dialect.name == "sqlite" else None
+    result = workflow.compile().invoke(
+        {
+            "workspace_id": workspace_id,
+            "project_id": project_id,
+            "generation_job_id": generation_job_id,
+            "raw_text": raw_text,
+        },
+        config=invoke_config,
+    )
+    summary = result.get("summary")
+    extracted = result.get("extracted")
+    classified = result.get("classified")
+    if not isinstance(summary, dict) or not extracted or not classified:
+        raise SrsPipelineStageError(
+            "srs_graph",
+            InvalidLlmSrsOutputError("LangGraph SRS pipeline did not produce all required outputs"),
+        )
+    return summary, extracted, classified
+
+
+def _sync_srs_prompt_templates(db: Session) -> None:
+    get_or_create_prompt_template(
+        db,
+        name="srs_summary_sections",
+        purpose="summary",
+        template_text=SRS_SUMMARY_PROMPT_TEMPLATE,
+    )
+    get_or_create_prompt_template(
+        db,
+        name="srs_requirement_extraction",
+        purpose="requirement_extraction",
+        template_text=SRS_REQUIREMENT_EXTRACTION_PROMPT_TEMPLATE,
+    )
+    get_or_create_prompt_template(
+        db,
+        name="srs_requirement_classification",
+        purpose="requirement_classification",
+        template_text=SRS_REQUIREMENT_CLASSIFICATION_PROMPT_TEMPLATE,
+    )
 
 
 def _generation_metadata(db: Session, *, workspace_id: UUID, project_id: UUID, generation_job_id: UUID) -> dict:
@@ -469,78 +802,75 @@ def start_generation_job(
     generation_job.started_at = datetime.now(UTC)
     db.commit()
 
-    summary = generate_summary_sections(
-        db,
-        workspace_id=membership.workspace_id,
-        project_id=project_id,
-        generation_job_id=generation_job.id,
-        raw_text=source_text,
-    )
-    generation_job.progress_percent = 35
-    db.commit()
-
-    extracted = extract_structured_requirements(
-        db,
-        workspace_id=membership.workspace_id,
-        project_id=project_id,
-        generation_job_id=generation_job.id,
-        raw_text=source_text,
-    )
-    generation_job.progress_percent = 60
-    db.commit()
-
-    classified = classify_requirements(
-        db,
-        workspace_id=membership.workspace_id,
-        project_id=project_id,
-        generation_job_id=generation_job.id,
-        requirements=extracted,
-    )
-    markdown, content_json = build_srs_document(requirement_input.title, summary, classified)
-    content_json["generation_metadata"] = _generation_metadata(
-        db,
-        workspace_id=membership.workspace_id,
-        project_id=project_id,
-        generation_job_id=generation_job.id,
-    )
-    content_json["requirement_source"] = {
-        "requirement_input_id": str(requirement_input.id),
-        "used_refined_text": bool(requirement_input.refined_text),
-    }
-
-    srs_document = SrsDocument(
-        workspace_id=membership.workspace_id,
-        project_id=project_id,
-        requirement_input_id=requirement_input.id,
-        generation_job_id=generation_job.id,
-        title=requirement_input.title,
-        status=ACTIVE_DOCUMENT_STATUS,
-        content_markdown=markdown,
-        content_json=content_json,
-        created_by_user_id=membership.user_id,
-    )
-    db.add(srs_document)
-    db.flush()
-
-    for item in classified:
-        db.add(
-            ExtractedRequirement(
-                workspace_id=membership.workspace_id,
-                project_id=project_id,
-                srs_document_id=srs_document.id,
-                requirement_input_id=requirement_input.id,
-                generation_job_id=generation_job.id,
-                requirement_code=item.requirement_code,
-                requirement_text=item.requirement_text,
-                requirement_type=item.requirement_type,
-                nfr_subtype=item.nfr_subtype,
-                source_trace=item.source_trace,
-                extraction_reason=item.extraction_reason,
-                confidence_score=item.confidence_score,
-            )
+    current_stage = "summary_and_requirement_extraction"
+    try:
+        summary, extracted, classified = _run_srs_llm_graph(
+            db,
+            workspace_id=membership.workspace_id,
+            project_id=project_id,
+            generation_job_id=generation_job.id,
+            raw_text=source_text,
         )
+        generation_job.progress_percent = 70
+        db.commit()
 
-    db.flush()
+        markdown, content_json = build_srs_document(requirement_input.title, summary, classified)
+        content_json["generation_metadata"] = _generation_metadata(
+            db,
+            workspace_id=membership.workspace_id,
+            project_id=project_id,
+            generation_job_id=generation_job.id,
+        )
+        content_json["requirement_source"] = {
+            "requirement_input_id": str(requirement_input.id),
+            "used_refined_text": bool(requirement_input.refined_text),
+        }
+
+        srs_document = SrsDocument(
+            workspace_id=membership.workspace_id,
+            project_id=project_id,
+            requirement_input_id=requirement_input.id,
+            generation_job_id=generation_job.id,
+            title=requirement_input.title,
+            status=ACTIVE_DOCUMENT_STATUS,
+            content_markdown=markdown,
+            content_json=content_json,
+            created_by_user_id=membership.user_id,
+        )
+        db.add(srs_document)
+        db.flush()
+
+        for item in classified:
+            db.add(
+                ExtractedRequirement(
+                    workspace_id=membership.workspace_id,
+                    project_id=project_id,
+                    srs_document_id=srs_document.id,
+                    requirement_input_id=requirement_input.id,
+                    generation_job_id=generation_job.id,
+                    requirement_code=item.requirement_code,
+                    requirement_text=item.requirement_text,
+                    requirement_type=item.requirement_type,
+                    nfr_subtype=item.nfr_subtype,
+                    source_trace=item.source_trace,
+                    extraction_reason=item.extraction_reason,
+                    confidence_score=item.confidence_score,
+                )
+            )
+
+        db.flush()
+    except (InvalidSrsRequestError, LlmExecutionError) as exc:
+        failed_stage = exc.stage if isinstance(exc, SrsPipelineStageError) else current_stage
+        generation_job.status = "failed"
+        generation_job.completed_at = datetime.now(UTC)
+        generation_job.error_message = str(exc)
+        generation_job.result_payload = {
+            "failed_stage": failed_stage,
+            "requirement_input_id": str(requirement_input.id),
+            "used_refined_text": bool(requirement_input.refined_text),
+        }
+        db.commit()
+        raise InvalidSrsRequestError(f"SRS generation failed during {failed_stage}: {exc}") from exc
     generated_diagrams: list[Diagram] = []
     diagram_error: str | None = None
     if generate_class_diagram:
@@ -649,4 +979,3 @@ def get_srs_document(
     if document is None:
         raise SrsDocumentNotFoundError("SRS document not found")
     return document
-

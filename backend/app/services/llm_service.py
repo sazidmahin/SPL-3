@@ -1,4 +1,5 @@
 import json
+import re
 from dataclasses import dataclass
 from typing import Any, Protocol
 from uuid import UUID
@@ -61,9 +62,8 @@ class DeterministicLlmClient:
     model_name = "deterministic-srs-v1"
 
     def generate(self, request: LlmRequest) -> LlmResponse:
+        content = self._structured_content(request)
         words = request.prompt.split()
-        preview = " ".join(words[:40])
-        content = f"{request.purpose}: {preview}" if preview else request.purpose
         completion_tokens = max(1, len(content.split()))
         return LlmResponse(
             content=content,
@@ -71,6 +71,81 @@ class DeterministicLlmClient:
             prompt_tokens=len(words),
             completion_tokens=completion_tokens,
         )
+
+    def _structured_content(self, request: LlmRequest) -> str:
+        if request.purpose == "summary":
+            return json.dumps(
+                {
+                    "introduction": "Summary generated from the supplied stakeholder requirement text.",
+                    "stakeholders": ["Users identified from the supplied requirement text"],
+                    "use_cases": ["UC-001: Use the system capabilities described in the supplied requirement text"],
+                    "glossary": [],
+                }
+            )
+        if request.purpose == "requirement_extraction":
+            source_text = request.prompt.rsplit("Source text:", 1)[-1].strip()
+            sentences = self._sentences(source_text)
+            return json.dumps(
+                {
+                    "requirements": [
+                        {
+                            "requirement_code": f"REQ-{index:03d}",
+                            "requirement_text": self._shall_statement(sentence),
+                            "source_trace": sentence,
+                            "extraction_reason": "The source text describes an expected system capability or constraint.",
+                            "confidence_score": 0.75,
+                        }
+                        for index, sentence in enumerate(sentences, start=1)
+                    ]
+                }
+            )
+        if request.purpose == "requirement_classification":
+            requirements = self._requirements_from_prompt(request.prompt)
+            return json.dumps({"requirements": [self._classify(item) for item in requirements]})
+
+        preview = " ".join(request.prompt.split()[:40])
+        return f"{request.purpose}: {preview}" if preview else request.purpose
+
+    @staticmethod
+    def _sentences(text: str) -> list[str]:
+        parts = [part.strip(" -\t") for part in re.split(r"[\n.;]+", text) if part.strip(" -\t")]
+        return parts or ["The submitted requirement text"]
+
+    @staticmethod
+    def _shall_statement(sentence: str) -> str:
+        cleaned = sentence.rstrip(".")
+        if cleaned.lower().startswith("the system shall"):
+            return cleaned
+        return f"The system shall support {cleaned[0].lower()}{cleaned[1:]}"
+
+    @staticmethod
+    def _requirements_from_prompt(prompt: str) -> list[dict[str, Any]]:
+        raw_json = prompt.rsplit("Requirements JSON:", 1)[-1].strip()
+        parsed = json.loads(raw_json)
+        requirements = parsed.get("requirements", [])
+        return requirements if isinstance(requirements, list) else []
+
+    @staticmethod
+    def _classify(item: dict[str, Any]) -> dict[str, Any]:
+        text = str(item.get("requirement_text", ""))
+        lower_text = text.lower()
+        subtype = None
+        if any(keyword in lower_text for keyword in ["security", "secure", "auth", "password", "permission"]):
+            subtype = "Security"
+        elif any(keyword in lower_text for keyword in ["performance", "respond", "within", "second", "fast"]):
+            subtype = "Performance"
+
+        requirement_type = "non_functional" if subtype else "functional"
+        return {
+            "requirement_code": item.get("requirement_code", "REQ-001"),
+            "requirement_text": text,
+            "source_trace": item.get("source_trace", text),
+            "extraction_reason": item.get("extraction_reason", "The item was extracted from the source text."),
+            "confidence_score": item.get("confidence_score", 0.75),
+            "requirement_type": requirement_type,
+            "nfr_subtype": subtype,
+            "classification_rationale": "Classified from the requirement wording.",
+        }
 
 
 def _json_ready(value: Any) -> Any:
@@ -250,6 +325,12 @@ def get_or_create_prompt_template(
         )
     )
     if template is not None:
+        if template.purpose != purpose or template.template_text != template_text or template.status != "active":
+            template.purpose = purpose
+            template.template_text = template_text
+            template.status = "active"
+            db.commit()
+            db.refresh(template)
         return template
 
     template = PromptTemplate(
@@ -277,11 +358,14 @@ def get_active_prompt_template(db: Session, *, name: str) -> PromptTemplate:
 
 
 def render_prompt(template: PromptTemplate, variables: dict[str, str]) -> str:
-    try:
-        return template.template_text.format(**variables)
-    except KeyError as exc:
-        missing = str(exc).strip("'")
-        raise PromptRenderError(f"Missing prompt variable: {missing}") from exc
+    rendered = template.template_text
+    for key, value in variables.items():
+        rendered = rendered.replace(f"{{{key}}}", value)
+
+    missing = re.findall(r"\{([A-Za-z_][A-Za-z0-9_]*)\}", rendered)
+    if missing:
+        raise PromptRenderError(f"Missing prompt variable: {missing[0]}")
+    return rendered
 
 
 def execute_llm_call(
