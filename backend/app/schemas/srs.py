@@ -11,7 +11,7 @@ GenerationJobType = Literal["srs", "class_diagram", "full"]
 DiagramMethod = Literal["llm", "rule_based"]
 RequirementType = Literal["functional", "non_functional"]
 ClarificationStatus = Literal["not_required", "pending", "clarified"]
-SrsPipelineStatus = Literal["needs_clarification", "completed"]
+SrsPipelineStatus = Literal["needs_clarification", "ready", "generating", "completed", "failed"]
 
 
 class RequirementInputCreateRequest(BaseModel):
@@ -174,6 +174,7 @@ class SrsPipelineResponse(BaseModel):
     job: GenerationJobRead | None = None
     srs_document: SrsDocumentDetailRead | None = None
     diagrams: list[DiagramDetailRead] = Field(default_factory=list)
+    partial_outputs: dict = Field(default_factory=dict)
 
 
 SrsIntakeResponse = SrsPipelineResponse

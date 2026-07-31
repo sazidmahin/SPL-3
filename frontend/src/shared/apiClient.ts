@@ -37,11 +37,27 @@ function resolveApiBaseUrl() {
 
 export const API_BASE_URL = resolveApiBaseUrl()
 
+export class ApiResponseError extends Error {
+  readonly status: number
+  readonly detail: unknown
+
+  constructor(message: string, status: number, detail: unknown) {
+    super(message)
+    this.name = 'ApiResponseError'
+    this.status = status
+    this.detail = detail
+  }
+}
+
+export function isUnauthorizedError(error: unknown): error is ApiResponseError {
+  return error instanceof ApiResponseError && error.status === 401
+}
+
 export async function parseApiResponse<T>(response: Response): Promise<T> {
   const body = await response.json().catch(() => null)
   if (!response.ok) {
     const detail = body && typeof body.detail === 'string' ? body.detail : 'Request failed'
-    throw new Error(detail)
+    throw new ApiResponseError(detail, response.status, body)
   }
   return body as T
 }

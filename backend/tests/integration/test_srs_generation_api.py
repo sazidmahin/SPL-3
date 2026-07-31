@@ -330,7 +330,7 @@ def test_generation_job_access_is_scoped_to_workspace_and_project(
     assert wrong_project_response.status_code == 404
 
 
-def test_srs_clarification_answers_auto_generate_with_refined_text(
+def test_srs_clarification_answers_mark_ready_then_generate_with_refined_text(
     client: TestClient, db_session: Session
 ) -> None:
     token = register(client, "clarify-owner@example.com", "Clarify Owner")
@@ -371,19 +371,31 @@ def test_srs_clarification_answers_auto_generate_with_refined_text(
     )
 
     assert clarification_response.status_code == 201
-    body = clarification_response.json()
+    ready_body = clarification_response.json()
+    assert ready_body["status"] == "ready"
+    assert ready_body["needs_clarification"] is False
+    assert ready_body["requirement_input"]["id"] == requirement_input_id
+    assert ready_body["requirement_input"]["clarification_status"] == "clarified"
+    assert "Patients can search doctors" in ready_body["refined_requirement"]
+    assert ready_body["job"] is None
+    assert ready_body["srs_document"] is None
+
+    generate_response = client.post(
+        f"/api/v1/workspaces/{workspace_id}/projects/{project['id']}/srs/generate",
+        headers=auth_header(token),
+        json={"requirement_input_id": requirement_input_id},
+    )
+
+    assert generate_response.status_code == 201
+    body = generate_response.json()
     assert body["status"] == "completed"
-    assert body["needs_clarification"] is False
-    assert body["requirement_input"]["id"] == requirement_input_id
-    assert body["requirement_input"]["clarification_status"] == "clarified"
-    assert "Patients can search doctors" in body["refined_requirement"]
     assert body["job"]["status"] == "completed"
     assert body["job"]["result_payload"]["used_refined_text"] is True
     assert body["srs_document"]["content_json"]["requirement_source"]["used_refined_text"] is True
     assert "Patients can search doctors" in body["srs_document"]["content_markdown"]
 
 
-def test_srs_intake_auto_generates_when_requirement_is_clear(
+def test_srs_intake_marks_clear_requirement_ready_before_generation(
     client: TestClient, db_session: Session
 ) -> None:
     token = register(client, "clear-owner@example.com", "Clear Owner")
@@ -405,12 +417,24 @@ def test_srs_intake_auto_generates_when_requirement_is_clear(
     )
 
     assert response.status_code == 201
-    body = response.json()
+    ready_body = response.json()
+    assert ready_body["status"] == "ready"
+    assert ready_body["needs_clarification"] is False
+    assert ready_body["clarifying_questions"] == []
+    assert ready_body["requirement_input"]["clarification_status"] == "not_required"
+    assert ready_body["requirement_input"]["refined_text"]
+    assert ready_body["job"] is None
+    assert ready_body["srs_document"] is None
+
+    generate_response = client.post(
+        f"/api/v1/workspaces/{workspace_id}/projects/{project['id']}/srs/generate",
+        headers=auth_header(token),
+        json={"requirement_input_id": ready_body["requirement_input"]["id"]},
+    )
+
+    assert generate_response.status_code == 201
+    body = generate_response.json()
     assert body["status"] == "completed"
-    assert body["needs_clarification"] is False
-    assert body["clarifying_questions"] == []
-    assert body["requirement_input"]["clarification_status"] == "not_required"
-    assert body["requirement_input"]["refined_text"]
     assert body["job"]["status"] == "completed"
     assert body["srs_document"]["title"] == "Library System"
     assert "## Functional Requirements" in body["srs_document"]["content_markdown"]

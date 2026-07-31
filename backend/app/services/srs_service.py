@@ -902,6 +902,166 @@ def _generation_metadata(db: Session, *, workspace_id: UUID, project_id: UUID, g
         ],
     }
 
+def stream_ai_srs_preview_events(
+    db: Session,
+    *,
+    membership: WorkspaceMember,
+    project_id: UUID,
+    title: str,
+    raw_text: str,
+) -> Any:
+    require_workspace_role(membership, allowed_roles=GENERATION_MUTATION_ROLES)
+    _ensure_project_access(db, membership=membership, project_id=project_id)
+    _sync_srs_prompt_templates(db)
+
+    cleaned_title = _clean_required(title, "Requirement title is required")
+    cleaned_text = _clean_required(raw_text, "Requirement text is required")
+    pipeline_steps: list[dict[str, Any]] = []
+    llm_calls: list[LlmCall] = []
+
+    yield {"event": "stage_started", "status": "generating", "stage": "input_guardrail", "pipeline_steps": pipeline_steps}
+    input_guardrail_metadata = _run_input_guardrail(
+        db,
+        workspace_id=membership.workspace_id,
+        project_id=project_id,
+        raw_text=cleaned_text,
+    )
+    input_guardrail_call = db.get(LlmCall, UUID(input_guardrail_metadata["llm_call_id"]))
+    if input_guardrail_call is not None:
+        llm_calls.append(input_guardrail_call)
+    pipeline_steps.append({"step": "input_guardrail", "status": "allowed", "metadata": input_guardrail_metadata})
+    yield {
+        "event": "stage_completed",
+        "status": "generating",
+        "stage": "input_guardrail",
+        "pipeline_steps": pipeline_steps,
+        "llm_calls": [_llm_call_metadata(call) for call in llm_calls],
+    }
+
+    yield {"event": "stage_started", "status": "generating", "stage": "requirement_sufficiency", "pipeline_steps": pipeline_steps}
+    questions, sufficiency_metadata = _assess_requirement_sufficiency(
+        db,
+        workspace_id=membership.workspace_id,
+        project_id=project_id,
+        raw_text=cleaned_text,
+    )
+    sufficiency_call = db.get(LlmCall, UUID(sufficiency_metadata["llm_call_id"]))
+    if sufficiency_call is not None:
+        llm_calls.append(sufficiency_call)
+    pipeline_steps.append(
+        {
+            "step": "requirement_sufficiency",
+            "status": "needs_clarification" if questions else "sufficient",
+            "metadata": sufficiency_metadata,
+            "questions": questions,
+        }
+    )
+    if questions:
+        yield {
+            "event": "needs_clarification",
+            "status": "needs_clarification",
+            "title": cleaned_title,
+            "raw_text": cleaned_text,
+            "clarifying_questions": questions,
+            "pipeline_steps": pipeline_steps,
+            "llm_calls": [_llm_call_metadata(call) for call in llm_calls],
+        }
+        return
+    yield {"event": "stage_completed", "status": "generating", "stage": "requirement_sufficiency", "pipeline_steps": pipeline_steps}
+
+    yield {"event": "stage_started", "status": "generating", "stage": "summary", "pipeline_steps": pipeline_steps}
+    summary, summary_call = generate_summary_sections_with_call(
+        db,
+        workspace_id=membership.workspace_id,
+        project_id=project_id,
+        generation_job_id=None,
+        raw_text=cleaned_text,
+    )
+    llm_calls.append(summary_call)
+    pipeline_steps.append({"step": "summary", "status": "completed", "llm_call_id": str(summary_call.id)})
+    yield {
+        "event": "stage_completed",
+        "status": "generating",
+        "stage": "summary",
+        "summary": summary,
+        "partial_outputs": {"summary": summary},
+        "pipeline_steps": pipeline_steps,
+        "llm_calls": [_llm_call_metadata(call) for call in llm_calls],
+    }
+
+    yield {"event": "stage_started", "status": "generating", "stage": "requirement_extraction", "pipeline_steps": pipeline_steps}
+    extracted, extraction_call = extract_structured_requirements_with_call(
+        db,
+        workspace_id=membership.workspace_id,
+        project_id=project_id,
+        generation_job_id=None,
+        raw_text=cleaned_text,
+    )
+    llm_calls.append(extraction_call)
+    extracted_payload = [item.__dict__ for item in extracted]
+    pipeline_steps.append(
+        {
+            "step": "requirement_extraction",
+            "status": "completed",
+            "llm_call_id": str(extraction_call.id),
+            "requirement_count": len(extracted),
+        }
+    )
+    yield {
+        "event": "stage_completed",
+        "status": "generating",
+        "stage": "requirement_extraction",
+        "extracted_requirements": extracted_payload,
+        "partial_outputs": {"extracted_requirements": extracted_payload},
+        "pipeline_steps": pipeline_steps,
+        "llm_calls": [_llm_call_metadata(call) for call in llm_calls],
+    }
+
+    yield {"event": "stage_started", "status": "generating", "stage": "requirement_classification", "pipeline_steps": pipeline_steps}
+    classified, classification_call = classify_requirements_with_call(
+        db,
+        workspace_id=membership.workspace_id,
+        project_id=project_id,
+        generation_job_id=None,
+        requirements=extracted,
+    )
+    llm_calls.append(classification_call)
+    classified_payload = [item.__dict__ for item in classified]
+    pipeline_steps.append(
+        {
+            "step": "requirement_classification",
+            "status": "completed",
+            "llm_call_id": str(classification_call.id),
+            "functional_count": len([item for item in classified if item.requirement_type == "functional"]),
+            "non_functional_count": len([item for item in classified if item.requirement_type == "non_functional"]),
+        }
+    )
+    yield {
+        "event": "stage_completed",
+        "status": "generating",
+        "stage": "requirement_classification",
+        "classified_requirements": classified_payload,
+        "partial_outputs": {"classified_requirements": classified_payload},
+        "pipeline_steps": pipeline_steps,
+        "llm_calls": [_llm_call_metadata(call) for call in llm_calls],
+    }
+
+    markdown, content_json = build_srs_document(cleaned_title, summary, classified)
+    pipeline_steps.append({"step": "srs_builder", "status": "completed"})
+    yield {
+        "event": "completed",
+        "status": "completed",
+        "title": cleaned_title,
+        "raw_text": cleaned_text,
+        "summary": summary,
+        "extracted_requirements": extracted_payload,
+        "classified_requirements": classified_payload,
+        "content_markdown": markdown,
+        "content_json": content_json,
+        "clarifying_questions": [],
+        "pipeline_steps": pipeline_steps,
+        "llm_calls": [_llm_call_metadata(call) for call in llm_calls],
+    }
 def generate_ai_srs_preview(
     db: Session,
     *,
@@ -1107,24 +1267,121 @@ def start_generation_job(
     db.refresh(requirement_input)
     db.refresh(generation_job)
 
+    pipeline_steps: list[dict[str, Any]] = [
+        {"step": "input_guardrail", "status": "completed", "progress_percent": 12},
+        {"step": "requirement_sufficiency", "status": "completed", "progress_percent": 24},
+        {"step": "summary", "status": "pending", "progress_percent": 0},
+        {"step": "requirement_extraction", "status": "pending", "progress_percent": 0},
+        {"step": "requirement_classification", "status": "pending", "progress_percent": 0},
+        {"step": "srs_builder", "status": "pending", "progress_percent": 0},
+    ]
+
     generation_job.status = "running"
     generation_job.progress_percent = 10
     generation_job.started_at = datetime.now(UTC)
+    generation_job.result_payload = {
+        "current_stage": "summary",
+        "requirement_input_id": str(requirement_input.id),
+        "used_refined_text": bool(requirement_input.refined_text),
+        "pipeline_steps": pipeline_steps,
+    }
     db.commit()
 
-    current_stage = "summary_and_requirement_extraction"
+    current_stage = "summary"
+
+    def set_step(step_name: str, status: str, progress_percent: int, **extra: Any) -> None:
+        for index, step in enumerate(pipeline_steps):
+            if step["step"] == step_name:
+                pipeline_steps[index] = {
+                    **step,
+                    "status": status,
+                    "progress_percent": progress_percent,
+                    **extra,
+                }
+                return
+
+    def update_job(stage: str, progress_percent: int, **partial_outputs: Any) -> None:
+        generation_job.progress_percent = progress_percent
+        generation_job.result_payload = {
+            "current_stage": stage,
+            "requirement_input_id": str(requirement_input.id),
+            "used_refined_text": bool(requirement_input.refined_text),
+            "pipeline_steps": pipeline_steps,
+            "partial_outputs": partial_outputs,
+        }
+        db.commit()
+
     try:
-        summary, extracted, classified = _run_srs_llm_graph(
+        current_stage = "summary"
+        set_step("summary", "in_progress", 30)
+        update_job(current_stage, 30)
+        summary, summary_call = generate_summary_sections_with_call(
             db,
             workspace_id=membership.workspace_id,
             project_id=project_id,
             generation_job_id=generation_job.id,
             raw_text=source_text,
         )
-        generation_job.progress_percent = 70
-        db.commit()
+        set_step("summary", "completed", 45, llm_call_id=str(summary_call.id))
+        update_job("requirement_extraction", 45, summary=summary)
 
+        current_stage = "requirement_extraction"
+        set_step("requirement_extraction", "in_progress", 52)
+        update_job(current_stage, 52, summary=summary)
+        extracted, extraction_call = extract_structured_requirements_with_call(
+            db,
+            workspace_id=membership.workspace_id,
+            project_id=project_id,
+            generation_job_id=generation_job.id,
+            raw_text=source_text,
+        )
+        extracted_payload = [item.__dict__ for item in extracted]
+        set_step(
+            "requirement_extraction",
+            "completed",
+            62,
+            llm_call_id=str(extraction_call.id),
+            requirement_count=len(extracted),
+        )
+        update_job("requirement_classification", 62, summary=summary, extracted_requirements=extracted_payload)
+
+        current_stage = "requirement_classification"
+        set_step("requirement_classification", "in_progress", 68)
+        update_job(current_stage, 68, summary=summary, extracted_requirements=extracted_payload)
+        classified, classification_call = classify_requirements_with_call(
+            db,
+            workspace_id=membership.workspace_id,
+            project_id=project_id,
+            generation_job_id=generation_job.id,
+            requirements=extracted,
+        )
+        classified_payload = [item.__dict__ for item in classified]
+        set_step(
+            "requirement_classification",
+            "completed",
+            75,
+            llm_call_id=str(classification_call.id),
+            classified_count=len(classified),
+        )
+        update_job(
+            "srs_builder",
+            75,
+            summary=summary,
+            extracted_requirements=extracted_payload,
+            classified_requirements=classified_payload,
+        )
+
+        current_stage = "srs_builder"
+        set_step("srs_builder", "in_progress", 82)
+        update_job(
+            current_stage,
+            82,
+            summary=summary,
+            extracted_requirements=extracted_payload,
+            classified_requirements=classified_payload,
+        )
         markdown, content_json = build_srs_document(requirement_input.title, summary, classified)
+        set_step("srs_builder", "completed", 90)
         content_json["generation_metadata"] = _generation_metadata(
             db,
             workspace_id=membership.workspace_id,
@@ -1169,17 +1426,27 @@ def start_generation_job(
             )
 
         db.flush()
-    except (InvalidSrsRequestError, LlmExecutionError) as exc:
+    except Exception as exc:
+        db.rollback()
         failed_stage = exc.stage if isinstance(exc, SrsPipelineStageError) else current_stage
         generation_job.status = "failed"
         generation_job.completed_at = datetime.now(UTC)
         generation_job.error_message = str(exc)
+        for step in pipeline_steps:
+            if step["step"] == failed_stage:
+                step["status"] = "failed"
         generation_job.result_payload = {
             "failed_stage": failed_stage,
+            "current_stage": failed_stage,
             "requirement_input_id": str(requirement_input.id),
             "used_refined_text": bool(requirement_input.refined_text),
+            "pipeline_steps": pipeline_steps,
         }
         db.commit()
+        if isinstance(exc, InvalidSrsRequestError):
+            raise InvalidSrsRequestError(f"SRS generation failed during {failed_stage}: {exc}") from exc
+        if isinstance(exc, LlmExecutionError):
+            raise InvalidSrsRequestError(f"SRS generation failed during {failed_stage}: {exc}") from exc
         raise InvalidSrsRequestError(f"SRS generation failed during {failed_stage}: {exc}") from exc
     generated_diagrams: list[Diagram] = []
     diagram_error: str | None = None
@@ -1212,6 +1479,8 @@ def start_generation_job(
         "diagram_ids": [str(diagram.id) for diagram in generated_diagrams],
         "diagram_count": len(generated_diagrams),
         "used_refined_text": bool(requirement_input.refined_text),
+        "current_stage": "complete",
+        "pipeline_steps": pipeline_steps,
     }
     db.commit()
     db.refresh(generation_job)

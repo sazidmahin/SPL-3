@@ -50,6 +50,7 @@ import { SuperAdminPlatformPage } from '../features/superAdmin/SuperAdminPlatfor
 import type { SuperAdminSection } from '../features/superAdmin/SuperAdminPlatformPages'
 import { FooterSection } from '../features/footer/FooterSection'
 import { SettingsProfile } from '../features/settings/SettingsProfile'
+import { SrsGenerationFlow } from '../features/srs/SrsGenerationFlow'
 import { SrsPanel } from '../features/srs/SrsPanel'
 import { UpgradeFlow } from '../features/upgrade/UpgradeFlow'
 import { CreateWorkspacePanel, WorkspacePanel } from '../features/workspace/WorkspacePanels'
@@ -60,6 +61,7 @@ type SectionId =
   | 'users'
   | 'workspaces'
   | 'projects'
+  | 'generate-srs'
   | 'srs'
   | 'diagram-editor'
   | 'ai-jobs'
@@ -93,6 +95,7 @@ const validSections = new Set<SectionId>([
   'users',
   'workspaces',
   'projects',
+  'generate-srs',
   'srs',
   'diagram-editor',
   'ai-jobs',
@@ -188,6 +191,7 @@ export function App() {
       title: 'Management',
       items: [
         { id: 'overview', label: 'Dashboard', icon: Home },
+        { id: 'generate-srs', label: 'Generate SRS', icon: WandSparkles },
         { id: 'users', label: 'Users', icon: Users },
         { id: 'workspaces', label: 'Workspaces', icon: Building2 },
         { id: 'plans', label: 'Plans', icon: CreditCard },
@@ -278,6 +282,8 @@ export function App() {
     </aside>
   )
 
+  const generateSrsSection = <SrsGenerationFlow {...controller.srsPanel} />
+
   const projectWorkspace = (
     <ProjectWorkspaceView
       activeProject={activeProject}
@@ -316,6 +322,10 @@ export function App() {
         return <PromptTemplatesPage />
       }
 
+      if (activeSection === 'generate-srs') {
+        return generateSrsSection
+      }
+
       return (
         <SuperAdminPlatformDashboard
           user={currentUser}
@@ -332,6 +342,10 @@ export function App() {
 
     if (!isSuperAdmin && canAccessAdmin) {
       const adminPlatformSection = superAdminSectionFrom(activeSection)
+
+      if (activeSection === 'generate-srs') {
+        return generateSrsSection
+      }
 
       if (adminPlatformSection) {
         return (

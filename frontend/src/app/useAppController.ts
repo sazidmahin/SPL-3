@@ -23,10 +23,14 @@ import {
   fetchSrsDocumentDetail,
   fetchSrsDocuments,
   generateSrs,
+  runAiSrsGenerate,
+  runSrsIntake,
+  submitSrsClarifications,
 } from '../domains/srs/api'
-import type { GenerationJob, SrsDocument } from '../domains/srs/types'
+import type { AiSrsGenerateResponse, ClarificationAnswer, GenerationJob, SrsDocument, SrsPipelineResponse } from '../domains/srs/types'
 import type { WorkspaceMembership } from '../domains/workspace/types'
 import { filenameFromContentDisposition, downloadTextFile } from '../shared/download'
+import { isUnauthorizedError } from '../shared/apiClient'
 import { useAuthForm } from './hooks/useAuthForm'
 import { useDiagramCreation } from './hooks/useDiagramCreation'
 import { useProjectCreation } from './hooks/useProjectCreation'
@@ -155,6 +159,28 @@ export function useAppController() {
     window.localStorage.removeItem(DIAGRAM_STORAGE_KEY)
   }
 
+
+  function expireSession() {
+    clearStoredSession()
+    window.localStorage.removeItem(WORKSPACE_STORAGE_KEY)
+    clearProjectState()
+    setSession(null)
+    setWorkspaces([])
+    setPlans([])
+    setSubscription(null)
+    setUsage(null)
+    setActiveWorkspaceId(null)
+    authForm.clearPassword()
+  }
+
+  function handleRequestError(caught: unknown, fallback: string) {
+    if (isUnauthorizedError(caught)) {
+      expireSession()
+      return 'Your session expired. Please sign in again.'
+    }
+    return errorMessage(caught, fallback)
+  }
+
   async function loadBilling(authSession: AuthSession, workspaceId: string) {
     setIsLoadingBilling(true)
     setError(null)
@@ -164,7 +190,7 @@ export function useAppController() {
       setSubscription(summary.subscription)
       setUsage(summary.usage)
     } catch (caught) {
-      setError(errorMessage(caught, 'Unable to load billing'))
+      setError(handleRequestError(caught, 'Unable to load billing'))
     } finally {
       setIsLoadingBilling(false)
     }
@@ -177,7 +203,7 @@ export function useAppController() {
       const nextJobs = await fetchGenerationJobs(authSession.access_token, workspaceId, projectId)
       setGenerationJobs(nextJobs)
     } catch (caught) {
-      setError(errorMessage(caught, 'Unable to load generation jobs'))
+      setError(handleRequestError(caught, 'Unable to load generation jobs'))
     } finally {
       setIsLoadingGenerationJobs(false)
     }
@@ -210,7 +236,7 @@ export function useAppController() {
         setActiveSrsDocument(null)
       }
     } catch (caught) {
-      setError(errorMessage(caught, 'Unable to load SRS documents'))
+      setError(handleRequestError(caught, 'Unable to load SRS documents'))
     } finally {
       setIsLoadingSrsDocuments(false)
     }
@@ -247,7 +273,7 @@ export function useAppController() {
         clearDiagramState()
       }
     } catch (caught) {
-      setError(errorMessage(caught, 'Unable to load diagrams'))
+      setError(handleRequestError(caught, 'Unable to load diagrams'))
     } finally {
       setIsLoadingDiagrams(false)
     }
@@ -274,7 +300,7 @@ export function useAppController() {
         clearProjectState()
       }
     } catch (caught) {
-      setError(errorMessage(caught, 'Unable to load projects'))
+      setError(handleRequestError(caught, 'Unable to load projects'))
     } finally {
       setIsLoadingProjects(false)
     }
@@ -384,9 +410,248 @@ export function useAppController() {
       const checkout = await checkoutPlanRequest(session.access_token, activeWorkspace.workspace.id, planCode)
       setSubscription(checkout.subscription)
     } catch (caught) {
-      setError(errorMessage(caught, 'Unable to start checkout'))
+      setError(handleRequestError(caught, 'Unable to start checkout'))
     } finally {
       setIsCheckingOut(false)
+    }
+  }
+
+
+  function applySrsPipelineResponse(response: SrsPipelineResponse) {
+    if (response.job) {
+      setGenerationJobs((current) => [response.job!, ...current.filter((job) => job.id !== response.job!.id)])
+    }
+
+    if (response.srs_document) {
+      setSrsDocuments((current) => [
+        response.srs_document!,
+        ...current.filter((document) => document.id !== response.srs_document!.id),
+      ])
+      setActiveSrsDocument(response.srs_document)
+    }
+
+    const generatedDiagrams = response.diagrams ?? []
+    setActiveReviewDiagrams(generatedDiagrams)
+    if (generatedDiagrams[0]) {
+      const generatedDiagram = generatedDiagrams[0]
+      setDiagrams((current) => [
+        generatedDiagram,
+        ...current.filter((diagram) => diagram.id !== generatedDiagram.id),
+      ])
+      setDiagramVersions([generatedDiagram.current])
+      setActiveDiagramId(generatedDiagram.id)
+      setDiagramXml(generatedDiagram.current.drawio_xml)
+      window.localStorage.setItem(DIAGRAM_STORAGE_KEY, generatedDiagram.id)
+    }
+  }
+
+  async function runSrsGenerationIntake(payload: {
+    title: string
+    raw_text: string
+    generate_class_diagram: boolean
+    diagram_methods: string[]
+  }) {
+    if (!session || !activeWorkspace || !activeProject) {
+      throw new Error('Select a workspace and project before generating SRS')
+    }
+
+    setIsStartingGeneration(true)
+    setError(null)
+    try {
+      const response = await runSrsIntake(session.access_token, activeWorkspace.workspace.id, activeProject.id, payload)
+      applySrsPipelineResponse(response)
+      if (response.status === 'completed') {
+        setSrsTitle('')
+        setSrsRawText('')
+        setGenerateClassDiagramFromSrsInput(false)
+        await loadBilling(session, activeWorkspace.workspace.id)
+      }
+      return response
+    } catch (caught) {
+      await loadGenerationJobs(session, activeWorkspace.workspace.id, activeProject.id).catch(() => undefined)
+      const message = handleRequestError(caught, 'Unable to start SRS generation')
+      setError(message)
+      throw new Error(message)
+    } finally {
+      setIsStartingGeneration(false)
+    }
+  }
+
+  async function answerSrsGenerationClarifications(payload: {
+    requirement_input_id: string
+    answers: ClarificationAnswer[]
+    generate_class_diagram: boolean
+    diagram_methods: string[]
+  }) {
+    if (!session || !activeWorkspace || !activeProject) {
+      throw new Error('Select a workspace and project before answering clarifications')
+    }
+
+    setIsStartingGeneration(true)
+    setError(null)
+    try {
+      const response = await submitSrsClarifications(
+        session.access_token,
+        activeWorkspace.workspace.id,
+        activeProject.id,
+        payload,
+      )
+      applySrsPipelineResponse(response)
+      if (response.status === 'completed') {
+        setSrsTitle('')
+        setSrsRawText('')
+        setGenerateClassDiagramFromSrsInput(false)
+        await loadBilling(session, activeWorkspace.workspace.id)
+      }
+      return response
+    } catch (caught) {
+      await loadGenerationJobs(session, activeWorkspace.workspace.id, activeProject.id).catch(() => undefined)
+      const message = handleRequestError(caught, 'Unable to submit clarification answers')
+      setError(message)
+      throw new Error(message)
+    } finally {
+      setIsStartingGeneration(false)
+    }
+  }
+
+
+  function aiPreviewToPipelineResponse(
+    preview: AiSrsGenerateResponse,
+    payload: { requirement_input_id: string; title: string; raw_text: string; generate_class_diagram: boolean; diagram_methods: string[] },
+  ): SrsPipelineResponse {
+    const now = new Date().toISOString()
+    const jobId = crypto.randomUUID()
+    const documentId = crypto.randomUUID()
+    const requirementInput = {
+      id: payload.requirement_input_id,
+      workspace_id: activeWorkspace!.workspace.id,
+      project_id: activeProject!.id,
+      title: preview.title,
+      raw_text: preview.raw_text,
+      clarification_status: 'clarified' as const,
+      clarifying_questions: [],
+      clarification_answers: [],
+      refined_text: preview.raw_text,
+      refinement_metadata: { engine: 'ai_generate_preview', preview_only: true },
+      created_by_user_id: session!.user.id,
+      created_at: now,
+    }
+    const job: GenerationJob = {
+      id: jobId,
+      workspace_id: activeWorkspace!.workspace.id,
+      project_id: activeProject!.id,
+      requirement_input_id: payload.requirement_input_id,
+      job_type: payload.generate_class_diagram ? 'full' : 'srs',
+      status: 'completed',
+      progress_percent: 100,
+      generate_class_diagram: payload.generate_class_diagram,
+      diagram_methods: payload.diagram_methods,
+      result_payload: {
+        preview_only: true,
+        current_stage: 'complete',
+        pipeline_steps: preview.pipeline_steps,
+        llm_calls: preview.llm_calls,
+        requirement_count: preview.classified_requirements.length,
+      },
+      error_message: null,
+      created_by_user_id: session!.user.id,
+      created_at: now,
+      updated_at: now,
+      started_at: now,
+      completed_at: now,
+    }
+    const extracted_requirements = preview.classified_requirements.map((item, index) => {
+      const row = item as Record<string, unknown>
+      return {
+        id: crypto.randomUUID(),
+        workspace_id: activeWorkspace!.workspace.id,
+        project_id: activeProject!.id,
+        srs_document_id: documentId,
+        requirement_input_id: payload.requirement_input_id,
+        generation_job_id: jobId,
+        requirement_code: typeof row.requirement_code === 'string' ? row.requirement_code : `REQ-${String(index + 1).padStart(3, '0')}`,
+        requirement_text: typeof row.requirement_text === 'string' ? row.requirement_text : '',
+        requirement_type: row.requirement_type === 'non_functional' ? 'non_functional' as const : 'functional' as const,
+        nfr_subtype: typeof row.nfr_subtype === 'string' ? row.nfr_subtype : null,
+        source_trace: typeof row.source_trace === 'string' ? row.source_trace : '',
+        extraction_reason: typeof row.extraction_reason === 'string' ? row.extraction_reason : '',
+        confidence_score: typeof row.confidence_score === 'number' ? row.confidence_score : 0.9,
+        created_at: now,
+      }
+    })
+    const srsDocument: SrsDocument = {
+      id: documentId,
+      workspace_id: activeWorkspace!.workspace.id,
+      project_id: activeProject!.id,
+      requirement_input_id: payload.requirement_input_id,
+      generation_job_id: jobId,
+      title: preview.title,
+      status: 'preview',
+      content_markdown: preview.content_markdown ?? `# ${preview.title}`,
+      content_json: preview.content_json ?? { summary: preview.summary, requirements: preview.classified_requirements },
+      created_by_user_id: session!.user.id,
+      created_at: now,
+      updated_at: now,
+      extracted_requirements,
+    }
+
+    return {
+      status: 'completed',
+      requirement_input: requirementInput,
+      needs_clarification: false,
+      clarifying_questions: [],
+      draft_requirement: preview.raw_text,
+      refined_requirement: preview.raw_text,
+      job,
+      srs_document: srsDocument,
+      diagrams: [],
+      partial_outputs: {
+        summary: preview.summary,
+        extracted_requirements: preview.extracted_requirements,
+        classified_requirements: preview.classified_requirements,
+        content_markdown: preview.content_markdown,
+        content_json: preview.content_json,
+      },
+    }
+  }
+  async function generateSrsFromReadyInput(payload: {
+    requirement_input_id: string
+    title: string
+    raw_text: string
+    generate_class_diagram: boolean
+    diagram_methods: string[]
+  }) {
+    if (!session || !activeWorkspace || !activeProject) {
+      throw new Error('Select a workspace and project before generating SRS')
+    }
+
+    setIsStartingGeneration(true)
+    setError(null)
+    try {
+      const preview = await runAiSrsGenerate(session.access_token, activeWorkspace.workspace.id, activeProject.id, {
+        title: payload.title,
+        raw_text: payload.raw_text,
+      })
+      if (preview.status === 'needs_clarification') {
+        const questions = preview.clarifying_questions.map((question) => question.question).join(' ')
+        throw new Error(questions || 'Requirement input needs clarification before SRS generation')
+      }
+      const response = aiPreviewToPipelineResponse(preview, payload)
+      applySrsPipelineResponse(response)
+      if (response.status === 'completed') {
+        setSrsTitle('')
+        setSrsRawText('')
+        setGenerateClassDiagramFromSrsInput(false)
+        await loadBilling(session, activeWorkspace.workspace.id)
+      }
+      return response
+    } catch (caught) {
+      await loadGenerationJobs(session, activeWorkspace.workspace.id, activeProject.id).catch(() => undefined)
+      const message = handleRequestError(caught, 'Unable to generate SRS')
+      setError(message)
+      throw new Error(message)
+    } finally {
+      setIsStartingGeneration(false)
     }
   }
 
@@ -427,7 +692,7 @@ export function useAppController() {
       await loadBilling(session, activeWorkspace.workspace.id)
     } catch (caught) {
       await loadGenerationJobs(session, activeWorkspace.workspace.id, activeProject.id).catch(() => undefined)
-      setError(errorMessage(caught, 'Unable to start generation'))
+      setError(handleRequestError(caught, 'Unable to start generation'))
     } finally {
       setIsStartingGeneration(false)
     }
@@ -453,7 +718,7 @@ export function useAppController() {
       window.localStorage.setItem(DIAGRAM_STORAGE_KEY, detail.id)
       await loadBilling(session, activeWorkspace.workspace.id)
     } catch (caught) {
-      setError(errorMessage(caught, 'Unable to generate class diagram'))
+      setError(handleRequestError(caught, 'Unable to generate class diagram'))
     } finally {
       setIsGeneratingClassDiagram(false)
     }
@@ -477,7 +742,7 @@ export function useAppController() {
         'text/markdown;charset=utf-8',
       )
     } catch (caught) {
-      setError(errorMessage(caught, 'Unable to export SRS'))
+      setError(handleRequestError(caught, 'Unable to export SRS'))
     }
   }
 
@@ -499,7 +764,7 @@ export function useAppController() {
         'application/xml;charset=utf-8',
       )
     } catch (caught) {
-      setError(errorMessage(caught, 'Unable to export diagram'))
+      setError(handleRequestError(caught, 'Unable to export diagram'))
     }
   }
   function openGeneratedDiagram(diagram: DiagramDetail) {
@@ -532,7 +797,7 @@ export function useAppController() {
         ),
       )
     } catch (caught) {
-      setError(errorMessage(caught, 'Unable to save diagram'))
+      setError(handleRequestError(caught, 'Unable to save diagram'))
     } finally {
       setIsSavingDiagram(false)
     }
@@ -696,6 +961,9 @@ export function useAppController() {
       onGenerateClassDiagram: (methods: ClassDiagramMethod[]) => void generateClassDiagramFromSrs(methods),
       onExportSrs: () => void exportCurrentSrsDocument(),
       onOpenGeneratedDiagram: openGeneratedDiagram,
+      onRunIntake: runSrsGenerationIntake,
+      onSubmitClarifications: answerSrsGenerationClarifications,
+      onGenerateFromRequirement: generateSrsFromReadyInput,
     },
     diagramsPanel: {
       activeWorkspace,
@@ -727,3 +995,8 @@ export function useAppController() {
     },
   }
 }
+
+
+
+
+

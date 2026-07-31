@@ -24,8 +24,8 @@ class Settings(BaseSettings):
     openai_api_key: str | None = None
     openai_model: str = "gpt-4o-mini"
     openai_temperature: float = 0
-    openai_timeout_seconds: int = 30
-    openai_max_retries: int = 2
+    openai_timeout_seconds: int = 20
+    openai_max_retries: int = 0
     backend_cors_origins: str = Field(
         default="http://localhost:5173,http://127.0.0.1:5173",
         alias="BACKEND_CORS_ORIGINS",
