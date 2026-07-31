@@ -1,5 +1,5 @@
 import { API_BASE_URL, authHeaders, jsonAuthHeaders, parseApiResponse } from '../../shared/apiClient'
-import type { GenerationJob, SrsDocument, SrsGenerateResponse, SrsPipelineResponse } from './types'
+import type { AiSrsGenerateResponse, ClarificationAnswer, GenerationJob, SrsDocument, SrsGenerateResponse, SrsPipelineResponse } from './types'
 
 export async function fetchGenerationJobs(accessToken: string, workspaceId: string, projectId: string) {
   return parseApiResponse<GenerationJob[]>(
@@ -30,6 +30,86 @@ export async function fetchSrsDocumentDetail(
   )
 }
 
+
+export type SrsIntakePayload = {
+  title: string
+  raw_text: string
+  generate_class_diagram: boolean
+  diagram_methods: string[]
+}
+
+export async function runSrsIntake(
+  accessToken: string,
+  workspaceId: string,
+  projectId: string,
+  payload: SrsIntakePayload,
+) {
+  return parseApiResponse<SrsPipelineResponse>(
+    await fetch(`${API_BASE_URL}/workspaces/${workspaceId}/projects/${projectId}/srs/intake`, {
+      method: 'POST',
+      headers: jsonAuthHeaders(accessToken),
+      body: JSON.stringify(payload),
+    }),
+  )
+}
+
+export async function submitSrsClarifications(
+  accessToken: string,
+  workspaceId: string,
+  projectId: string,
+  payload: {
+    requirement_input_id: string
+    answers: ClarificationAnswer[]
+    generate_class_diagram: boolean
+    diagram_methods: string[]
+  },
+) {
+  return parseApiResponse<SrsPipelineResponse>(
+    await fetch(`${API_BASE_URL}/workspaces/${workspaceId}/projects/${projectId}/srs/clarifications`, {
+      method: 'POST',
+      headers: jsonAuthHeaders(accessToken),
+      body: JSON.stringify(payload),
+    }),
+  )
+}
+
+
+export async function runAiSrsGenerate(
+  accessToken: string,
+  workspaceId: string,
+  projectId: string,
+  payload: {
+    title: string
+    raw_text: string
+  },
+) {
+  return parseApiResponse<AiSrsGenerateResponse>(
+    await fetch(`${API_BASE_URL}/workspaces/${workspaceId}/projects/${projectId}/srs/ai-generate`, {
+      method: 'POST',
+      headers: jsonAuthHeaders(accessToken),
+      body: JSON.stringify(payload),
+    }),
+  )
+}
+export async function runSrsGenerate(
+  accessToken: string,
+  workspaceId: string,
+  projectId: string,
+  payload: {
+    requirement_input_id: string
+    generate_class_diagram: boolean
+    diagram_methods: string[]
+  },
+) {
+  return parseApiResponse<SrsPipelineResponse>(
+    await fetch(`${API_BASE_URL}/workspaces/${workspaceId}/projects/${projectId}/srs/generate`, {
+      method: 'POST',
+      headers: jsonAuthHeaders(accessToken),
+      body: JSON.stringify(payload),
+    }),
+  )
+}
+
 export async function generateSrs(
   accessToken: string,
   workspaceId: string,
@@ -41,18 +121,19 @@ export async function generateSrs(
     diagram_methods: string[]
   },
 ) {
-  const response = await parseApiResponse<SrsPipelineResponse>(
-    await fetch(`${API_BASE_URL}/workspaces/${workspaceId}/projects/${projectId}/srs/intake`, {
-      method: 'POST',
-      headers: jsonAuthHeaders(accessToken),
-      body: JSON.stringify(payload),
-    }),
-  )
+  const intake = await runSrsIntake(accessToken, workspaceId, projectId, payload)
 
-  if (response.status === 'needs_clarification') {
-    const questions = response.clarifying_questions.map((question) => question.question).join(' ')
+  if (intake.status === 'needs_clarification') {
+    const questions = intake.clarifying_questions.map((question) => question.question).join(' ')
     throw new Error(questions || 'Requirement input needs clarification before SRS generation')
   }
+
+  const response = await runSrsGenerate(accessToken, workspaceId, projectId, {
+    requirement_input_id: intake.requirement_input.id,
+    generate_class_diagram: payload.generate_class_diagram,
+    diagram_methods: payload.diagram_methods,
+  })
+
   if (!response.job || !response.srs_document) {
     throw new Error('SRS generation completed without a generated document')
   }
@@ -79,3 +160,4 @@ export async function exportSrsDocument(accessToken: string, workspaceId: string
     filename: response.headers.get('content-disposition'),
   }
 }
+

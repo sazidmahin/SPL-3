@@ -80,6 +80,19 @@ export type SrsDocument = {
   extracted_requirements?: ExtractedRequirement[]
 }
 
+export type AiSrsGenerateResponse = {
+  status: 'needs_clarification' | 'completed'
+  title: string
+  raw_text: string
+  summary: Record<string, unknown> | null
+  extracted_requirements: Array<Record<string, unknown>>
+  classified_requirements: Array<Record<string, unknown>>
+  content_markdown: string | null
+  content_json: Record<string, unknown> | null
+  clarifying_questions: ClarifyingQuestion[]
+  pipeline_steps: Array<Record<string, unknown>>
+  llm_calls: Array<Record<string, unknown>>
+}
 export type SrsGenerateResponse = {
   requirement_input: RequirementInput
   job: GenerationJob
@@ -88,7 +101,7 @@ export type SrsGenerateResponse = {
 }
 
 export type SrsPipelineResponse = {
-  status: 'needs_clarification' | 'completed'
+  status: 'needs_clarification' | 'ready' | 'generating' | 'completed' | 'failed'
   requirement_input: RequirementInput
   needs_clarification: boolean
   clarifying_questions: ClarifyingQuestion[]
@@ -97,4 +110,8 @@ export type SrsPipelineResponse = {
   job: GenerationJob | null
   srs_document: SrsDocument | null
   diagrams: DiagramDetail[]
+  partial_outputs?: Record<string, unknown>
 }
+
+
+

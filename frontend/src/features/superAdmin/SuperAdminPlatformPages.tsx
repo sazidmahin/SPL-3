@@ -1,4 +1,4 @@
-﻿import {
+import {
   AlertTriangle,
   ArrowDownRight,
   ArrowUpRight,
@@ -14,6 +14,8 @@
   ExternalLink,
   Eye,
   FileClock,
+  FileText,
+  Gift,
   Filter,
   Gauge,
   Globe2,
@@ -21,6 +23,7 @@
   LockKeyhole,
   MoreHorizontal,
   PauseCircle,
+  Send,
   Plus,
   RefreshCw,
   Search,
@@ -28,6 +31,7 @@
   ShieldCheck,
   SlidersHorizontal,
   Sparkles,
+  Star,
   UserCheck,
   UserCog,
   UserPlus,
@@ -111,17 +115,109 @@ const userQuickActions = [
   { label: 'Export Users', detail: 'Download users list', icon: Download },
 ]
 const workspaces = [
-  { name: 'Innovate Labs', owner: 'Sarah Johnson', plan: 'Enterprise', members: 634, usage: '75,210', status: 'Active', tone: 'violet' as const },
-  { name: 'NextGen Analytics', owner: 'Marcus Chen', plan: 'Enterprise', members: 275, usage: '67,432', status: 'Active', tone: 'blue' as const },
-  { name: 'BrightPath Solutions', owner: 'Aven Wong', plan: 'Pro', members: 356, usage: '43,901', status: 'Active', tone: 'emerald' as const },
-  { name: 'OldCo Solutions', owner: 'Jerin Mason', plan: 'Pro', members: 82, usage: '12,118', status: 'Suspended', tone: 'rose' as const },
+  { name: 'Acme Corp Workspace', slug: 'acme-corp', type: 'Organization', owner: 'Jane Smith', ownerAvatar: 'JS', ownerTone: 'blue' as const, members: 24, plan: 'Enterprise', usagePercent: 78, usage: '7.8M / 10M credits', status: 'Active', created: 'Jan 1, 2024', lastActivity: '2 minutes ago', id: 'ws_acme_1234567890', tone: 'violet' as const },
+  { name: 'Globex Operations', slug: 'globex-ops', type: 'Organization', owner: 'Robert Johnson', ownerAvatar: 'RJ', ownerTone: 'blue' as const, members: 18, plan: 'Pro', usagePercent: 56, usage: '5.6M / 10M credits', status: 'Active', created: 'Jan 18, 2024', lastActivity: '15 minutes ago', id: 'ws_globex_2234567890', tone: 'blue' as const },
+  { name: 'Stark Industries AI', slug: 'stark-ai', type: 'Organization', owner: 'Tony Stark', ownerAvatar: 'TS', ownerTone: 'slate' as const, members: 31, plan: 'Enterprise', usagePercent: 92, usage: '9.2M / 10M credits', status: 'Active', created: 'Feb 5, 2024', lastActivity: '28 minutes ago', id: 'ws_stark_3234567890', tone: 'blue' as const },
+  { name: 'Wayne Enterprises', slug: 'wayne-ent', type: 'Organization', owner: 'Bruce Wayne', ownerAvatar: 'BW', ownerTone: 'cyan' as const, members: 12, plan: 'Pro', usagePercent: 42, usage: '4.2M / 10M credits', status: 'Trial', created: 'Mar 12, 2024', lastActivity: '1 hour ago', id: 'ws_wayne_4234567890', tone: 'blue' as const },
+  { name: 'Cyberdyne Systems', slug: 'cyberdyne', type: 'Organization', owner: 'Jennifer Lee', ownerAvatar: 'JL', ownerTone: 'rose' as const, members: 9, plan: 'Starter', usagePercent: 18, usage: '1.8M / 10M credits', status: 'Active', created: 'Apr 2, 2024', lastActivity: '1 hour ago', id: 'ws_cyberdyne_5234567890', tone: 'violet' as const },
+  { name: 'Umbrella Research', slug: 'umbrella-research', type: 'Organization', owner: 'Alice Johnson', ownerAvatar: 'AJ', ownerTone: 'rose' as const, members: 15, plan: 'Pro', usagePercent: 71, usage: '7.1M / 10M credits', status: 'Past Due', created: 'Apr 20, 2024', lastActivity: '2 hours ago', id: 'ws_umbrella_6234567890', tone: 'violet' as const },
+  { name: 'Personal Workspace', slug: 'personal-jones', type: 'Personal', owner: 'Michael Brown', ownerAvatar: 'MB', ownerTone: 'emerald' as const, members: 1, plan: 'Free', usagePercent: 33, usage: '330 / 1K credits', status: 'Active', created: 'Feb 10, 2024', lastActivity: '3 hours ago', id: 'ws_personal_7234567890', tone: 'violet' as const },
+  { name: 'Sam Wilson Workspace', slug: 'sam-wilson', type: 'Personal', owner: 'Sam Wilson', ownerAvatar: 'SW', ownerTone: 'blue' as const, members: 1, plan: 'Free', usagePercent: 12, usage: '120 / 1K credits', status: 'Active', created: 'Mar 1, 2024', lastActivity: '4 hours ago', id: 'ws_sam_8234567890', tone: 'violet' as const },
+  { name: 'Data Science Projects', slug: 'ds-projects', type: 'Personal', owner: 'Emily Zhang', ownerAvatar: 'EZ', ownerTone: 'cyan' as const, members: 1, plan: 'Starter', usagePercent: 64, usage: '640 / 1K credits', status: 'Trial', created: 'May 5, 2024', lastActivity: '5 hours ago', id: 'ws_ds_9234567890', tone: 'violet' as const },
+  { name: 'AI Experiment Lab', slug: 'ai-experiment-lab', type: 'Personal', owner: 'David Wilson', ownerAvatar: 'DW', ownerTone: 'rose' as const, members: 1, plan: 'Free', usagePercent: 8, usage: '80 / 1K credits', status: 'Suspended', created: 'May 12, 2024', lastActivity: '2 days ago', id: 'ws_lab_1034567890', tone: 'violet' as const },
 ]
 
+const workspacePlanDistribution = [
+  { name: 'Enterprise', value: 342, share: '26.6%', color: '#6335f5' },
+  { name: 'Pro', value: 418, share: '32.5%', color: '#4a9cff' },
+  { name: 'Starter', value: 276, share: '21.5%', color: '#45c4b8' },
+  { name: 'Free', value: 205, share: '15.9%', color: '#ffb22d' },
+  { name: 'Trial', value: 44, share: '3.5%', color: '#cbd5e1' },
+]
+
+const workspaceHealth = [
+  { label: 'Active Workspaces', value: '1,239 (96.4%)', tone: 'emerald' as const },
+  { label: 'Trial Workspaces', value: '44 (3.4%)', tone: 'blue' as const },
+  { label: 'Past Due', value: '21 (1.6%)', tone: 'amber' as const },
+  { label: 'Suspended', value: '46 (3.6%)', tone: 'rose' as const },
+]
+
+const workspaceActivity = [
+  { label: 'New workspace "Data Analytics Hub" created by Sarah Davis', time: '2m ago', icon: CheckCircle2, tone: 'emerald' as const },
+  { label: 'Workspace "Umbrella Research" plan changed from Starter to Pro', time: '15m ago', icon: Users, tone: 'blue' as const },
+  { label: 'Workspace "AI Experiment Lab" suspended by Super Admin', time: '28m ago', icon: AlertTriangle, tone: 'rose' as const },
+  { label: 'Jane Smith added 3 members to "Acme Corp Workspace"', time: '1h ago', icon: UserPlus, tone: 'blue' as const },
+  { label: 'Payment failed for "Globex Operations"', time: '2h ago', icon: AlertTriangle, tone: 'rose' as const },
+]
+
+const workspaceQuickActions = [
+  { label: 'Review Suspended Workspaces', detail: 'Check and manage suspended workspaces', icon: PauseCircle },
+  { label: 'Manage Plans', detail: 'Create and manage workspace plans', icon: WalletCards },
+  { label: 'View Billing Issues', detail: 'Review past due and billing problems', icon: CreditCard },
+  { label: 'Export Workspace List', detail: 'Download workspace data', icon: Download },
+]
 const plans = [
-  { name: 'Free', price: '$0', seats: '1 seat', credits: '100 credits', status: 'Public', subscribers: '2,184', tone: 'slate' as const },
-  { name: 'Pro', price: '$29', seats: '10 seats', credits: '10,000 credits', status: 'Public', subscribers: '3,920', tone: 'blue' as const },
-  { name: 'Growth', price: '$299', seats: '100 seats', credits: '250,000 credits', status: 'Public', subscribers: '862', tone: 'emerald' as const },
-  { name: 'Enterprise', price: 'Custom', seats: 'Unlimited', credits: 'Custom quota', status: 'Sales-led', subscribers: '248', tone: 'violet' as const },
+  {
+    name: 'Free',
+    description: 'Perfect for getting started',
+    price: '$0',
+    cadence: 'Forever',
+    badge: 'Default',
+    icon: Gift,
+    tone: 'emerald' as const,
+    features: ['AI Generation (5/mo)', '1 Workspace', 'Basic Export'],
+    limits: ['AI Generations: 5 / month', 'Projects: 3', 'Storage: 100 MB'],
+    subscriptions: '356',
+    share: '28.6% of total',
+    status: 'Active',
+  },
+  {
+    name: 'Basic',
+    description: 'For individuals and hobbyists',
+    price: '$9.99',
+    cadence: 'Per month',
+    icon: Send,
+    tone: 'blue' as const,
+    features: ['AI Generation (50/mo)', '5 Workspaces', 'Export to PDF'],
+    limits: ['AI Generations: 50 / month', 'Projects: 25', 'Storage: 1 GB'],
+    subscriptions: '542',
+    share: '43.6% of total',
+    status: 'Active',
+  },
+  {
+    name: 'Pro',
+    description: 'For professionals and teams',
+    price: '$29.99',
+    cadence: 'Per month',
+    badge: 'Popular',
+    icon: Star,
+    tone: 'violet' as const,
+    features: ['AI Generation (200/mo)', 'Unlimited Workspaces', 'All Export Options'],
+    limits: ['AI Generations: 200 / month', 'Projects: Unlimited', 'Storage: 10 GB'],
+    subscriptions: '298',
+    share: '23.9% of total',
+    status: 'Active',
+  },
+  {
+    name: 'Enterprise',
+    description: 'For large organizations',
+    price: 'Custom',
+    cadence: 'Contact Sales',
+    icon: Building2,
+    tone: 'amber' as const,
+    features: ['Unlimited AI', 'SSO & SAML', 'Priority Support'],
+    limits: ['AI Generations: Unlimited', 'Projects: Unlimited', 'Storage: Custom'],
+    subscriptions: '52',
+    share: '4.2% of total',
+    status: 'Active',
+  },
+]
+
+const planComparisonRows = [
+  { feature: 'AI Generations / Month', free: '5', basic: '50', pro: '200', enterprise: 'Unlimited' },
+  { feature: 'Workspaces', free: '1', basic: '5', pro: 'Unlimited', enterprise: 'Unlimited' },
+  { feature: 'Storage', free: '100 MB', basic: '1 GB', pro: '10 GB', enterprise: 'Custom' },
+  { feature: 'Exports', free: 'Basic', basic: 'PDF', pro: 'PDF, DOCX, Markdown', enterprise: 'All formats' },
 ]
 
 const subscriptions = [
@@ -166,7 +262,7 @@ export function SuperAdminPlatformPage({ section, user, activeWorkspace, generat
           <h1>{config.title}</h1>
         </div>
         <div className="super-section-action-group">
-          <button type="button"><RefreshCw size={17} /> Refresh</button>
+          {section === 'plans' ? <button type="button"><Users size={17} /> View Subscriptions</button> : <button type="button"><RefreshCw size={17} /> Refresh</button>}
           <button type="button"><Icon size={17} /> {config.action}</button>
         </div>
       </div>
@@ -178,8 +274,8 @@ export function SuperAdminPlatformPage({ section, user, activeWorkspace, generat
 
 const pageConfig: Record<SuperAdminSection, { title: string; eyebrow: string; action: string; icon: LucideIcon }> = {
   users: { title: 'Users', eyebrow: 'Review users, roles and status', action: 'Invite User', icon: UserCog },
-  workspaces: { title: 'Workspaces', eyebrow: 'Review and manage all workspaces', action: 'Create Workspace', icon: Building2 },
-  plans: { title: 'Plans', eyebrow: 'Manage platform plans and quotas', action: 'New Plan', icon: WalletCards },
+  workspaces: { title: 'Workspaces Management', eyebrow: 'Manage personal and organization workspaces, ownership, plans, and access.', action: 'Create Workspace', icon: Building2 },
+  plans: { title: 'Plans & Subscriptions', eyebrow: 'Create and manage pricing plans, features, and limits for your platform.', action: 'Create New Plan', icon: FileText },
   subscriptions: { title: 'Subscriptions', eyebrow: 'Monitor billing state and changes', action: 'Export Billing', icon: CreditCard },
   'ai-jobs': { title: 'AI Generation Jobs', eyebrow: 'Track AI job status and performance', action: 'View Queue', icon: Bot },
   'llm-calls': { title: 'LLM / API Call Logs', eyebrow: 'Inspect model usage, latency and cost', action: 'Export Logs', icon: Database },
@@ -254,14 +350,14 @@ function UsersPage() {
           </div>
           <footer className="users-table-footer">
             <span>Showing 1 to 10 of 12,842 users</span>
-            <nav aria-label="Users pagination"><button type="button">‹</button><button type="button">‹</button><button className="active" type="button">1</button><button type="button">2</button><button type="button">3</button><button type="button">4</button><button type="button">5</button><span>...</span><button type="button">1,285</button><button type="button">›</button></nav>
+            <nav aria-label="Users pagination"><button type="button">&lt;</button><button type="button">&lt;</button><button className="active" type="button">1</button><button type="button">2</button><button type="button">3</button><button type="button">4</button><button type="button">5</button><span>...</span><button type="button">1,285</button><button type="button">&gt;</button></nav>
             <button type="button">10 / page <ChevronDown size={15} /></button>
           </footer>
         </section>
 
         <aside className="users-side-stack">
           <section className="selected-user-card">
-            <header><h2>Selected User Details</h2><button type="button" aria-label="Close details">×</button></header>
+            <header><h2>Selected User Details</h2><button type="button" aria-label="Close details">x</button></header>
             <div className="selected-user-head">
               <UserAvatar label={selectedUser.avatar} tone="violet" large />
               <div><strong>{selectedUser.name}</strong><small>{selectedUser.email}</small></div>
@@ -357,62 +453,203 @@ function UsersInfoCard({ title, action, children }: { title: string; action?: st
   return <section className="users-info-card"><header><h2>{title}</h2>{action ? <a href="#users">{action}</a> : null}</header><div>{children}</div></section>
 }
 function WorkspacesPage() {
+  const selectedWorkspace = workspaces[0]
+
   return (
-    <PageBody
-      stats={[
-        { label: 'Organizations', value: '1,243', detail: '98 added this month', icon: Building2, tone: 'violet' },
-        { label: 'Workspaces', value: '842', detail: 'active platform tenants', icon: Database, tone: 'blue' },
-        { label: 'Enterprise', value: '248', detail: 'custom contracts', icon: ShieldCheck, tone: 'emerald' },
-        { label: 'Flagged', value: '18', detail: 'needs admin review', icon: AlertTriangle, tone: 'amber' },
-      ]}
-      tabs={['All Workspaces', 'Enterprise', 'Growth', 'Pro', 'Suspended']}
-    >
-      <SectionPanel title="Workspace Registry" icon={Building2} action="View all">
-        <Toolbar placeholder="Search workspace, owner or plan" />
-        <div className="super-data-table workspaces-table" role="table" aria-label="Platform workspaces">
-          <div className="super-table-head" role="row"><span>Workspace</span><span>Owner</span><span>Plan</span><span>Members</span><span>LLM Calls</span><span>Status</span><span /></div>
-          {workspaces.map((item) => (
-            <article className="super-table-row" role="row" key={item.name}>
-              <span><Avatar name={item.name} tone={item.tone} /><b>{item.name}</b><small>Organization workspace</small></span>
-              <span>{item.owner}</span>
-              <span>{item.plan}</span>
-              <span>{item.members}</span>
-              <span>{item.usage}</span>
-              <span><Status tone={item.tone}>{item.status}</Status></span>
-              <span><IconButton icon={Eye} label="Inspect workspace" /></span>
-            </article>
-          ))}
+    <section className="platform-workspaces-page">
+      <div className="users-filter-row workspace-filter-row">
+        <label><Search size={18} /><span>Search by workspace name or owner...</span></label>
+        <button type="button">All Types <ChevronDown size={16} /></button>
+        <button type="button">All Statuses <ChevronDown size={16} /></button>
+        <button type="button">All Plans <ChevronDown size={16} /></button>
+        <button type="button"><Filter size={16} /> Filters</button>
+        <button className="users-add-button" type="button"><Plus size={18} /> Create Workspace</button>
+      </div>
+
+      <div className="users-kpi-row workspace-kpi-row">
+        <UserMetric icon={Building2} label="Total Workspaces" value="1,285" delta="8.4%" compare="vs last 30 days" tone="violet" />
+        <UserMetric icon={Database} label="Organization Workspaces" value="842" delta="6.7%" compare="vs last 30 days" tone="blue" />
+        <UserMetric icon={UserCheck} label="Personal Workspaces" value="443" delta="9.1%" compare="vs last 30 days" tone="emerald" />
+        <UserMetric icon={UserX} label="Suspended Workspaces" value="46" delta="12.3%" compare="vs last 30 days" tone="rose" negative />
+      </div>
+
+      <div className="workspace-management-grid">
+        <section className="users-table-card workspace-table-card">
+          <header>
+            <h2>Workspaces</h2>
+            <div className="workspace-table-actions"><button type="button"><Download size={16} /> Export</button><IconButton icon={MoreHorizontal} label="More workspace table actions" /></div>
+          </header>
+          <div className="users-table workspace-table" role="table" aria-label="Workspace management table">
+            <div className="users-table-head workspace-table-head" role="row">
+              <span>Workspace Name</span><span>Type</span><span>Owner</span><span>Members</span><span>Plan</span><span>Usage</span><span>Status</span><span>Created Date</span><span>Actions</span>
+            </div>
+            {workspaces.map((item) => (
+              <article className="users-table-row workspace-table-row" role="row" key={item.id}>
+                <span><span className={`workspace-icon-badge user-soft-${item.tone}`}><Building2 size={16} /></span><span><strong>{item.name}</strong><small>{item.slug}</small></span></span>
+                <span><UserPill tone={item.type === 'Personal' ? 'violet' : 'blue'}>{item.type}</UserPill></span>
+                <span><UserAvatar label={item.ownerAvatar} tone={item.ownerTone} /> {item.owner}</span>
+                <span><Users size={14} /> {item.members}</span>
+                <span>{item.plan}</span>
+                <span><WorkspaceUsageBar value={item.usagePercent} /></span>
+                <span><UserPill tone={workspaceStatusTone(item.status)}>{item.status}</UserPill></span>
+                <span>{item.created}</span>
+                <span className="users-action-cell"><IconButton icon={MoreHorizontal} label="Workspace actions" /></span>
+              </article>
+            ))}
+          </div>
+          <footer className="users-table-footer">
+            <span>Showing 1 to 10 of 1,285 workspaces</span>
+            <nav aria-label="Workspaces pagination"><button type="button">&lt;</button><button className="active" type="button">1</button><button type="button">2</button><button type="button">3</button><button type="button">4</button><button type="button">5</button><span>...</span><button type="button">129</button><button type="button">&gt;</button></nav>
+            <button type="button">10 / page <ChevronDown size={15} /></button>
+          </footer>
+        </section>
+
+        <aside className="selected-workspace-card">
+          <header><h2>Selected Workspace Details</h2><button type="button" aria-label="Close workspace details">x</button></header>
+          <div className="selected-user-head selected-workspace-head">
+            <span className="workspace-selected-icon"><Building2 size={28} /></span>
+            <div><strong>{selectedWorkspace.name}</strong><small>{selectedWorkspace.slug}</small></div>
+            <UserPill tone="emerald">Active</UserPill>
+          </div>
+          <dl>
+            <div><dt><Database size={15} /> Type</dt><dd>{selectedWorkspace.type}</dd></div>
+            <div><dt><UserCheck size={15} /> Owner</dt><dd><UserAvatar label={selectedWorkspace.ownerAvatar} tone={selectedWorkspace.ownerTone} /> {selectedWorkspace.owner}</dd></div>
+            <div><dt><Users size={15} /> Members</dt><dd>{selectedWorkspace.members} members</dd></div>
+            <div><dt><WalletCards size={15} /> Plan</dt><dd>{selectedWorkspace.plan}</dd></div>
+            <div><dt><CheckCircle2 size={15} /> Billing Status</dt><dd>Active</dd></div>
+            <div><dt><Gauge size={15} /> Usage</dt><dd><span>{selectedWorkspace.usagePercent}% ({selectedWorkspace.usage})</span><WorkspaceUsageBar value={selectedWorkspace.usagePercent} /></dd></div>
+            <div><dt><RefreshCw size={15} /> Last Activity</dt><dd>{selectedWorkspace.lastActivity}</dd></div>
+            <div><dt><FileClock size={15} /> Created Date</dt><dd>{selectedWorkspace.created}</dd></div>
+            <div><dt><Globe2 size={15} /> Workspace ID</dt><dd>{selectedWorkspace.id}</dd></div>
+          </dl>
+          <button className="view-profile-button" type="button">View Full Workspace <ExternalLink size={15} /></button>
+          <div className="workspace-detail-actions"><button type="button"><PauseCircle size={16} /> Suspend Workspace</button><button type="button"><CreditCard size={16} /> Open Billing</button></div>
+        </aside>
+      </div>
+
+      <div className="workspace-lower-grid">
+        <UsersInfoCard title="Recent Workspace Activity" action="View all">
+          {workspaceActivity.map((event) => {
+            const Icon = event.icon
+            return <article className="user-event-row workspace-event-row" key={event.label}><span className={`user-soft-${event.tone}`}><Icon size={15} /></span><strong>{event.label}</strong><time>{event.time}</time></article>
+          })}
+        </UsersInfoCard>
+
+        <section className="role-distribution-card workspace-plan-card">
+          <h2>Plan Distribution</h2>
+          <div className="role-distribution-body workspace-plan-body">
+            <div className="role-donut">
+              <ResponsiveContainer width="100%" height={210}>
+                <PieChart>
+                  <Pie data={workspacePlanDistribution} dataKey="value" innerRadius={58} outerRadius={86} stroke="none">
+                    {workspacePlanDistribution.map((plan) => <Cell fill={plan.color} key={plan.name} />)}
+                  </Pie>
+                </PieChart>
+              </ResponsiveContainer>
+              <div><strong>1,285</strong><span>Total</span></div>
+            </div>
+            <div className="role-legend">
+              {workspacePlanDistribution.map((plan) => <p key={plan.name}><i style={{ background: plan.color }} /><span>{plan.name}</span><strong>{plan.value.toLocaleString()} ({plan.share})</strong></p>)}
+            </div>
+          </div>
+          <a href="#plans">View all plans <ChevronDown size={15} /></a>
+        </section>
+
+        <UsersInfoCard title="Workspace Health">
+          {workspaceHealth.map((item) => <article className="account-row workspace-health-row" key={item.label}><span className={`workspace-dot user-soft-${item.tone}`} /><strong>{item.label}</strong><em>{item.value}</em></article>)}
+          <a className="workspace-card-link" href="#workspaces">View all workspace health <ChevronDown size={15} /></a>
+        </UsersInfoCard>
+      </div>
+
+      <section className="users-quick-actions workspace-quick-actions">
+        <h2>Quick Actions</h2>
+        <div>
+          {workspaceQuickActions.map((action) => {
+            const Icon = action.icon
+            return <button type="button" key={action.label}><span><Icon size={21} /></span><div><strong>{action.label}</strong><small>{action.detail}</small></div><ChevronDown size={17} /></button>
+          })}
         </div>
-      </SectionPanel>
-    </PageBody>
+      </section>
+    </section>
   )
 }
 
+function WorkspaceUsageBar({ value }: { value: number }) {
+  return <span className="workspace-usage"><em>{value}%</em><i><b style={{ width: `${value}%` }} /></i></span>
+}
+
+function workspaceStatusTone(status: string): Tone {
+  if (status === 'Active') return 'emerald'
+  if (status === 'Trial') return 'blue'
+  if (status === 'Past Due') return 'amber'
+  if (status === 'Suspended') return 'rose'
+  return 'slate'
+}
 function PlansPage() {
   return (
-    <PageBody
-      stats={[
-        { label: 'Plans', value: '4', detail: 'public and sales-led', icon: WalletCards, tone: 'violet' },
-        { label: 'MRR', value: '$324,560', detail: '18.6% month over month', icon: CreditCard, tone: 'emerald' },
-        { label: 'Plan Changes', value: '86', detail: 'this month', icon: ArrowUpRight, tone: 'blue' },
-        { label: 'Draft Plans', value: '2', detail: 'not published', icon: SlidersHorizontal, tone: 'amber' },
-      ]}
-      tabs={['Plans', 'Pricing', 'Quotas', 'Feature Gates', 'Coupons']}
-    >
-      <SectionPanel title="Plan Configuration" icon={WalletCards} action="Manage">
-        <div className="plan-management-grid">
-          {plans.map((plan) => (
-            <article className="plan-management-card" key={plan.name}>
-              <div><span className={`super-status super-status-${plan.tone}`}>{plan.status}</span><h2>{plan.name}</h2><strong>{plan.price}<small>/month</small></strong></div>
-              <p>{plan.seats} / {plan.credits}</p>
-              <div className="plan-row"><span>Subscribers</span><b>{plan.subscribers}</b></div>
-              <button type="button">Edit Plan</button>
-            </article>
-          ))}
+    <section className="platform-plans-page">
+      <div className="plans-kpi-row">
+        <PlanMetric icon={FileText} label="Total Plans" value="4" detail="Active plans" tone="violet" />
+        <PlanMetric icon={Users} label="Active Subscriptions" value="1,248" delta="12.5%" detail="this month" tone="emerald" />
+        <PlanMetric icon={CreditCard} label="Monthly Revenue" value="BDT 31,42,700" delta="18.3%" detail="this month" tone="blue" />
+        <PlanMetric icon={ArrowUpRight} label="Trial Conversions" value="24.8%" delta="5.6%" detail="this month" tone="amber" />
+      </div>
+
+      <section className="plans-table-card">
+        <nav className="plans-tabs" aria-label="Plan configuration sections">
+          {['All Plans', 'Features', 'Usage Limits', 'Plan Settings'].map((tab, index) => <button className={index === 0 ? 'active' : undefined} type="button" key={tab}>{tab}</button>)}
+        </nav>
+        <div className="plans-table-scroll">
+          <div className="plans-table" role="table" aria-label="Platform pricing plans">
+            <div className="plans-table-head" role="row"><span>Plan</span><span>Pricing</span><span>Key Features</span><span>Usage Limits</span><span>Subscriptions</span><span>Status</span><span>Actions</span></div>
+            {plans.map((plan) => <PlanTableRow plan={plan} key={plan.name} />)}
+          </div>
         </div>
-      </SectionPanel>
-    </PageBody>
+      </section>
+
+      <section className="plan-comparison-card">
+        <header>
+          <div><h2>Plan Features Comparison</h2><p>Compare plan features and limits side by side.</p></div>
+          <button type="button"><Edit3 size={16} /> Edit Comparison</button>
+        </header>
+        <div className="plans-table-scroll">
+          <div className="plan-comparison-table" role="table" aria-label="Plan features comparison">
+            <div className="plan-comparison-head" role="row"><span>Features</span><span>Free</span><span>Basic</span><span>Pro <b>Popular</b></span><span>Enterprise</span></div>
+            {planComparisonRows.map((row) => (
+              <div className="plan-comparison-row" role="row" key={row.feature}><span>{row.feature}</span><span>{row.free}</span><span>{row.basic}</span><span>{row.pro}</span><span>{row.enterprise}</span></div>
+            ))}
+          </div>
+        </div>
+      </section>
+    </section>
   )
+}
+
+function PlanMetric({ icon: Icon, label, value, delta, detail, tone }: { icon: LucideIcon; label: string; value: string; delta?: string; detail: string; tone: Tone }) {
+  return <article className="plans-kpi-card"><div><small>{label}</small><strong>{value}</strong>{delta ? <p><ArrowUpRight size={13} /> {delta} <em>{detail}</em></p> : <em>{detail}</em>}</div><span className={`user-soft-${tone}`}><Icon size={26} /></span></article>
+}
+
+function PlanTableRow({ plan }: { plan: typeof plans[number] }) {
+  const Icon = plan.icon
+  return (
+    <article className="plans-table-row" role="row">
+      <span>
+        <i className={`plan-icon-badge user-soft-${plan.tone}`}><Icon size={23} /></i>
+        <b>{plan.name} {plan.badge ? <mark className={`plan-badge plan-badge-${plan.tone}`}>{plan.badge}</mark> : null}</b>
+        <small>{plan.description}</small>
+      </span>
+      <span><b>{plan.price}</b><small>{plan.cadence}</small></span>
+      <span className="plan-feature-chips">{plan.features.map((feature) => <PlanFeatureChip key={feature}>{feature}</PlanFeatureChip>)}</span>
+      <span className="plan-limits">{plan.limits.map((limit) => <small key={limit}>{limit}</small>)}</span>
+      <span><b>{plan.subscriptions}</b><small>{plan.share}</small></span>
+      <span><UserPill tone="emerald">{plan.status}</UserPill></span>
+      <span><IconButton icon={MoreHorizontal} label={`${plan.name} plan actions`} /></span>
+    </article>
+  )
+}
+
+function PlanFeatureChip({ children }: { children: string }) {
+  return <em>{children}</em>
 }
 
 function SubscriptionsPage() {
@@ -686,10 +923,3 @@ function initials(name: string) {
     .map((part) => part[0]?.toUpperCase())
     .join('') || 'SA'
 }
-
-
-
-
-
-
-
