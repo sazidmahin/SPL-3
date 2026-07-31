@@ -11,6 +11,7 @@ GenerationJobType = Literal["srs", "class_diagram", "full"]
 DiagramMethod = Literal["llm", "rule_based"]
 RequirementType = Literal["functional", "non_functional"]
 ClarificationStatus = Literal["not_required", "pending", "clarified"]
+SrsPipelineStatus = Literal["needs_clarification", "completed"]
 
 
 class RequirementInputCreateRequest(BaseModel):
@@ -46,33 +47,45 @@ class RequirementInputRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class SrsIntakeRequest(RequirementInputCreateRequest):
+
+class AiSrsGenerateRequest(RequirementInputCreateRequest):
     pass
 
 
-class SrsIntakeResponse(BaseModel):
-    requirement_input: RequirementInputRead
-    needs_clarification: bool
+class AiSrsGenerateResponse(BaseModel):
+    status: Literal["needs_clarification", "completed"]
+    title: str
+    raw_text: str
+    summary: dict | None = None
+    extracted_requirements: list[dict] = Field(default_factory=list)
+    classified_requirements: list[dict] = Field(default_factory=list)
+    content_markdown: str | None = None
+    content_json: dict | None = None
     clarifying_questions: list[ClarifyingQuestion] = Field(default_factory=list)
-    draft_requirement: str
+    pipeline_steps: list[dict] = Field(default_factory=list)
+    llm_calls: list[dict] = Field(default_factory=list)
+
+class SrsGenerationOptions(BaseModel):
+    generate_class_diagram: bool = False
+    diagram_methods: list[DiagramMethod] = Field(default_factory=list)
+
+
+class SrsIntakeRequest(RequirementInputCreateRequest, SrsGenerationOptions):
+    pass
 
 
 class ClarificationAnswerRequest(BaseModel):
     answers: list[ClarificationAnswer] = Field(min_length=1)
 
 
-class ClarificationAnswerResponse(BaseModel):
-    requirement_input: RequirementInputRead
-    needs_clarification: bool
-    refined_requirement: str
+class SrsClarificationRequest(ClarificationAnswerRequest, SrsGenerationOptions):
+    requirement_input_id: UUID
 
 
-class SrsGenerateRequest(BaseModel):
+class SrsGenerateRequest(SrsGenerationOptions):
     requirement_input_id: UUID | None = None
     title: str | None = Field(default=None, min_length=1, max_length=255)
     raw_text: str | None = Field(default=None, min_length=1, max_length=200000)
-    generate_class_diagram: bool = False
-    diagram_methods: list[DiagramMethod] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_input_source(self) -> "SrsGenerateRequest":
@@ -149,3 +162,19 @@ class SrsGenerateResponse(BaseModel):
     job: GenerationJobRead
     srs_document: SrsDocumentDetailRead
     diagrams: list[DiagramDetailRead] = Field(default_factory=list)
+
+
+class SrsPipelineResponse(BaseModel):
+    status: SrsPipelineStatus
+    requirement_input: RequirementInputRead
+    needs_clarification: bool
+    clarifying_questions: list[ClarifyingQuestion] = Field(default_factory=list)
+    draft_requirement: str | None = None
+    refined_requirement: str | None = None
+    job: GenerationJobRead | None = None
+    srs_document: SrsDocumentDetailRead | None = None
+    diagrams: list[DiagramDetailRead] = Field(default_factory=list)
+
+
+SrsIntakeResponse = SrsPipelineResponse
+ClarificationAnswerResponse = SrsPipelineResponse

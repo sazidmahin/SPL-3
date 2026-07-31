@@ -11,7 +11,6 @@ from sqlalchemy.pool import StaticPool
 from app.db import models  # noqa: F401
 from app.db.base import Base
 from app.services.llm_service import (
-    DeterministicLlmClient,
     LangChainOpenAIClient,
     LlmConfigurationError,
     LlmExecutionError,
@@ -21,6 +20,7 @@ from app.services.llm_service import (
     get_or_create_prompt_template,
     render_prompt,
 )
+from tests.unit.fake_llm import FakeStructuredLlmClient
 
 
 @pytest.fixture()
@@ -42,24 +42,35 @@ def db_session() -> Generator[Session, None, None]:
 
 
 class FailingClient:
-    provider = "test"
+    provider = "openai"
     model_name = "failing-model"
 
     def generate(self, request: LlmRequest):
         raise RuntimeError("provider unavailable")
 
 
-def test_auto_provider_without_key_uses_deterministic_client() -> None:
-    client = build_llm_client(
-        provider="auto",
-        openai_api_key=None,
-        openai_model="gpt-test",
-        openai_temperature=0,
-        openai_timeout_seconds=30,
-        openai_max_retries=2,
-    )
+def test_auto_provider_requires_openai_api_key() -> None:
+    with pytest.raises(LlmConfigurationError):
+        build_llm_client(
+            provider="auto",
+            openai_api_key=None,
+            openai_model="gpt-test",
+            openai_temperature=0,
+            openai_timeout_seconds=30,
+            openai_max_retries=2,
+        )
 
-    assert isinstance(client, DeterministicLlmClient)
+
+def test_local_provider_is_not_supported() -> None:
+    with pytest.raises(LlmConfigurationError):
+        build_llm_client(
+            provider="local",
+            openai_api_key="sk-test",
+            openai_model="gpt-test",
+            openai_temperature=0,
+            openai_timeout_seconds=30,
+            openai_max_retries=2,
+        )
 
 
 def test_openai_provider_requires_api_key() -> None:
@@ -153,16 +164,16 @@ def test_execute_llm_call_logs_completed_call(db_session: Session) -> None:
         generation_job_id=None,
         template=template,
         variables={"raw_text": "users submit claims"},
-        client=DeterministicLlmClient(),
+        client=FakeStructuredLlmClient(),
     )
 
     assert call.status == "completed"
-    assert call.provider == "local"
-    assert call.model_name == "deterministic-srs-v1"
+    assert call.provider == "openai"
+    assert call.model_name == "fake-openai-test-model"
     assert call.prompt_tokens > 0
     assert call.total_tokens == call.prompt_tokens + call.completion_tokens
     assert call.response_payload is not None
-    assert "introduction" in call.response_payload["content"]
+    assert "Summary generated" in call.response_payload["content"]
 
 
 def test_execute_llm_call_logs_failed_call(db_session: Session) -> None:

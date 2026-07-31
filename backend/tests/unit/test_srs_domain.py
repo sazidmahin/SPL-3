@@ -1,22 +1,36 @@
-﻿from app.domain.srs import (
-    build_summary_sections,
-    build_srs_document,
-    classify_requirement_drafts,
-    extract_requirement_drafts,
-)
+from app.domain.srs import RequirementDraft, build_srs_document
 
 
-def test_srs_domain_pipeline_is_pure_and_structured() -> None:
-    raw_text = "Users submit claims. The system must respond within two seconds. Admins approve claims."
+def test_srs_document_builder_uses_llm_structured_outputs() -> None:
+    summary = {
+        "introduction": "Users submit claims",
+        "stakeholders": ["Users", "Administrators"],
+        "use_cases": ["UC-001: Users submit claims"],
+        "glossary": [],
+    }
+    requirements = [
+        RequirementDraft(
+            requirement_code="REQ-001",
+            requirement_text="The system shall allow users to submit claims.",
+            source_trace="Users submit claims",
+            extraction_reason="Extracted by the LLM as a functional capability.",
+            confidence_score=0.86,
+            requirement_type="functional",
+        ),
+        RequirementDraft(
+            requirement_code="REQ-002",
+            requirement_text="The system shall respond within two seconds.",
+            source_trace="The system must respond within two seconds",
+            extraction_reason="Extracted by the LLM as a performance constraint.",
+            confidence_score=0.82,
+            requirement_type="non_functional",
+            nfr_subtype="Performance",
+        ),
+    ]
 
-    summary = build_summary_sections(raw_text)
-    extracted = extract_requirement_drafts(raw_text)
-    classified = classify_requirement_drafts(extracted)
-    markdown, content_json = build_srs_document("Claims MVP", summary, classified)
+    markdown, content_json = build_srs_document("Claims MVP", summary, requirements)
 
-    assert summary["introduction"] == "Users submit claims"
-    assert summary["stakeholders"] == ["Users", "Administrators"]
-    assert extracted[0].requirement_code == "REQ-001"
-    assert any(item.requirement_type == "non_functional" for item in classified)
     assert "## Functional Requirements" in markdown
+    assert "## Non-Functional Requirements" in markdown
+    assert content_json["summary"] == summary
     assert content_json["traceability"][0]["requirement_code"] == "REQ-001"

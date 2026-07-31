@@ -57,97 +57,6 @@ class LlmClient(Protocol):
         """Generate text for the supplied prompt."""
 
 
-class DeterministicLlmClient:
-    provider = "local"
-    model_name = "deterministic-srs-v1"
-
-    def generate(self, request: LlmRequest) -> LlmResponse:
-        content = self._structured_content(request)
-        words = request.prompt.split()
-        completion_tokens = max(1, len(content.split()))
-        return LlmResponse(
-            content=content,
-            response_payload={"content": content},
-            prompt_tokens=len(words),
-            completion_tokens=completion_tokens,
-        )
-
-    def _structured_content(self, request: LlmRequest) -> str:
-        if request.purpose == "summary":
-            return json.dumps(
-                {
-                    "introduction": "Summary generated from the supplied stakeholder requirement text.",
-                    "stakeholders": ["Users identified from the supplied requirement text"],
-                    "use_cases": ["UC-001: Use the system capabilities described in the supplied requirement text"],
-                    "glossary": [],
-                }
-            )
-        if request.purpose == "requirement_extraction":
-            source_text = request.prompt.rsplit("Source text:", 1)[-1].strip()
-            sentences = self._sentences(source_text)
-            return json.dumps(
-                {
-                    "requirements": [
-                        {
-                            "requirement_code": f"REQ-{index:03d}",
-                            "requirement_text": self._shall_statement(sentence),
-                            "source_trace": sentence,
-                            "extraction_reason": "The source text describes an expected system capability or constraint.",
-                            "confidence_score": 0.75,
-                        }
-                        for index, sentence in enumerate(sentences, start=1)
-                    ]
-                }
-            )
-        if request.purpose == "requirement_classification":
-            requirements = self._requirements_from_prompt(request.prompt)
-            return json.dumps({"requirements": [self._classify(item) for item in requirements]})
-
-        preview = " ".join(request.prompt.split()[:40])
-        return f"{request.purpose}: {preview}" if preview else request.purpose
-
-    @staticmethod
-    def _sentences(text: str) -> list[str]:
-        parts = [part.strip(" -\t") for part in re.split(r"[\n.;]+", text) if part.strip(" -\t")]
-        return parts or ["The submitted requirement text"]
-
-    @staticmethod
-    def _shall_statement(sentence: str) -> str:
-        cleaned = sentence.rstrip(".")
-        if cleaned.lower().startswith("the system shall"):
-            return cleaned
-        return f"The system shall support {cleaned[0].lower()}{cleaned[1:]}"
-
-    @staticmethod
-    def _requirements_from_prompt(prompt: str) -> list[dict[str, Any]]:
-        raw_json = prompt.rsplit("Requirements JSON:", 1)[-1].strip()
-        parsed = json.loads(raw_json)
-        requirements = parsed.get("requirements", [])
-        return requirements if isinstance(requirements, list) else []
-
-    @staticmethod
-    def _classify(item: dict[str, Any]) -> dict[str, Any]:
-        text = str(item.get("requirement_text", ""))
-        lower_text = text.lower()
-        subtype = None
-        if any(keyword in lower_text for keyword in ["security", "secure", "auth", "password", "permission"]):
-            subtype = "Security"
-        elif any(keyword in lower_text for keyword in ["performance", "respond", "within", "second", "fast"]):
-            subtype = "Performance"
-
-        requirement_type = "non_functional" if subtype else "functional"
-        return {
-            "requirement_code": item.get("requirement_code", "REQ-001"),
-            "requirement_text": text,
-            "source_trace": item.get("source_trace", text),
-            "extraction_reason": item.get("extraction_reason", "The item was extracted from the source text."),
-            "confidence_score": item.get("confidence_score", 0.75),
-            "requirement_type": requirement_type,
-            "nfr_subtype": subtype,
-            "classification_rationale": "Classified from the requirement wording.",
-        }
-
-
 def _json_ready(value: Any) -> Any:
     try:
         json.dumps(value)
@@ -200,18 +109,14 @@ class LangChainOpenAIClient:
     ) -> None:
         cleaned_api_key = api_key.strip() if api_key else ""
         if not cleaned_api_key and chat_model is None:
-            raise LlmConfigurationError(
-                "OPENAI_API_KEY is required when LLM_PROVIDER resolves to openai"
-            )
+            raise LlmConfigurationError("OPENAI_API_KEY is required for SRS AI generation")
 
         self.model_name = model_name.strip() or settings.openai_model
         if chat_model is None:
             try:
                 from langchain_openai import ChatOpenAI
             except ImportError as exc:
-                raise LlmConfigurationError(
-                    "langchain-openai is required when LLM_PROVIDER resolves to openai"
-                ) from exc
+                raise LlmConfigurationError("langchain-openai is required for OpenAI generation") from exc
 
             chat_model = ChatOpenAI(
                 model=self.model_name,
@@ -260,14 +165,14 @@ class LangChainOpenAIClient:
         )
 
 
-OPENAI_PROVIDER_NAMES = {"openai", "langchain-openai", "langchain_openai"}
+OPENAI_PROVIDER_NAMES = {"auto", "openai", "langchain-openai", "langchain_openai"}
 
 
 def resolve_llm_provider(provider: str, openai_api_key: str | None) -> str:
     requested_provider = provider.strip().lower()
-    if requested_provider == "auto":
-        return "openai" if openai_api_key else "local"
-    return requested_provider
+    if requested_provider in OPENAI_PROVIDER_NAMES:
+        return "openai"
+    raise LlmConfigurationError(f"Unsupported LLM_PROVIDER: {provider}. Only OpenAI is supported.")
 
 
 def build_llm_client(
@@ -279,18 +184,14 @@ def build_llm_client(
     openai_timeout_seconds: int,
     openai_max_retries: int,
 ) -> LlmClient:
-    resolved_provider = resolve_llm_provider(provider, openai_api_key)
-    if resolved_provider == "local":
-        return DeterministicLlmClient()
-    if resolved_provider in OPENAI_PROVIDER_NAMES:
-        return LangChainOpenAIClient(
-            api_key=openai_api_key,
-            model_name=openai_model,
-            temperature=openai_temperature,
-            timeout_seconds=openai_timeout_seconds,
-            max_retries=openai_max_retries,
-        )
-    raise LlmConfigurationError(f"Unsupported LLM_PROVIDER: {provider}")
+    resolve_llm_provider(provider, openai_api_key)
+    return LangChainOpenAIClient(
+        api_key=openai_api_key,
+        model_name=openai_model,
+        temperature=openai_temperature,
+        timeout_seconds=openai_timeout_seconds,
+        max_retries=openai_max_retries,
+    )
 
 
 def build_default_llm_client() -> LlmClient:
@@ -305,10 +206,7 @@ def build_default_llm_client() -> LlmClient:
 
 
 def configured_llm_model_name() -> str:
-    provider = resolve_llm_provider(settings.llm_provider, settings.openai_api_key)
-    if provider in OPENAI_PROVIDER_NAMES:
-        return settings.openai_model
-    return DeterministicLlmClient.model_name
+    return settings.openai_model
 
 
 def get_or_create_prompt_template(
@@ -385,11 +283,7 @@ def execute_llm_call(
             active_client = build_default_llm_client()
         response = active_client.generate(LlmRequest(prompt=prompt, purpose=template.purpose))
     except Exception as exc:
-        provider = getattr(
-            active_client,
-            "provider",
-            resolve_llm_provider(settings.llm_provider, settings.openai_api_key),
-        )
+        provider = getattr(active_client, "provider", "openai")
         model_name = getattr(active_client, "model_name", configured_llm_model_name())
         call = LlmCall(
             workspace_id=workspace_id,
