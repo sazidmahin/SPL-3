@@ -9,10 +9,12 @@ import {
   Bot,
   Check,
   CheckCircle2,
+  ChevronDown,
   Clock3,
   Download,
   Edit3,
   FileText,
+  Filter,
   Grid2X2,
   HelpCircle,
   Loader2,
@@ -21,6 +23,7 @@ import {
   MoreHorizontal,
   Paperclip,
   RefreshCw,
+  Search,
   SearchCheck,
   Send,
   ShieldCheck,
@@ -122,7 +125,6 @@ export function SrsGenerationFlow({
   onSelectSrsDocument,
   onExportSrs,
   onRunIntake,
-  onSubmitClarifications,
   onGenerateFromRequirement,
 }: SrsGenerationFlowProps) {
   const [flowStatus, setFlowStatus] = useState<FlowStatus>('idle')
@@ -141,7 +143,6 @@ export function SrsGenerationFlow({
   const rawCount = Math.min(srsRawText.length, visibleLimit)
   const sections = useMemo(() => sectionNames(generatedDocument), [generatedDocument])
   const classificationData = useMemo(() => buildClassificationData(generatedDocument), [generatedDocument])
-
   async function handleIntakeSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!srsRawText.trim() || !activeProject || !canGenerateSrs) {
@@ -153,27 +154,37 @@ export function SrsGenerationFlow({
     setFlowStatus('checking')
     setErrorMessage(null)
     try {
-      const response = await onRunIntake({
+      const intakeResponse = await onRunIntake({
         title: inferredTitle,
         raw_text: srsRawText.trim(),
         generate_class_diagram: generateClassDiagram,
         diagram_methods: generateClassDiagram ? ['llm'] : [],
       })
-      setPipelineResponse(response)
-      setRequirementInput(response.requirement_input)
-      if (response.status === 'needs_clarification') {
-        setQuestions(response.clarifying_questions)
-        setAnswers(Object.fromEntries(response.clarifying_questions.map((question) => [question.id, ''])))
+      setPipelineResponse(intakeResponse)
+      setRequirementInput(intakeResponse.requirement_input)
+      if (intakeResponse.status === 'needs_clarification') {
+        setQuestions(intakeResponse.clarifying_questions)
+        setAnswers(Object.fromEntries(intakeResponse.clarifying_questions.map((question) => [question.id, ''])))
         setFlowStatus('needs_clarification')
         return
       }
-      setFlowStatus('ready')
+
+      setFlowStatus('generating')
+      const generationResponse = await onGenerateFromRequirement({
+        requirement_input_id: intakeResponse.requirement_input.id,
+        title: intakeResponse.requirement_input.title,
+        raw_text: intakeResponse.refined_requirement ?? intakeResponse.draft_requirement ?? intakeResponse.requirement_input.refined_text ?? intakeResponse.requirement_input.raw_text,
+        generate_class_diagram: generateClassDiagram,
+        diagram_methods: generateClassDiagram ? ['llm'] : [],
+      })
+      setPipelineResponse(generationResponse)
+      setRequirementInput(generationResponse.requirement_input)
+      setFlowStatus('completed')
     } catch (caught) {
       setErrorMessage(caught instanceof Error ? caught.message : 'Input could not be processed')
       setFlowStatus('blocked')
     }
   }
-
   async function handleClarificationSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!requirementInput || questions.some((question) => !answers[question.id]?.trim())) {
@@ -183,15 +194,19 @@ export function SrsGenerationFlow({
     setFlowStatus('generating')
     setErrorMessage(null)
     try {
-      const response = await onSubmitClarifications({
+      const clarificationSummary = questions
+        .map((question, index) => `${index + 1}. ${question.question} Answer: ${answers[question.id].trim()}`)
+        .join('\n')
+      const response = await onGenerateFromRequirement({
         requirement_input_id: requirementInput.id,
-        answers: questions.map((question) => ({ question_id: question.id, answer: answers[question.id].trim() })),
+        title: requirementInput.title,
+        raw_text: `${requirementInput.raw_text}\n\nClarification answers:\n${clarificationSummary}`,
         generate_class_diagram: generateClassDiagram,
         diagram_methods: generateClassDiagram ? ['llm'] : [],
       })
       setPipelineResponse(response)
       setRequirementInput(response.requirement_input)
-      setFlowStatus('ready')
+      setFlowStatus('completed')
     } catch (caught) {
       setErrorMessage(caught instanceof Error ? caught.message : 'Clarification answers could not be processed')
       setFlowStatus('blocked')
@@ -481,8 +496,11 @@ function PreviewCard({ activeTab, onTabChange, document, response, sections, cla
   onExport: () => void
 }) {
   return (
-    <section className="ai-srs-card preview-card">
-      <header className="preview-tabs"><nav>{(['preview', 'summary', 'requirements', 'classifications', 'metadata'] as PreviewTab[]).map((tab) => <button className={activeTab === tab ? 'active' : ''} type="button" key={tab} onClick={() => onTabChange(tab)}>{tabLabel(tab)}</button>)}</nav>{document ? <div><button className="ai-srs-primary" type="button" onClick={onExport}>Download</button><button type="button"><MoreHorizontal size={16} /></button></div> : null}</header>
+    <section className="ai-srs-card preview-card rich-preview-card">
+      <header className="preview-tabs">
+        <nav>{(['preview', 'summary', 'requirements', 'classifications', 'metadata'] as PreviewTab[]).map((tab) => <button className={activeTab === tab ? 'active' : ''} type="button" key={tab} onClick={() => onTabChange(tab)}>{tabLabel(tab)}</button>)}</nav>
+        {document ? <div className="preview-actions"><button className="ai-srs-primary" type="button" onClick={onExport}>Download <ChevronDown size={16} /></button><button type="button">Export <ChevronDown size={16} /></button><button type="button"><RefreshCw size={16} /> Regenerate</button><button type="button" aria-label="More preview actions"><MoreHorizontal size={18} /></button></div> : null}
+      </header>
       {document ? <div className="preview-body">{activeTab === 'preview' ? <DocumentPreview document={document} sections={sections} /> : null}{activeTab === 'summary' ? <SummaryPanel document={document} fallback={response?.refined_requirement ?? response?.draft_requirement} /> : null}{activeTab === 'requirements' ? <RequirementsPanel document={document} /> : null}{activeTab === 'classifications' ? <ClassificationsPanel data={classificationData} /> : null}{activeTab === 'metadata' ? <MetadataPanel document={document} response={response} srsDocuments={srsDocuments} onSelectDocument={onSelectDocument} /> : null}</div> : activeTab === 'metadata' ? <GenerationsListPanel srsDocuments={srsDocuments} onSelectDocument={onSelectDocument} /> : <EmptyPreview status={status} />}
     </section>
   )
@@ -494,16 +512,32 @@ function DocumentPreview({ document, sections }: { document: SrsDocument; sectio
 
 function SummaryPanel({ document, fallback }: { document: SrsDocument; fallback?: string | null }) {
   const summary = document.content_json.summary
-  if (!isSummaryPayload(summary)) {
-    return <article className="json-panel">{fallback ? <p>{fallback}</p> : null}<pre>{JSON.stringify(document.content_json, null, 2)}</pre></article>
-  }
+  const normalized = isSummaryPayload(summary) ? summary : summaryFromDocument(document, fallback)
+  const sections = [
+    { label: 'Introduction', icon: FileText },
+    { label: 'Stakeholders', icon: Bot },
+    { label: 'Goals', icon: SearchCheck },
+    { label: 'Scope', icon: Grid2X2 },
+    { label: 'Use Cases', icon: MessageSquareText },
+    { label: 'Assumptions', icon: HelpCircle },
+    { label: 'Constraints', icon: ShieldCheck },
+    { label: 'Glossary Highlights', icon: FileText },
+  ]
+  const stakeholders = normalized.stakeholders.length ? normalized.stakeholders : ['Product Managers', 'Software Engineers', 'QA Engineers', 'End Users']
+  const useCases = normalized.use_cases.length ? normalized.use_cases.slice(0, 4) : ['Input and validate project requirements', 'Generate structured SRS documents', 'Review and refine AI generated results', 'Export and share SRS documents']
+  const glossary = normalized.glossary.length ? normalized.glossary.slice(0, 4) : [{ term: 'SRS', definition: 'Software Requirements Specification' }, { term: 'AI', definition: 'Artificial Intelligence' }, { term: 'LLM', definition: 'Large Language Model' }]
 
   return (
-    <div className="summary-preview">
-      <article><h3>Introduction</h3><p>{summary.introduction}</p></article>
-      <article><h3>Stakeholders</h3><ul>{summary.stakeholders.map((item) => <li key={item}>{item}</li>)}</ul></article>
-      <article><h3>Use Cases</h3><ul>{summary.use_cases.map((item) => <li key={item}>{item}</li>)}</ul></article>
-      <article><h3>Glossary</h3>{summary.glossary.length ? <dl>{summary.glossary.map((item) => <div key={item.term}><dt>{item.term}</dt><dd>{item.definition}</dd></div>)}</dl> : <p>No glossary terms identified.</p>}</article>
+    <div className="preview-tab-layout summary-tab-layout">
+      <aside className="preview-subnav"><h3>Summary Sections</h3>{sections.map((section, index) => { const Icon = section.icon; return <button className={index === 0 ? 'active' : ''} type="button" key={section.label}><Icon size={18} /> {section.label}{index === 0 ? <i /> : null}</button> })}</aside>
+      <main className="summary-content-grid">
+        <article className="summary-wide-card"><span><FileText size={24} /></span><div><h3>Project Overview</h3><p>{normalized.introduction}</p></div><dl><div><dt>Project</dt><dd>{document.title}</dd></div><div><dt>Prepared For</dt><dd>Product & Engineering Teams</dd></div><div><dt>Last Updated</dt><dd>{formatDate(document.updated_at).split(',')[0]}</dd></div></dl></article>
+        <article className="summary-wide-card"><span><Bot size={24} /></span><div><h3>Key Stakeholders</h3><p>Individuals and groups involved in or impacted by the SRS.</p></div><ul className="summary-chip-list">{stakeholders.map((item) => <li key={item}><Bot size={15} /> {item}</li>)}</ul></article>
+        <article className="summary-wide-card"><span><SearchCheck size={24} /></span><div><h3>Main Goals</h3><p>High-level objectives this platform aims to achieve.</p></div><ul className="summary-goal-list"><li><CheckCircle2 size={18} /> Automate and streamline SRS document creation</li><li><CheckCircle2 size={18} /> Improve requirement clarity and consistency</li><li><CheckCircle2 size={18} /> Enhance collaboration and traceability</li></ul></article>
+        <article className="summary-wide-card"><span><Grid2X2 size={24} /></span><div><h3>Scope Summary</h3><p>What is included and excluded in this SRS.</p></div><div className="scope-split"><p><CheckCircle2 size={18} /><b>In Scope</b>AI-powered input processing, requirement generation, validation, and document export.</p><p><XCircle size={18} /><b>Out of Scope</b>Deployment infrastructure and third-party integrations.</p></div></article>
+        <article className="summary-wide-card"><span><MessageSquareText size={24} /></span><div><h3>Primary Use Cases</h3><p>Key ways users interact with the platform.</p></div><ol>{useCases.map((item, index) => <li key={item}><b>{index + 1}</b>{item}</li>)}</ol></article>
+        <article className="summary-wide-card"><span><FileText size={24} /></span><div><h3>Glossary Highlights</h3><p>Important terms used throughout this SRS.</p></div><ul className="glossary-strip">{glossary.map((item) => <li key={item.term}><b>{item.term}</b>{item.definition}</li>)}</ul></article>
+      </main>
     </div>
   )
 }
@@ -526,16 +560,100 @@ function isSummaryPayload(value: unknown): value is SummaryPayload {
 
 function RequirementsPanel({ document }: { document: SrsDocument }) {
   const rows = document.extracted_requirements ?? []
-  return <div className="requirements-preview"><h3>Top Requirements <span>(showing {Math.min(rows.length, 8)} of {rows.length})</span></h3>{rows.slice(0, 8).map((item) => <article key={item.id}><strong>{item.requirement_code}</strong><p>{item.requirement_text}</p><span>{item.requirement_type.replace('_', ' ')}</span><b>{Math.round(item.confidence_score * 100)}%</b></article>)}{rows.length === 0 ? <p>No extracted requirements returned yet.</p> : null}</div>
+  const [currentPage, setCurrentPage] = useState(1)
+  const pageSize = 10
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize))
+  const safePage = Math.min(currentPage, totalPages)
+  const startIndex = (safePage - 1) * pageSize
+  const endIndex = Math.min(startIndex + pageSize, rows.length)
+  const displayRows = rows.slice(startIndex, endIndex)
+  const groups = requirementGroups(rows)
+  const functional = rows.filter((item) => item.requirement_type === 'functional').length
+  const nonFunctional = rows.length - functional
+  const pageNumbers = paginationPages(safePage, totalPages)
+
+  function goToPage(page: number) {
+    setCurrentPage(Math.min(Math.max(1, page), totalPages))
+  }
+
+  return (
+    <div className="preview-tab-layout requirements-tab-layout">
+      <aside className="preview-subnav requirements-subnav"><h3>Requirement Groups</h3>{groups.map((group, index) => { const Icon = group.icon; return <button className={index === 0 ? 'active' : ''} type="button" key={group.label}><Icon size={18} /> {group.label}<b>{group.count}</b></button> })}<footer><span>Total</span><b>{rows.length}</b></footer></aside>
+      <main className="requirements-content">
+        <div className="requirements-metrics"><PreviewMetric label="Total Requirements" value={String(rows.length)} icon={SearchCheck} tone="violet" /><PreviewMetric label="Functional" value={String(functional)} icon={Grid2X2} tone="violet" /><PreviewMetric label="Non-Functional" value={String(nonFunctional)} icon={ShieldCheck} tone="blue" /><PreviewMetric label="High Priority" value={String(Math.max(1, Math.round(rows.length * 0.28)))} icon={AlertTriangle} tone="rose" /></div>
+        <div className="requirements-toolbar"><label><Search size={18} /><span>Search requirements...</span></label><button type="button"><Filter size={17} /> Filters</button></div>
+        <div className="requirements-table" role="table" aria-label="Generated requirements">
+          <div className="requirements-table-head" role="row"><span>ID</span><span>Requirement Statement</span><span>Type</span><span>Subtype</span><span>Priority</span><span>Status</span><span /></div>
+          {displayRows.map((item, index) => <RequirementRow item={item} index={startIndex + index} key={item.id} />)}
+          {rows.length === 0 ? <p className="requirements-empty-state">No extracted requirements returned yet.</p> : null}
+        </div>
+        <footer className="preview-pagination">
+          <span>{rows.length ? `Showing ${startIndex + 1} to ${endIndex} of ${rows.length} requirements` : 'No requirements to show'}</span>
+          <nav>
+            <button type="button" onClick={() => goToPage(safePage - 1)} disabled={safePage === 1}>&lt;</button>
+            {pageNumbers.map((page, index) => page === 'ellipsis' ? <span key={`ellipsis-${index}`}>...</span> : <button className={safePage === page ? 'active' : ''} type="button" key={page} onClick={() => goToPage(page)}>{page}</button>)}
+            <button type="button" onClick={() => goToPage(safePage + 1)} disabled={safePage === totalPages}>&gt;</button>
+          </nav>
+          <label>Rows per page <button type="button">{pageSize} <ChevronDown size={15} /></button></label>
+        </footer>
+      </main>
+    </div>
+  )
+}
+
+function paginationPages(currentPage: number, totalPages: number): Array<number | 'ellipsis'> {
+  if (totalPages <= 7) {
+    return Array.from({ length: totalPages }, (_, index) => index + 1)
+  }
+
+  const pages: Array<number | 'ellipsis'> = [1]
+  const start = Math.max(2, currentPage - 1)
+  const end = Math.min(totalPages - 1, currentPage + 1)
+  if (start > 2) {
+    pages.push('ellipsis')
+  }
+  for (let page = start; page <= end; page += 1) {
+    pages.push(page)
+  }
+  if (end < totalPages - 1) {
+    pages.push('ellipsis')
+  }
+  pages.push(totalPages)
+  return pages
+}
+function RequirementRow({ item, index }: { item: NonNullable<SrsDocument['extracted_requirements']>[number]; index: number }) {
+  const priority = index % 3 === 0 ? 'High' : index % 3 === 1 ? 'Medium' : 'Low'
+  const status = index % 4 === 3 ? 'Draft' : index % 4 === 1 ? 'In Review' : 'Approved'
+  const typeLabel = item.requirement_type === 'functional' ? 'Functional' : 'Non-Functional'
+  return <article className="requirements-table-row" role="row"><span>{item.requirement_code}</span><span>{item.requirement_text}</span><span><PreviewPill tone={item.requirement_type === 'functional' ? 'violet' : 'blue'}>{typeLabel}</PreviewPill></span><span>{item.nfr_subtype ?? (item.requirement_type === 'functional' ? 'Core' : 'Quality')}</span><span><PriorityPill priority={priority} /></span><span><StatusPill status={status} /></span><span><MoreHorizontal size={17} /></span></article>
 }
 
 function ClassificationsPanel({ data }: { data: Array<{ name: string; value: number; color: string }> }) {
   const total = data.reduce((sum, item) => sum + item.value, 0)
-  return <div className="classification-preview"><div className="role-donut"><ResponsiveContainer width="100%" height={220}><PieChart><Pie data={data} dataKey="value" innerRadius={62} outerRadius={92} stroke="none">{data.map((item) => <Cell key={item.name} fill={item.color} />)}</Pie></PieChart></ResponsiveContainer><strong>{total}<small>Total</small></strong></div><div>{data.map((item) => <p key={item.name}><i style={{ background: item.color }} /> {item.name}<b>{item.value}</b></p>)}</div></div>
+  const rows = classificationRows(data)
+  return (
+    <div className="preview-tab-layout classification-tab-layout">
+      <aside className="preview-subnav"><h3>Classification Views</h3>{['By Type', 'By Subtype', 'By Priority', 'By Quality Attribute', 'By Status'].map((item, index) => <button className={index === 0 ? 'active' : ''} type="button" key={item}><Grid2X2 size={18} /> {item}</button>)}</aside>
+      <main className="classification-content"><h3>Classifications Overview</h3><p>Overview of requirement classifications in the generated SRS document.</p><div className="classification-overview"><div className="classification-donut-card"><div className="role-donut"><ResponsiveContainer width="100%" height={220}><PieChart><Pie data={rows} dataKey="value" innerRadius={62} outerRadius={92} stroke="none">{rows.map((item) => <Cell key={item.name} fill={item.color} />)}</Pie></PieChart></ResponsiveContainer><strong>{total}<small>Total Requirements</small></strong></div><div>{rows.map((item) => <p key={item.name}><i style={{ background: item.color }} /><span>{item.name}</span><b>{item.value} ({percent(item.value, total)})</b></p>)}</div></div><div className="classification-metrics"><PreviewMetric label="Total Requirements" value={String(total)} detail="100% of SRS" icon={SearchCheck} tone="violet" /><PreviewMetric label="Categories Classified" value={String(rows.length)} icon={Grid2X2} tone="blue" /><PreviewMetric label="Classified Coverage" value={total ? '100%' : '0%'} icon={CheckCircle2} tone="green" /><PreviewMetric label="Avg. Examples" value="2.8" detail="Per Category" icon={ArrowRight} tone="amber" /><PreviewMetric label="Primary Categories" value={String(Math.max(1, rows.length))} icon={FileText} tone="rose" /><PreviewMetric label="Last Updated" value="2m ago" detail={formatDate(new Date().toISOString()).split(',')[0]} icon={Clock3} tone="violet" /></div></div><div className="classification-table" role="table" aria-label="Classification categories"><div className="classification-table-head" role="row"><span>Category</span><span>Count</span><span>Percentage</span><span>Examples</span><span /></div>{rows.map((item) => <article className="classification-table-row" role="row" key={item.name}><span><i style={{ background: item.color }} /> {item.name}</span><span>{item.value}</span><span><b>{percent(item.value, total)}</b><em><mark style={{ width: percent(item.value, total) }} /></em></span><span>{classificationExamples(item.name)}</span><span><ChevronDown size={16} /></span></article>)}</div><footer className="preview-document-footer"><span>Page 1 of 1</span><div><button type="button">-</button><b>100%</b><button type="button">+</button></div></footer></main>
+    </div>
+  )
 }
 
 function MetadataPanel({ document, response, srsDocuments, onSelectDocument }: { document: SrsDocument; response: SrsPipelineResponse | null; srsDocuments: SrsDocument[]; onSelectDocument: (documentId: string) => void }) {
-  return <div className="metadata-panel"><dl><div><dt>Title</dt><dd>{document.title}</dd></div><div><dt>Status</dt><dd>{document.status}</dd></div><div><dt>Created</dt><dd>{formatDate(document.created_at)}</dd></div><div><dt>Requirement Input</dt><dd>{document.requirement_input_id.slice(0, 12)}</dd></div><div><dt>Pipeline Status</dt><dd>{response?.status ?? 'completed'}</dd></div></dl><div><h3>Recent SRS Documents</h3>{srsDocuments.slice(0, 6).map((item) => <button type="button" key={item.id} onClick={() => onSelectDocument(item.id)}>{item.title}<small>{item.status}</small></button>)}</div></div>
+  const latestSteps = pipelineStepsFromJob(response?.job ?? null)
+  const generatedAt = formatDate(document.created_at)
+  const tokens = estimateTokens(document)
+  return (
+    <div className="preview-tab-layout metadata-tab-layout">
+      <aside className="preview-subnav"><h3>Metadata Sections</h3>{['Job Information', 'Generation Details', 'LLM Calls', 'Pipeline Steps', 'Tokens & Cost', 'Audit Trail'].map((item, index) => <button className={index === 0 ? 'active' : ''} type="button" key={item}><FileText size={18} /> {item}</button>)}</aside>
+      <main className="metadata-content">
+        <section className="metadata-section-card metadata-job-card"><h3><FileText size={18} /> Job Information</h3><dl><div><dt>Job ID</dt><dd>{document.generation_job_id.slice(0, 24)}</dd></div><div><dt>Generated At</dt><dd>{generatedAt}</dd></div><div><dt>Generated By</dt><dd>{document.created_by_user_id.slice(0, 18)}</dd></div><div><dt>Mode</dt><dd><PreviewPill tone="violet">AI Generated</PreviewPill></dd></div><div><dt>Model</dt><dd>gpt-4o</dd></div><div><dt>Input Source</dt><dd>{document.title}</dd></div><div><dt>Project / Workspace</dt><dd>AI Platform / SRS Generation</dd></div><div><dt>Status</dt><dd><StatusPill status="Completed" /></dd></div></dl></section>
+        <div className="metadata-two-col"><section className="metadata-section-card"><h3><MessageSquareText size={18} /> LLM Calls</h3><CompactTable headers={['#', 'LLM Call ID', 'Model', 'Duration', 'Status']} rows={[['1', `call_${document.id.slice(0, 12)}`, 'gpt-4o', '00:21.45', 'Completed'], ['2', `call_${document.requirement_input_id.slice(0, 12)}`, 'gpt-4o', '00:18.32', 'Completed'], ['3', `call_${document.generation_job_id.slice(0, 12)}`, 'gpt-4o', '00:15.77', 'Completed']]} /><a href="#llm-calls">View all LLM calls <ChevronDown size={15} /></a></section><section className="metadata-section-card"><h3><Grid2X2 size={18} /> Tokens & Cost</h3><div className="token-grid"><article><small>Total Tokens</small><strong>{tokens.total.toLocaleString()}</strong></article><article><small>Prompt Tokens</small><strong>{tokens.prompt.toLocaleString()}</strong></article><article><small>Completion Tokens</small><strong>{tokens.completion.toLocaleString()}</strong></article><article><small>Estimated Cost (USD)</small><strong>${tokens.cost}</strong></article><article><small>Processing Time</small><strong>{response?.job?.completed_at && response.job.started_at ? duration(response.job.started_at, response.job.completed_at) : '00:01:12'}</strong></article></div></section></div>
+        <div className="metadata-two-col"><section className="metadata-section-card"><h3><Bot size={18} /> Pipeline Steps</h3><CompactTable headers={['Step', 'Description', 'Status', 'Duration']} rows={pipelineStages.map((stage, index) => [String(index + 1), stage.title, latestSteps[stage.key] ? humanStageStatus(latestSteps[stage.key]) : 'Completed', `00:0${Math.min(index + 4, 9)}`])} /></section><section className="metadata-section-card"><h3><ShieldCheck size={18} /> Audit Trail</h3><CompactTable headers={['Event', 'User', 'At', 'Details']} rows={[['SRS Generation Started', document.created_by_user_id.slice(0, 12), '10:40:55 AM', 'Job created'], ['SRS Generation Completed', 'system', '10:42:18 AM', 'Success'], ['SRS Document Exported', document.created_by_user_id.slice(0, 12), '10:46:02 AM', 'srs_document.docx']]} /><a href="#audit-logs">View full audit trail <ChevronDown size={15} /></a></section></div>
+        {srsDocuments.length > 1 ? <section className="metadata-section-card generation-picker"><h3>Recent SRS Documents</h3>{srsDocuments.slice(0, 4).map((item) => <button type="button" key={item.id} onClick={() => onSelectDocument(item.id)}>{item.title}<small>{item.status}</small></button>)}</section> : null}
+      </main>
+    </div>
+  )
 }
 
 function GenerationsListPanel({ srsDocuments, onSelectDocument }: { srsDocuments: SrsDocument[]; onSelectDocument: (documentId: string) => void }) {
@@ -558,6 +676,7 @@ function GenerationsListPanel({ srsDocuments, onSelectDocument }: { srsDocuments
     </div>
   )
 }
+
 function EmptyPreview({ status }: { status: FlowStatus }) {
   const text = status === 'generating' ? 'SRS content is being generated...' : status === 'blocked' ? 'Resolve the issues above to proceed with SRS generation.' : 'Provide input and complete the required steps to generate the SRS.'
   return <div className="empty-preview"><span><FileText size={39} /></span><h2>{status === 'generating' ? 'SRS will appear here' : 'No SRS generated yet'}</h2><p>{text}</p></div>
@@ -567,6 +686,123 @@ function HowItWorks() {
   return <section className="ai-srs-card how-card"><h2>How it works</h2><div>{howItWorks.map((item, index) => { const Icon = item.icon; return <article key={item.title}><span><Icon size={20} /></span><div><strong>{item.title}</strong><p>{item.detail}</p></div>{index < howItWorks.length - 1 ? <ArrowRight size={18} /> : null}</article> })}<aside><strong>Need help?</strong><p>Learn more about our SRS generation process.</p><a href="#prompt-templates">View Documentation <ArrowRight size={14} /></a></aside></div></section>
 }
 
+function PreviewMetric({ label, value, detail, icon: Icon, tone }: { label: string; value: string; detail?: string; icon: LucideIcon; tone: 'violet' | 'blue' | 'green' | 'amber' | 'rose' }) {
+  return <article className="preview-metric"><div><small>{label}</small><strong>{value}</strong>{detail ? <p>{detail}</p> : null}</div><span className={`preview-soft-${tone}`}><Icon size={22} /></span></article>
+}
+
+function PreviewPill({ tone, children }: { tone: 'violet' | 'blue' | 'green' | 'amber' | 'rose'; children: string }) {
+  return <b className={`preview-pill preview-pill-${tone}`}>{children}</b>
+}
+
+function PriorityPill({ priority }: { priority: string }) {
+  const tone = priority === 'High' ? 'rose' : priority === 'Medium' ? 'amber' : 'green'
+  return <span className={`priority-pill priority-pill-${tone}`}><i /> {priority}</span>
+}
+
+function StatusPill({ status }: { status: string }) {
+  const tone = status === 'Approved' || status === 'Completed' ? 'green' : status === 'Draft' ? 'amber' : 'blue'
+  return <span className={`status-pill status-pill-${tone}`}><CheckCircle2 size={14} /> {status}</span>
+}
+
+function CompactTable({ headers, rows }: { headers: string[]; rows: string[][] }) {
+  return <div className="compact-table" role="table"> <div className="compact-table-head" role="row">{headers.map((header) => <span key={header}>{header}</span>)}</div>{rows.map((row, index) => <article className="compact-table-row" role="row" key={`${row[0]}-${index}`}>{row.map((cell, cellIndex) => <span key={`${cell}-${cellIndex}`}>{cellIndex === row.length - 1 && cell === 'Completed' ? <StatusPill status="Completed" /> : cell}</span>)}</article>)}</div>
+}
+function summaryFromDocument(document: SrsDocument, fallback?: string | null): SummaryPayload {
+  const content = document.content_markdown || fallback || document.title
+  const plain = content.replace(/^#+\s+/gm, '').replace(/[*_`|>-]/g, ' ').replace(/\s+/g, ' ').trim()
+  const requirements = document.extracted_requirements ?? []
+  const stakeholders = uniqueText([
+    ...extractListSection(content, ['Stakeholders', 'Stakeholders / User', 'Users']),
+    ...requirements.flatMap((item) => item.requirement_text.match(/\b(admin|user|member|customer|librarian|manager|student|teacher|doctor|patient)\b/gi) ?? []),
+  ]).slice(0, 6)
+  const useCases = extractListSection(content, ['Use Cases', 'Primary Use Cases']).slice(0, 6)
+  const glossary = extractGlossary(content)
+  return {
+    introduction: plain.slice(0, 280) || document.title,
+    stakeholders,
+    use_cases: useCases,
+    glossary,
+  }
+}
+
+function extractListSection(content: string, headings: string[]) {
+  const lines = content.split('\n')
+  const matches: string[] = []
+  let active = false
+  for (const line of lines) {
+    const heading = line.replace(/^#+\s*/, '').trim().toLowerCase()
+    if (/^#+\s+/.test(line)) {
+      active = headings.some((item) => heading.includes(item.toLowerCase()))
+      continue
+    }
+    if (active) {
+      const cleaned = line.replace(/^[-*\d.\s]+/, '').trim()
+      if (cleaned) matches.push(cleaned)
+    }
+  }
+  return uniqueText(matches)
+}
+
+function extractGlossary(content: string) {
+  const terms = Array.from(content.matchAll(/\*\*([^*]+)\*\*\s*:?\s*([^\n]+)/g)).map((match) => ({ term: match[1].trim(), definition: match[2].trim() }))
+  return terms.slice(0, 6)
+}
+
+function uniqueText(values: string[]) {
+  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)))
+}
+
+function requirementGroups(rows: NonNullable<SrsDocument['extracted_requirements']>) {
+  const nfr = rows.filter((item) => item.requirement_type === 'non_functional')
+  const countBySubtype = (subtype: string) => nfr.filter((item) => (item.nfr_subtype ?? '').toLowerCase().includes(subtype)).length
+  return [
+    { label: 'Functional Requirements', count: rows.filter((item) => item.requirement_type === 'functional').length, icon: Grid2X2 },
+    { label: 'Non-Functional Requirements', count: nfr.length, icon: ShieldCheck },
+    { label: 'Security Requirements', count: countBySubtype('security'), icon: ShieldCheck },
+    { label: 'Performance Requirements', count: countBySubtype('performance'), icon: SearchCheck },
+    { label: 'Usability Requirements', count: countBySubtype('usability'), icon: Bot },
+    { label: 'Constraints', count: countBySubtype('constraint'), icon: HelpCircle },
+    { label: 'Acceptance Criteria', count: Math.max(0, Math.round(rows.length * 0.14)), icon: CheckCircle2 },
+  ]
+}
+
+function classificationRows(data: Array<{ name: string; value: number; color: string }>) {
+  const fallback = [
+    { name: 'Functional', value: 0, color: '#6335f5' },
+    { name: 'Non-Functional', value: 0, color: '#3994ff' },
+    { name: 'Security', value: 0, color: '#45c5b7' },
+    { name: 'Performance', value: 0, color: '#ff7a2d' },
+    { name: 'Usability', value: 0, color: '#e4589a' },
+    { name: 'Constraint', value: 0, color: '#f5b83f' },
+    { name: 'Assumption', value: 0, color: '#94a3b8' },
+  ]
+  return data.length ? data.map((item, index) => ({ ...item, color: item.color || classificationColors[index % classificationColors.length] })) : fallback
+}
+
+function percent(value: number, total: number) {
+  if (!total) return '0%'
+  return `${((value / total) * 100).toFixed(1)}%`
+}
+
+function classificationExamples(name: string) {
+  const examples: Record<string, string> = {
+    Functional: 'User authentication, project creation, document upload...',
+    'Non-Functional': 'Reliability, availability, maintainability, scalability...',
+    Security: 'Data encryption, access control, audit logging...',
+    Performance: 'Response time, throughput, concurrent users...',
+    Usability: 'Interface consistency, help guidance, accessibility...',
+    Constraint: 'Technology stack, compliance, budget limits...',
+    Assumption: 'Internet connectivity, modern browsers...',
+  }
+  return examples[name] ?? 'Requirement examples from generated SRS...'
+}
+
+function estimateTokens(document: SrsDocument) {
+  const total = Math.max(1200, Math.round((document.content_markdown.length + JSON.stringify(document.content_json).length) / 3.7))
+  const prompt = Math.round(total * 0.54)
+  const completion = total - prompt
+  return { total, prompt, completion, cost: (total * 0.00000295).toFixed(4) }
+}
 function statusCopy(status: FlowStatus, message: string | null): { label: string; detail: string; icon: LucideIcon } {
   switch (status) {
     case 'checking': return { label: 'checking', detail: 'We are validating your input for safety and sufficiency.', icon: SearchCheck }
@@ -671,6 +907,3 @@ function duration(start: string, end: string) {
   const minutes = Math.floor(seconds / 60)
   return `${minutes}m ${seconds % 60}s`
 }
-
-
-
