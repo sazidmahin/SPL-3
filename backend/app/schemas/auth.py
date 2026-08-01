@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, AliasPath
 
 from app.schemas.user import UserRead
 from app.schemas.workspace import WorkspaceMembershipRead
@@ -7,7 +7,25 @@ from app.schemas.workspace import WorkspaceMembershipRead
 class RegisterRequest(BaseModel):
     email: str = Field(min_length=3, max_length=320)
     password: str = Field(min_length=8, max_length=128)
-    full_name: str = Field(min_length=1, max_length=255)
+    full_name: str = Field(
+        min_length=1,
+        max_length=255,
+        validation_alias=AliasChoices("full_name", "fullName", AliasPath("user", "fullName")),
+    )
+    company_name: str | None = Field(
+        default=None,
+        max_length=255,
+        validation_alias=AliasChoices("company_name", "companyName", AliasPath("company", "name")),
+    )
+    role: str | None = Field(
+        default=None,
+        max_length=120,
+        validation_alias=AliasChoices("role", "roleName"),
+    )
+    confirm_password: str | None = Field(default=None, max_length=128)
+    terms_accepted: bool | None = None
+
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
 
 
 class RegisterResponse(BaseModel):

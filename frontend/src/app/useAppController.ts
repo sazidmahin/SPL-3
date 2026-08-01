@@ -22,7 +22,6 @@ import {
   fetchGenerationJobs,
   fetchSrsDocumentDetail,
   fetchSrsDocuments,
-  generateSrs,
   runAiSrsGenerate,
   runSrsIntake,
   submitSrsClarifications,
@@ -517,13 +516,14 @@ export function useAppController() {
 
   function aiPreviewToPipelineResponse(
     preview: AiSrsGenerateResponse,
-    payload: { requirement_input_id: string; title: string; raw_text: string; generate_class_diagram: boolean; diagram_methods: string[] },
+    payload: { requirement_input_id?: string; title: string; raw_text: string; generate_class_diagram: boolean; diagram_methods: string[] },
   ): SrsPipelineResponse {
     const now = new Date().toISOString()
     const jobId = crypto.randomUUID()
     const documentId = crypto.randomUUID()
+    const requirementInputId = payload.requirement_input_id ?? crypto.randomUUID()
     const requirementInput = {
-      id: payload.requirement_input_id,
+      id: requirementInputId,
       workspace_id: activeWorkspace!.workspace.id,
       project_id: activeProject!.id,
       title: preview.title,
@@ -540,7 +540,7 @@ export function useAppController() {
       id: jobId,
       workspace_id: activeWorkspace!.workspace.id,
       project_id: activeProject!.id,
-      requirement_input_id: payload.requirement_input_id,
+      requirement_input_id: requirementInputId,
       job_type: payload.generate_class_diagram ? 'full' : 'srs',
       status: 'completed',
       progress_percent: 100,
@@ -567,7 +567,7 @@ export function useAppController() {
         workspace_id: activeWorkspace!.workspace.id,
         project_id: activeProject!.id,
         srs_document_id: documentId,
-        requirement_input_id: payload.requirement_input_id,
+        requirement_input_id: requirementInputId,
         generation_job_id: jobId,
         requirement_code: typeof row.requirement_code === 'string' ? row.requirement_code : `REQ-${String(index + 1).padStart(3, '0')}`,
         requirement_text: typeof row.requirement_text === 'string' ? row.requirement_text : '',
@@ -583,7 +583,7 @@ export function useAppController() {
       id: documentId,
       workspace_id: activeWorkspace!.workspace.id,
       project_id: activeProject!.id,
-      requirement_input_id: payload.requirement_input_id,
+      requirement_input_id: requirementInputId,
       generation_job_id: jobId,
       title: preview.title,
       status: 'preview',
@@ -614,8 +614,45 @@ export function useAppController() {
       },
     }
   }
+  async function runQuickAiSrsPreview(payload: {
+    requirement_input_id?: string
+    title: string
+    raw_text: string
+    generate_class_diagram: boolean
+    diagram_methods: string[]
+  }) {
+    if (!session || !activeWorkspace || !activeProject) {
+      throw new Error('Select a workspace and project before generating SRS')
+    }
+
+    const preview = await runAiSrsGenerate(session.access_token, activeWorkspace.workspace.id, activeProject.id, {
+      title: payload.title,
+      raw_text: payload.raw_text,
+    })
+    if (preview.status === 'needs_clarification') {
+      const questions = preview.clarifying_questions.map((question) => question.question).join(' ')
+      throw new Error(questions || 'Requirement input needs clarification before SRS generation')
+    }
+
+    const response = aiPreviewToPipelineResponse(preview, {
+      requirement_input_id: payload.requirement_input_id,
+      title: payload.title,
+      raw_text: payload.raw_text,
+      generate_class_diagram: payload.generate_class_diagram,
+      diagram_methods: payload.diagram_methods,
+    })
+    applySrsPipelineResponse(response)
+    if (response.status === 'completed') {
+      setSrsTitle('')
+      setSrsRawText('')
+      setGenerateClassDiagramFromSrsInput(false)
+      await loadBilling(session, activeWorkspace.workspace.id)
+    }
+    return response
+  }
+
   async function generateSrsFromReadyInput(payload: {
-    requirement_input_id: string
+    requirement_input_id?: string
     title: string
     raw_text: string
     generate_class_diagram: boolean
@@ -628,23 +665,7 @@ export function useAppController() {
     setIsStartingGeneration(true)
     setError(null)
     try {
-      const preview = await runAiSrsGenerate(session.access_token, activeWorkspace.workspace.id, activeProject.id, {
-        title: payload.title,
-        raw_text: payload.raw_text,
-      })
-      if (preview.status === 'needs_clarification') {
-        const questions = preview.clarifying_questions.map((question) => question.question).join(' ')
-        throw new Error(questions || 'Requirement input needs clarification before SRS generation')
-      }
-      const response = aiPreviewToPipelineResponse(preview, payload)
-      applySrsPipelineResponse(response)
-      if (response.status === 'completed') {
-        setSrsTitle('')
-        setSrsRawText('')
-        setGenerateClassDiagramFromSrsInput(false)
-        await loadBilling(session, activeWorkspace.workspace.id)
-      }
-      return response
+      return await runQuickAiSrsPreview(payload)
     } catch (caught) {
       await loadGenerationJobs(session, activeWorkspace.workspace.id, activeProject.id).catch(() => undefined)
       const message = handleRequestError(caught, 'Unable to generate SRS')
@@ -654,7 +675,6 @@ export function useAppController() {
       setIsStartingGeneration(false)
     }
   }
-
   async function startSrsGeneration(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!session || !activeWorkspace || !activeProject) {
@@ -664,16 +684,21 @@ export function useAppController() {
     setIsStartingGeneration(true)
     setError(null)
     try {
-      const response = await generateSrs(session.access_token, activeWorkspace.workspace.id, activeProject.id, {
+      const response = await runQuickAiSrsPreview({
         title: srsTitle,
         raw_text: srsRawText,
         generate_class_diagram: generateClassDiagramFromSrsInput,
-        diagram_methods: generateClassDiagramFromSrsInput ? ['llm'] : [],
+        diagram_methods: generateClassDiagramFromSrsInput ? ["llm"] : [],
       })
       const generatedDiagrams = response.diagrams ?? []
-      setGenerationJobs((current) => [response.job, ...current])
-      setSrsDocuments((current) => [response.srs_document, ...current])
-      setActiveSrsDocument(response.srs_document)
+      if (!response.job || !response.srs_document) {
+        throw new Error("SRS generation completed without a generated document")
+      }
+      const job = response.job
+      const srsDocument = response.srs_document
+      setGenerationJobs((current) => [job, ...current])
+      setSrsDocuments((current) => [srsDocument, ...current])
+      setActiveSrsDocument(srsDocument)
       setActiveReviewDiagrams(generatedDiagrams)
       if (generatedDiagrams[0]) {
         const generatedDiagram = generatedDiagrams[0]
@@ -686,18 +711,17 @@ export function useAppController() {
         setDiagramXml(generatedDiagram.current.drawio_xml)
         window.localStorage.setItem(DIAGRAM_STORAGE_KEY, generatedDiagram.id)
       }
-      setSrsTitle('')
-      setSrsRawText('')
+      setSrsTitle("")
+      setSrsRawText("")
       setGenerateClassDiagramFromSrsInput(false)
       await loadBilling(session, activeWorkspace.workspace.id)
     } catch (caught) {
       await loadGenerationJobs(session, activeWorkspace.workspace.id, activeProject.id).catch(() => undefined)
-      setError(handleRequestError(caught, 'Unable to start generation'))
+      setError(handleRequestError(caught, "Unable to start generation"))
     } finally {
       setIsStartingGeneration(false)
     }
   }
-
   async function generateClassDiagramFromSrs(methods: ClassDiagramMethod[]) {
     if (!session || !activeWorkspace || !activeProject || !activeSrsDocument) {
       return
