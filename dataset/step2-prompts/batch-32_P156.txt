@@ -1,0 +1,617 @@
+﻿You are a senior software requirements engineer and synthetic supervised-fine-tuning dataset curator.
+
+Your task is to complete STEP 2 of an SRS dataset-generation pipeline.
+
+You will receive exactly one canonical software-project truth created during STEP 1.
+
+Using only that project truth, generate exactly 20 high-quality supervised fine-tuning records for a small language model.
+
+The fine-tuned model will learn these tasks:
+
+1. Atomic software-requirement extraction
+2. Project summarization
+3. Project context, actor, and scope extraction
+4. Compound-requirement splitting
+5. Requirement refinement
+6. Ambiguity and conflict detection
+7. Requirement versus non-requirement detection
+
+Do not generate FR/NFR classification records.
+
+FR/NFR classification and NFR-subtype classification will be handled by a separate encoder classifier.
+
+# CONFIGURATION
+
+RECORDS_TO_GENERATE: 20
+
+PROJECT_TRUTH:
+
+{{{"project_id":"P156","batch_id":"SEED_BATCH_0032","split":"train","domain":"Banking operations","difficulty":"easy","project_name":"CashBirch Drawer Handover","business_objective":"Record branch cash-drawer handovers and close each handover after balances match and the receiving cashier acknowledges receipt.","stakeholder_statements":[{"statement_id":"SS-01","speaker_role":"Outgoing Cashier","style":"compound_request","text":"The outgoing cashier creates a cash-drawer handover record and identifies the drawer and service period."},{"statement_id":"SS-02","speaker_role":"Outgoing Cashier","style":"direct_request","text":"The outgoing cashier records the declared closing balance."},{"statement_id":"SS-03","speaker_role":"Independent Cash Counter","style":"compound_request","text":"The independent cash counter records the independently counted balance and whether it matches the declared balance."},{"statement_id":"SS-04","speaker_role":"Receiving Cashier","style":"compound_request","text":"The receiving cashier acknowledges receipt of the drawer and records any visible seal issue."},{"statement_id":"SS-05","speaker_role":"Branch Control Clerk","style":"constraint","text":"The branch control clerk closes the handover only after matching balances and receiving acknowledgement are recorded. Investigating suspected theft and depositing cash are outside this project."}],"actors":[{"actor_id":"ACT-01","name":"Outgoing Cashier","responsibility":"Creates cash-drawer handover records and records declared closing balances.","source_statement_ids":["SS-01","SS-02"]},{"actor_id":"ACT-02","name":"Independent Cash Counter","responsibility":"Records independently counted balances and whether they match declared balances.","source_statement_ids":["SS-03","SS-05"]},{"actor_id":"ACT-03","name":"Receiving Cashier","responsibility":"Acknowledges drawer receipt and records visible seal issues.","source_statement_ids":["SS-04","SS-05"]},{"actor_id":"ACT-04","name":"Branch Control Clerk","responsibility":"Closes cash-drawer handovers after matching balances and receiving acknowledgement are recorded.","source_statement_ids":["SS-05"]}],"canonical_requirements":[{"requirement_id":"REQ-001","requirement_kind":"functional","statement":"The system shall allow the Outgoing Cashier to create a cash-drawer handover record.","actor":"Outgoing Cashier","source_statement_ids":["SS-01"],"source_quotes":["creates a cash-drawer handover record"],"support_level":"explicit","needs_clarification":false,"clarification_reason":null},{"requirement_id":"REQ-002","requirement_kind":"constraint","statement":"The system shall require a cash-drawer handover record to identify the drawer and service period.","actor":"Outgoing Cashier","source_statement_ids":["SS-01"],"source_quotes":["identifies the drawer and service period"],"support_level":"explicit","needs_clarification":false,"clarification_reason":null},{"requirement_id":"REQ-003","requirement_kind":"functional","statement":"The system shall allow the Outgoing Cashier to record the declared closing balance.","actor":"Outgoing Cashier","source_statement_ids":["SS-02"],"source_quotes":["records the declared closing balance"],"support_level":"explicit","needs_clarification":false,"clarification_reason":null},{"requirement_id":"REQ-004","requirement_kind":"functional","statement":"The system shall allow the Independent Cash Counter to record the independently counted balance.","actor":"Independent Cash Counter","source_statement_ids":["SS-03"],"source_quotes":["records the independently counted balance"],"support_level":"explicit","needs_clarification":false,"clarification_reason":null},{"requirement_id":"REQ-005","requirement_kind":"functional","statement":"The system shall allow the Independent Cash Counter to record whether the counted balance matches the declared balance.","actor":"Independent Cash Counter","source_statement_ids":["SS-03"],"source_quotes":["whether it matches the declared balance"],"support_level":"explicit","needs_clarification":false,"clarification_reason":null},{"requirement_id":"REQ-006","requirement_kind":"functional","statement":"The system shall allow the Receiving Cashier to acknowledge receipt of the drawer.","actor":"Receiving Cashier","source_statement_ids":["SS-04"],"source_quotes":["acknowledges receipt of the drawer"],"support_level":"explicit","needs_clarification":false,"clarification_reason":null},{"requirement_id":"REQ-007","requirement_kind":"functional","statement":"The system shall allow the Receiving Cashier to record a visible seal issue.","actor":"Receiving Cashier","source_statement_ids":["SS-04"],"source_quotes":["records any visible seal issue"],"support_level":"explicit","needs_clarification":false,"clarification_reason":null},{"requirement_id":"REQ-008","requirement_kind":"business_rule","statement":"The system shall allow the Branch Control Clerk to close the handover only after matching balances and receiving acknowledgement are recorded.","actor":"Branch Control Clerk","source_statement_ids":["SS-05"],"source_quotes":["closes the handover only after matching balances and receiving acknowledgement are recorded"],"support_level":"explicit","needs_clarification":false,"clarification_reason":null}],"in_scope":[{"item":"Creating cash-drawer handover records with drawer and service-period information.","source_statement_ids":["SS-01"]},{"item":"Recording declared closing balances.","source_statement_ids":["SS-02"]},{"item":"Recording independently counted balances and match outcomes.","source_statement_ids":["SS-03"]},{"item":"Recording drawer-receipt acknowledgement and visible seal issues.","source_statement_ids":["SS-04"]},{"item":"Closing handovers after balance matching and acknowledgement.","source_statement_ids":["SS-05"]}],"out_of_scope":[{"item":"Investigating suspected theft.","source_statement_ids":["SS-05"]},{"item":"Depositing cash.","source_statement_ids":["SS-05"]}],"business_rules":[{"rule":"A cash-drawer handover may be closed only after matching balances and receiving acknowledgement are recorded.","source_statement_ids":["SS-05"]}],"constraints":[{"constraint":"A cash-drawer handover record must identify the drawer and service period.","source_statement_ids":["SS-01"]}],"assumptions":[],"unknown_information":[],"known_conflicts":[],"non_requirement_fragments":[]}}}
+
+# SOURCE-OF-TRUTH RULE
+
+PROJECT_TRUTH is the only source of confirmed project facts.
+
+You may transform the project truth into realistic stakeholder-facing inputs, including:
+
+* Informal stakeholder requests
+* Interview excerpts
+* Meeting notes
+* Project briefs
+* Compound requests
+* Vague requirements
+* Conditional requests
+* Conflicting statements
+* Noisy conversations
+* Short stakeholder messages
+
+You must not change the confirmed project facts.
+
+Do not:
+
+* Add unsupported functionality
+* Add unsupported actors
+* Add unsupported permissions
+* Add unsupported workflows
+* Add unsupported business rules
+* Resolve unknown information
+* Resolve known conflicts
+* Invent numerical targets
+* Invent technologies
+* Convert assumptions into confirmed facts
+* Convert out-of-scope functionality into in-scope functionality
+* Convert non-requirement text into a requirement
+* Include a fact in an output merely because it appears elsewhere in PROJECT_TRUTH
+
+For every record, the output must be supported by that record's generated input.
+
+# PROJECT INPUT RULE
+
+PROJECT_TRUTH must contain exactly one complete canonical project JSON object.
+
+Do not process more than one project.
+
+Use these exact values from PROJECT_TRUTH in all 20 records:
+
+* `project_id`
+* `split`
+* `domain`
+* `difficulty`
+
+Do not alter these values.
+
+# EXACT TASK DISTRIBUTION
+
+Generate exactly 20 records with this exact distribution:
+
+* 9 `extract_requirements`
+* 3 `summarize_project`
+* 2 `extract_context`
+* 2 `split_compound_requirement`
+* 2 `refine_requirement`
+* 1 `detect_ambiguity`
+* 1 `detect_non_requirement`
+
+The total must equal exactly 20.
+
+Do not replace, add, or remove tasks.
+
+Use this exact record order:
+
+1. `extract_requirements`
+2. `extract_requirements`
+3. `extract_requirements`
+4. `summarize_project`
+5. `extract_context`
+6. `extract_requirements`
+7. `extract_requirements`
+8. `summarize_project`
+9. `extract_context`
+10. `split_compound_requirement`
+11. `extract_requirements`
+12. `extract_requirements`
+13. `refine_requirement`
+14. `detect_ambiguity`
+15. `detect_non_requirement`
+16. `extract_requirements`
+17. `extract_requirements`
+18. `summarize_project`
+19. `split_compound_requirement`
+20. `refine_requirement`
+
+# STRICT JSONL OUTPUT
+
+Return exactly 20 valid JSONL lines.
+
+Each line must contain exactly one complete JSON object.
+
+Do not return a JSON array.
+
+Do not place commas between lines.
+
+Do not add blank lines.
+
+Do not wrap the response in Markdown.
+
+Do not use a code block.
+
+Do not add headings, explanations, comments, notes, introductions, or conclusions.
+
+Every line must be independently parseable with:
+
+json.loads(line)
+
+All JSON property names and string values must use standard JSON double quotes.
+
+Do not use:
+
+* Unescaped internal double quotes
+* Raw line breaks inside strings
+* Trailing commas
+* JavaScript syntax
+* Python dictionary syntax
+* YAML
+* Comments
+* `True`, `False`, or `None`
+
+Use only:
+
+* `true`
+* `false`
+* `null`
+
+# CRITICAL QUOTATION RULE
+
+Do not surround generated stakeholder speech with quotation marks.
+
+Incorrect input value:
+
+Teacher interview: "I need to submit a request."
+
+Correct input value:
+
+Teacher interview: I need to submit a request.
+
+Never generate JSON like:
+
+"input":"Teacher interview: "I need to submit a request.""
+
+Generate:
+
+"input":"Teacher interview: I need to submit a request."
+
+Avoid nested quotation marks in every string field.
+
+If an internal double quotation mark is unavoidable, escape it as `\"`.
+
+However, avoiding internal quotation marks is strongly preferred.
+
+# COMMON RECORD SCHEMA
+
+Every record must use this top-level structure:
+
+{
+"id": "P011-R01",
+"project_id": "P011",
+"split": "train",
+"domain": "Project domain",
+"project_difficulty": "easy | medium | hard",
+"task": "Task name",
+"record_difficulty": "easy | medium | hard",
+"instruction": "Exact task-specific instruction.",
+"input": "Realistic stakeholder input without surrounding quotation marks.",
+"output": {}
+}
+
+# RECORD IDS
+
+Use this format:
+
+PROJECT_ID-R{RECORD_NUMBER}
+
+Examples:
+
+* P011-R01
+* P011-R02
+* P011-R03
+* ...
+* P011-R20
+
+Record numbers must run sequentially from 01 through 20.
+
+Do not skip or duplicate IDs.
+
+Do not include chunk numbers.
+
+# INPUT GENERATION
+
+Generate realistic English stakeholder inputs based only on PROJECT_TRUTH.
+
+Across the 20 records, vary:
+
+* Input length
+* Speaker perspective
+* Formality
+* Clarity
+* Number of actors
+* Number of supported requirements
+* Amount of irrelevant text
+* Difficulty
+* Sentence structure
+
+Use a mixture of:
+
+* Clear project descriptions
+* Informal requests
+* Interview notes
+* Meeting notes
+* Project briefs
+* Short stakeholder statements
+* Compound requirements
+* Conditional rules
+* Vague quality statements
+* Conflicting statements
+* Noisy conversational text
+
+Do not copy the complete canonical project JSON into any input.
+
+Do not mechanically list all canonical requirements.
+
+Do not create 20 simple paraphrases of the same statement.
+
+Every generated input must be meaningfully distinct.
+
+# CROSS-RECORD DIVERSITY
+
+Across the 20 records:
+
+1. Every input must be unique.
+2. Every output must be unique.
+3. Do not use the same canonical requirement subset repeatedly.
+4. Do not use the same requirements in the same order repeatedly.
+5. Use different stakeholder perspectives.
+6. Use different levels of noise and ambiguity.
+7. Use different input structures.
+8. Avoid near-duplicate records.
+9. Cover as many canonical requirements as reasonably possible.
+10. Do not force every record to cover the full project.
+11. Some records should cover one requirement.
+12. Some extraction records should cover two to five requirements.
+13. Some records should include irrelevant or out-of-scope text.
+14. Some records should contain compound language.
+15. Some records should contain missing information.
+
+# TASK: EXTRACT REQUIREMENTS
+
+Use this instruction exactly:
+
+Extract all explicitly supported atomic software requirements from the stakeholder input. Preserve exact source traceability and do not introduce unsupported functionality.
+
+Output schema:
+
+{
+"requirements": [
+{
+"temporary_id": "REQ-001",
+"statement": "The system shall ...",
+"actor": "Actor name or null",
+"source_text": "Exact supporting text copied from the generated input.",
+"support_level": "explicit | strongly_implied",
+"needs_clarification": false,
+"clarification_reason": null
+}
+],
+"ignored_text": [
+{
+"text": "Exact ignored fragment.",
+"reason": "irrelevant | opinion | duplicate | insufficient_information | out_of_scope"
+}
+]
+}
+
+Rules:
+
+1. Each requirement must express exactly one obligation.
+2. Do not output FR, NFR, requirement kind, or subtype labels.
+3. Split independent obligations into separate requirements.
+4. Preserve conditions, exceptions, access controls, and approval rules.
+5. Do not invent actors, values, technologies, permissions, or workflows.
+6. Every `source_text` value must appear character-for-character in the generated input.
+7. Temporary IDs must run sequentially from REQ-001.
+8. Output only facts expressed in that record's input.
+9. Do not output facts visible only elsewhere in PROJECT_TRUTH.
+10. Unknown details must remain unknown.
+11. Unresolved conflicting portions must not become confirmed requirements.
+12. Out-of-scope text must be placed under `ignored_text` with reason `out_of_scope`.
+13. Opinions and conversational noise must not become requirements.
+14. Use `strongly_implied` only when the requirement follows directly and unavoidably from the input.
+15. If implementation requires an unspecified fact, set `needs_clarification` to true.
+16. When `needs_clarification` is false, `clarification_reason` must be null.
+17. When `needs_clarification` is true, provide a specific reason.
+
+# TASK: SUMMARIZE PROJECT
+
+Use this instruction exactly:
+
+Create a concise factual project summary using only information supported by the stakeholder input.
+
+Output schema:
+
+{
+"summary": "A concise two-to-four-sentence summary.",
+"primary_users": ["Actor name"],
+"primary_goal": "Confirmed goal or null",
+"key_capabilities": ["Confirmed capability"],
+"unresolved_points": ["Unresolved point"]
+}
+
+Rules:
+
+1. Use only facts expressed in the generated input.
+2. Do not add facts visible only elsewhere in PROJECT_TRUTH.
+3. Do not use promotional or marketing language.
+4. Do not resolve missing information.
+5. Preserve conflicts as unresolved points.
+6. Do not list an actor absent from the input.
+7. Keep the summary factual and concise.
+
+# TASK: EXTRACT CONTEXT
+
+Use this instruction exactly:
+
+Extract the project context, objective, actors, scope, constraints, assumptions, and missing information from the stakeholder input.
+
+Output schema:
+
+{
+"project_name": "Name or null",
+"business_objective": "Objective or null",
+"actors": [
+{
+"name": "Actor name",
+"responsibility": "Supported responsibility",
+"source_text": "Exact supporting text from the generated input."
+}
+],
+"in_scope": ["Confirmed item"],
+"out_of_scope": ["Explicitly excluded item"],
+"constraints": ["Confirmed constraint"],
+"assumptions": ["Unconfirmed assumption"],
+"missing_information": ["Specific missing information"]
+}
+
+Rules:
+
+1. Use `null` when the project name or objective is absent.
+2. Do not invent actors.
+3. Every actor must include exact supporting source text.
+4. Do not present assumptions as facts.
+5. Do not invent out-of-scope items.
+6. Missing details must remain unresolved.
+7. Output only information present in the generated input.
+8. Do not include the complete project scope unless the input provides it.
+
+# TASK: SPLIT COMPOUND REQUIREMENT
+
+Use this instruction exactly:
+
+Split the compound stakeholder requirement into independent atomic requirements without changing its meaning or inventing details.
+
+The generated input must contain one compound requirement derived from two or three compatible canonical requirements.
+
+Output schema:
+
+{
+"original_statement": "Exact compound statement from the generated input.",
+"atomic_requirements": [
+{
+"temporary_id": "REQ-001",
+"statement": "The system shall ...",
+"source_fragment": "Exact supporting fragment from the original statement."
+}
+],
+"information_loss": false,
+"notes": "Explanation or null"
+}
+
+Rules:
+
+1. Every atomic requirement must express exactly one obligation.
+2. Preserve conditions, exceptions, permissions, and sequence rules.
+3. Do not add implementation details.
+4. Do not remove approval or access restrictions.
+5. Every `source_fragment` must appear exactly in the generated input.
+6. Use only compatible project facts.
+7. Do not combine unresolved conflicting facts.
+8. Temporary IDs must be sequential.
+
+# TASK: REFINE REQUIREMENT
+
+Use this instruction exactly:
+
+Assess and refine the stakeholder requirement without inventing missing values, actors, technologies, or constraints.
+
+Output schema:
+
+{
+"original_requirement": "Exact requirement from the generated input.",
+"status": "ready | needs_clarification",
+"issues": [
+{
+"type": "ambiguity | non_measurable | compound | missing_actor | missing_condition | subjective_language | solution_bias | incomplete",
+"description": "Specific issue."
+}
+],
+"refined_requirement": "Safely refined requirement or null",
+"clarification_questions": ["Specific question"]
+}
+
+Rules:
+
+1. Use either:
+
+   * A confirmed requirement expressed poorly
+   * A vague version of a confirmed requirement
+   * A requirement associated with unknown information
+2. Do not invent response times, percentages, limits, actors, channels, technologies, or thresholds.
+3. If required information is missing, use `needs_clarification`.
+4. Use `refined_requirement: null` when safe refinement is impossible.
+5. Each clarification question must ask about one missing fact.
+6. Do not answer clarification questions.
+7. Preserve the original intended behavior.
+8. Do not turn an unknown value into a confirmed value.
+9. If the requirement is already safely refinable, use `ready`.
+
+# TASK: DETECT AMBIGUITY
+
+Use this instruction exactly:
+
+Identify ambiguous, incomplete, conflicting, subjective, or unverifiable information and produce targeted clarification questions.
+
+Output schema:
+
+{
+"ambiguities": [
+{
+"source_text": "Exact ambiguous text from the generated input.",
+"issue_type": "undefined_term | vague_quantity | missing_actor | missing_condition | conflicting_statement | unclear_scope | subjective_term | missing_priority",
+"explanation": "Why the text cannot be implemented safely.",
+"clarification_question": "One specific question."
+}
+],
+"confirmed_information": ["Confirmed information"],
+"has_blocking_ambiguity": true
+}
+
+Rules:
+
+1. Prefer unknown information and known conflicts from PROJECT_TRUTH.
+2. If none exist, create a deliberately vague version of a confirmed fact.
+3. Do not add a new capability.
+4. Do not reveal the missing answer.
+5. Do not resolve conflicts.
+6. Every `source_text` must appear exactly in the generated input.
+7. Do not label clear text ambiguous merely to fill the schema.
+8. Set `has_blocking_ambiguity` to true only when implementation requires guessing.
+
+# TASK: DETECT NON-REQUIREMENT
+
+Use this instruction exactly:
+
+Classify each stakeholder statement or fragment as a requirement, potential requirement, or non-requirement.
+
+Output schema:
+
+{
+"items": [
+{
+"text": "Exact statement or fragment from the generated input.",
+"label": "requirement | potential_requirement | non_requirement",
+"reason": "Specific reason."
+}
+]
+}
+
+Rules:
+
+1. Use existing `non_requirement_fragments` when available.
+2. If none exist, create harmless conversational noise.
+3. Harmless noise may include:
+
+   * Meeting scheduling
+   * Greetings
+   * Personal opinions
+   * General complaints
+   * Historical commentary
+4. Created noise must not imply new functionality.
+5. Include at least one supported requirement or potential requirement.
+6. Preserve every classified fragment exactly.
+7. Do not classify a confirmed project requirement as non-requirement.
+8. Do not convert noise into functionality.
+9. Classify out-of-scope statements carefully; they constrain project scope but are not positive system capabilities.
+
+# RECORD DIFFICULTY
+
+Assign realistic `record_difficulty`.
+
+Easy:
+
+* Direct wording
+* One or two clear requirements
+* Little noise
+* Explicit actors
+
+Medium:
+
+* Informal wording
+* Compound statements
+* Missing details
+* Multiple actors
+* Some irrelevant text
+
+Hard:
+
+* Conflict
+* Pronouns
+* Conditional rules
+* Indirect requirements
+* Several facts mixed with noise
+* Missing actors or conditions
+
+Easy projects should normally produce mostly easy and medium records.
+
+Do not label a record hard unless its generated input genuinely contains hard characteristics.
+
+# HALLUCINATION CONTROL
+
+Before returning every record, silently verify:
+
+1. Every output fact is supported by that record's input.
+2. Every project-related input fact is supported by PROJECT_TRUTH.
+3. Harmless conversational noise does not imply new functionality.
+4. No new functionality is introduced.
+5. No actor, permission, or workflow is invented.
+6. No missing value is invented.
+7. No unknown information is resolved.
+8. No conflict is resolved.
+9. No assumption becomes a confirmed fact.
+10. No out-of-scope feature becomes in scope.
+11. No FR/NFR classification appears.
+12. Every source string appears exactly in the input.
+13. Every generated requirement is atomic.
+14. The task matches the required record position.
+15. The output follows the correct task schema.
+16. IDs are sequential and unique.
+17. All 20 inputs are meaningfully distinct.
+18. All 20 outputs are meaningfully distinct.
+
+# FINAL JSON VALIDATION
+
+Before responding, silently validate every line.
+
+Each line must:
+
+* Start with {
+* End with }
+* Represent exactly one JSON object
+* Use valid double-quoted property names
+* Use valid double-quoted strings
+* Contain no unescaped internal double quotes
+* Contain no raw newline inside a string
+* Contain no trailing comma
+* Contain no comment
+* Use lowercase `true`, `false`, and `null`
+* Be independently parseable with `json.loads(line)`
+
+Silently regenerate any line that fails validation.
+
+Also verify:
+
+* Exactly 20 lines are present.
+* The exact task distribution is satisfied.
+* IDs run sequentially from R01 through R20.
+* No record is duplicated.
+* No output contains unsupported facts.
+* No input contains unsupported project facts.
+
+Return exactly 20 valid JSONL lines and nothing else.
