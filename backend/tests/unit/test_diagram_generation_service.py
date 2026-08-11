@@ -2,6 +2,9 @@ from uuid import uuid4
 
 from app.services.diagram_generation_service import (
     ClassDiagramContext,
+    ClassDiagramModel,
+    DiagramClass,
+    DiagramRelationship,
     RuleBasedClassDiagramGenerator,
     build_drawio_xml,
     default_generator_registry,
@@ -35,7 +38,7 @@ def test_registry_and_rule_based_generator_create_drawio_xml() -> None:
     assert "approveClaim()" in classes["Admin"].methods
     assert ("User", "Claim", "submit") in relationships
     assert ("Admin", "Claim", "approve") in relationships
-    assert "<mxfile>" in xml
+    assert xml.startswith("<mxfile")
     assert "mxCell" in xml
 
 
@@ -57,3 +60,26 @@ def test_method_normalization_and_model_merge() -> None:
 
     merged = merge_diagram_models([first, second])
     assert len(merged.classes) == len(first.classes)
+
+
+def test_legacy_drawio_builder_uses_canonical_relationship_renderer() -> None:
+    model = ClassDiagramModel(
+        classes=[
+            DiagramClass(name="SavingsAccount", attributes=["id"], methods=[]),
+            DiagramClass(name="Account", attributes=["id"], methods=[]),
+        ],
+        relationships=[
+            DiagramRelationship(
+                source="SavingsAccount",
+                target="Account",
+                label="extends",
+                type="inheritance",
+                direction="source-to-target",
+            )
+        ],
+    )
+
+    xml = build_drawio_xml(model)
+
+    assert "endArrow=block" in xml
+    assert "endFill=0" in xml

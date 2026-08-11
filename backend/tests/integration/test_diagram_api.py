@@ -262,7 +262,7 @@ def test_generate_class_diagram_from_srs_document_persists_drawio_xml(
     body = rule_based_response.json()
     assert body["source"] == "generated"
     assert body["diagram_type"] == "class"
-    assert body["current"]["drawio_xml"].startswith("<mxfile>")
+    assert body["current"]["drawio_xml"].startswith("<mxfile")
     rule_based_diagram_json = json.loads(body["current"]["diagram_json"])
     assert rule_based_diagram_json["methods"] == ["rule_based"]
     assert {"User", "Admin", "Claim"}.issubset(rule_based_diagram_json["rule_based_extraction"]["classes"])

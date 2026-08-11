@@ -239,7 +239,7 @@ def test_srs_generation_requires_paid_plan_then_creates_completed_document(
     assert body["job"]["result_payload"]["diagram_count"] == 1
     assert len(body["diagrams"]) == 1
     assert body["diagrams"][0]["source"] == "generated"
-    assert body["diagrams"][0]["current"]["drawio_xml"].startswith("<mxfile>")
+    assert body["diagrams"][0]["current"]["drawio_xml"].startswith("<mxfile")
     assert body["diagrams"][0]["requirement_links"]
     assert body["srs_document"]["title"] == "Claims MVP"
     assert "## Functional Requirements" in body["srs_document"]["content_markdown"]
