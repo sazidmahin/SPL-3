@@ -11,6 +11,62 @@ from app.rule_engine.dictionaries import DICTIONARY_VERSION, load_dictionaries
 RULE_VERSION = "rules_v1"
 STAGES = ["input", "clarifications", "final-story", "requirements", "class-model", "xml"]
 STAGE_STATUSES = {"DRAFT", "READY_FOR_REVIEW", "APPROVED", "STALE", "FAILED"}
+RELATIONSHIP_TYPE_ALIASES = {
+    "association": "association",
+    "aggregation": "aggregation",
+    "composition": "composition",
+    "dependency": "dependency",
+    "inheritance": "inheritance",
+    "generalization": "inheritance",
+    "extends": "inheritance",
+    "inherits": "inheritance",
+    "realization": "realization",
+    "implementation": "realization",
+    "implements": "realization",
+}
+RELATIONSHIP_TYPES = frozenset(RELATIONSHIP_TYPE_ALIASES.values())
+CARDINALITY_RELATIONSHIP_TYPES = frozenset({"association", "aggregation", "composition"})
+ASSOCIATION_DIRECTIONS = frozenset(
+    {"undirected", "source-to-target", "target-to-source", "bidirectional"}
+)
+MULTIPLICITY_PATTERN = re.compile(r"^(?:\*|\d+|\d+\.\.(?:\d+|\*))$")
+
+
+def normalize_relationship_type(value: Any) -> str | None:
+    return RELATIONSHIP_TYPE_ALIASES.get(str(value or "").strip().lower())
+
+
+def normalize_association_direction(value: Any) -> str | None:
+    direction = str(value or "undirected").strip().lower()
+    if direction in {"none", "unspecified"}:
+        direction = "undirected"
+    return direction if direction in ASSOCIATION_DIRECTIONS else None
+
+
+def relationship_drawio_style(relationship_type: str, direction: str = "undirected") -> str:
+    canonical_type = normalize_relationship_type(relationship_type)
+    if canonical_type is None:
+        raise ValueError(f"Unsupported relationship type: {relationship_type}")
+    base = "edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;"
+    if canonical_type == "association":
+        canonical_direction = normalize_association_direction(direction)
+        if canonical_direction is None:
+            raise ValueError(f"Invalid association direction: {direction}")
+        arrows = {
+            "source-to-target": "startArrow=none;endArrow=open;endFill=0;",
+            "target-to-source": "startArrow=open;startFill=0;endArrow=none;",
+            "bidirectional": "startArrow=open;startFill=0;endArrow=open;endFill=0;",
+            "undirected": "startArrow=none;endArrow=none;",
+        }
+        return base + "dashed=0;" + arrows[canonical_direction]
+    styles = {
+        "composition": "dashed=0;startArrow=diamondThin;startFill=1;endArrow=none;",
+        "aggregation": "dashed=0;startArrow=diamondThin;startFill=0;endArrow=none;",
+        "inheritance": "dashed=0;startArrow=none;endArrow=block;endFill=0;",
+        "dependency": "dashed=1;startArrow=none;endArrow=open;endFill=0;",
+        "realization": "dashed=1;startArrow=none;endArrow=block;endFill=0;",
+    }
+    return base + styles[canonical_type]
 
 
 def snake_case(value: str) -> str:
@@ -372,15 +428,19 @@ def extract_facts(sentences: list[dict[str, Any]], clauses: list[dict[str, Any]]
                 raw_action = phrase
                 break
         if relationship_match and relationship_type:
-            target_multiplicity, multiplicity_rule = _quantity_from_text(text)
             actor = normalize_entity(relationship_match.group("source"))
             object_name = normalize_entity(relationship_match.group("object"))
             action, _, action_warnings = _canonical_action(raw_action)
             warnings = action_warnings
-            source_multiplicity = "1"
-            if target_multiplicity is None:
-                target_multiplicity = "0..*"
-                warnings.append("Default multiplicity applied.")
+            source_multiplicity = None
+            target_multiplicity = None
+            multiplicity_rule = None
+            if relationship_type in CARDINALITY_RELATIONSHIP_TYPES:
+                target_multiplicity, multiplicity_rule = _quantity_from_text(text)
+                source_multiplicity = "1"
+                if target_multiplicity is None:
+                    target_multiplicity = "0..*"
+                    warnings.append("Default multiplicity applied.")
             facts.append(
                 _fact_template(
                     fact_index=fact_index,
@@ -875,10 +935,15 @@ def generate_class_model(requirements: list[dict[str, Any]], facts: list[dict[st
 
         fact = next((item for item in facts if item.get("id") == next((s.get("sourceFactId") for s in []), None)), None)
         fact = next((item for item in facts if item.get("sourceText") == requirement.get("sourceSentence")), {}) or {}
-        rel_type = fact.get("relationshipType") or "association"
-        source_multiplicity = fact.get("sourceMultiplicity") or "1"
-        target_multiplicity = fact.get("targetMultiplicity") or "0..*"
-        warnings = [] if fact.get("targetMultiplicity") else ["Default multiplicity applied."]
+        rel_type = normalize_relationship_type(fact.get("relationshipType") or "association") or "association"
+        if rel_type in CARDINALITY_RELATIONSHIP_TYPES:
+            source_multiplicity = fact.get("sourceMultiplicity") or "1"
+            target_multiplicity = fact.get("targetMultiplicity") or "0..*"
+            warnings = [] if fact.get("targetMultiplicity") else ["Default multiplicity applied."]
+        else:
+            source_multiplicity = None
+            target_multiplicity = None
+            warnings = []
         relationships.append(
             {
                 "id": f"edge_{snake_case(actor)}_{snake_case(action or 'uses')}_{snake_case(object_name)}",
@@ -922,15 +987,80 @@ def _dedupe_relationships(relationships: list[dict[str, Any]]) -> list[dict[str,
 
 
 def validate_class_model(class_model: dict[str, Any]) -> dict[str, Any]:
-    class_ids = {item["id"] for item in class_model.get("classes", []) if item.get("enabled", True)}
-    errors = []
-    for relationship in class_model.get("relationships", []):
-        if not relationship.get("enabled", True):
+    errors: list[str] = []
+    class_ids: set[str] = set()
+    for item in class_model.get("classes", []):
+        if not isinstance(item, dict) or not item.get("enabled", True):
             continue
-        if relationship.get("sourceClassId") not in class_ids:
-            errors.append(f"Relationship {relationship.get('id')} source class is missing or disabled.")
-        if relationship.get("targetClassId") not in class_ids:
-            errors.append(f"Relationship {relationship.get('id')} target class is missing or disabled.")
+        class_id = str(item.get("id") or "").strip()
+        if not class_id:
+            errors.append("Enabled class is missing an ID.")
+        elif class_id in class_ids:
+            errors.append(f"Duplicate class ID: {class_id}.")
+        else:
+            class_ids.add(class_id)
+
+    relationship_ids: set[str] = set()
+    inheritance_graph: dict[str, set[str]] = {}
+    for relationship in class_model.get("relationships", []):
+        if not isinstance(relationship, dict) or not relationship.get("enabled", True):
+            continue
+        relationship_id = str(relationship.get("id") or "").strip()
+        if not relationship_id:
+            errors.append("Enabled relationship is missing an ID.")
+            relationship_id = "<missing>"
+        elif relationship_id in relationship_ids or relationship_id in class_ids:
+            errors.append(f"Duplicate diagram element ID: {relationship_id}.")
+        else:
+            relationship_ids.add(relationship_id)
+
+        source_id = relationship.get("sourceClassId")
+        target_id = relationship.get("targetClassId")
+        if source_id not in class_ids:
+            errors.append(f"Relationship {relationship_id} source class is missing or disabled.")
+        if target_id not in class_ids:
+            errors.append(f"Relationship {relationship_id} target class is missing or disabled.")
+
+        canonical_type = normalize_relationship_type(relationship.get("type"))
+        if canonical_type is None:
+            errors.append(
+                f"Relationship {relationship_id} has unsupported type: {relationship.get('type')}."
+            )
+        direction = normalize_association_direction(relationship.get("direction"))
+        if direction is None:
+            errors.append(
+                f"Relationship {relationship_id} has invalid direction: {relationship.get('direction')}."
+            )
+
+        if canonical_type in CARDINALITY_RELATIONSHIP_TYPES:
+            for field in ("sourceMultiplicity", "targetMultiplicity"):
+                multiplicity = relationship.get(field)
+                if multiplicity is not None and not MULTIPLICITY_PATTERN.fullmatch(str(multiplicity).strip()):
+                    errors.append(
+                        f"Relationship {relationship_id} has invalid {field}: {multiplicity}."
+                    )
+        if canonical_type in {"inheritance", "realization"} and source_id == target_id:
+            errors.append(f"Relationship {relationship_id} cannot target the same class it starts from.")
+        if canonical_type == "inheritance" and source_id in class_ids and target_id in class_ids:
+            inheritance_graph.setdefault(str(source_id), set()).add(str(target_id))
+
+    visiting: set[str] = set()
+    visited: set[str] = set()
+
+    def has_inheritance_cycle(class_id: str) -> bool:
+        if class_id in visiting:
+            return True
+        if class_id in visited:
+            return False
+        visiting.add(class_id)
+        if any(has_inheritance_cycle(parent_id) for parent_id in inheritance_graph.get(class_id, set())):
+            return True
+        visiting.remove(class_id)
+        visited.add(class_id)
+        return False
+
+    if any(has_inheritance_cycle(class_id) for class_id in sorted(inheritance_graph)):
+        errors.append("Inheritance relationships contain a cycle.")
     return {"valid": not errors, "errors": errors, "matchedRuleId": "VAL_CLASS_MODEL_REFERENCES_001"}
 
 
@@ -970,7 +1100,10 @@ def generate_drawio_xml(class_model: dict[str, Any]) -> tuple[str, dict[str, Any
     ET.SubElement(graph_root, "mxCell", {"id": "0"})
     ET.SubElement(graph_root, "mxCell", {"id": "1", "parent": "0"})
 
-    classes = sorted([item for item in class_model.get("classes", []) if item.get("enabled", True)], key=lambda item: item["name"].lower())
+    classes = sorted(
+        [item for item in class_model.get("classes", []) if item.get("enabled", True)],
+        key=lambda item: str(item.get("name", "")).lower(),
+    )
     id_set = {"0", "1"}
     layout = {
         "columns": 3,
@@ -1056,17 +1189,14 @@ def generate_drawio_xml(class_model: dict[str, Any]) -> tuple[str, dict[str, Any
                 },
             )
 
-    styles = {
-        "association": "edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=none;",
-        "composition": "edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;startArrow=diamondThin;startFill=1;endArrow=none;",
-        "aggregation": "edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;startArrow=diamondThin;startFill=0;endArrow=none;",
-        "inheritance": "edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=0;",
-        "dependency": "edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;endArrow=open;",
-        "realization": "edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;endArrow=block;endFill=0;",
-    }
     relationships = sorted(
         [item for item in class_model.get("relationships", []) if item.get("enabled", True)],
-        key=lambda item: (item["sourceClassId"], item["targetClassId"], item["type"], item["label"]),
+        key=lambda item: (
+            str(item.get("sourceClassId", "")),
+            str(item.get("targetClassId", "")),
+            str(item.get("type", "")),
+            str(item.get("label", "")),
+        ),
     )
     edge_counts: Counter[str] = Counter()
     for relationship in relationships:
@@ -1074,13 +1204,16 @@ def generate_drawio_xml(class_model: dict[str, Any]) -> tuple[str, dict[str, Any
         edge_counts[base_id] += 1
         edge_id = base_id if edge_counts[base_id] == 1 else f"{base_id}_{edge_counts[base_id]:03d}"
         id_set.add(edge_id)
+        relationship_type = normalize_relationship_type(relationship.get("type"))
+        assert relationship_type is not None
+        direction = normalize_association_direction(relationship.get("direction")) or "undirected"
         edge = ET.SubElement(
             graph_root,
             "mxCell",
             {
                 "id": edge_id,
                 "value": relationship.get("label", ""),
-                "style": styles.get(relationship.get("type"), styles["association"]),
+                "style": relationship_drawio_style(relationship_type, direction),
                 "edge": "1",
                 "parent": "1",
                 "source": relationship["sourceClassId"],
@@ -1088,6 +1221,34 @@ def generate_drawio_xml(class_model: dict[str, Any]) -> tuple[str, dict[str, Any
             },
         )
         ET.SubElement(edge, "mxGeometry", {"relative": "1", "as": "geometry"})
+        if relationship_type in CARDINALITY_RELATIONSHIP_TYPES:
+            for suffix, field, position in (
+                ("source_multiplicity", "sourceMultiplicity", "-0.85"),
+                ("target_multiplicity", "targetMultiplicity", "0.85"),
+            ):
+                value = relationship.get(field)
+                if value is None:
+                    continue
+                label_id = f"{edge_id}_{suffix}"
+                id_set.add(label_id)
+                label = ET.SubElement(
+                    graph_root,
+                    "mxCell",
+                    {
+                        "id": label_id,
+                        "value": str(value),
+                        "style": "edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];",
+                        "vertex": "1",
+                        "connectable": "0",
+                        "parent": edge_id,
+                    },
+                )
+                geometry = ET.SubElement(
+                    label,
+                    "mxGeometry",
+                    {"x": position, "relative": "1", "as": "geometry"},
+                )
+                ET.SubElement(geometry, "mxPoint", {"as": "offset"})
 
     xml_text = ET.tostring(root, encoding="unicode", short_empty_elements=True)
     xml_validation = validate_drawio_xml(xml_text, class_model)
@@ -1117,12 +1278,42 @@ def validate_drawio_xml(xml_text: str, class_model: dict[str, Any] | None = None
         errors.append(f"Duplicate XML IDs: {', '.join(duplicates)}")
 
     if class_model:
+        model_validation = validate_class_model(class_model)
+        errors.extend(model_validation["errors"])
         class_ids = {item["id"] for item in class_model.get("classes", []) if item.get("enabled", True)}
         for edge in parsed.findall(".//mxCell[@edge='1']"):
             if edge.attrib.get("source") not in class_ids:
                 errors.append(f"Edge {edge.attrib.get('id')} source points to a missing or disabled class.")
             if edge.attrib.get("target") not in class_ids:
                 errors.append(f"Edge {edge.attrib.get('id')} target points to a missing or disabled class.")
+        for relationship in class_model.get("relationships", []):
+            if not relationship.get("enabled", True):
+                continue
+            relationship_id = relationship.get("id")
+            edge = parsed.find(f".//mxCell[@id='{relationship_id}'][@edge='1']")
+            if edge is None:
+                errors.append(f"Relationship {relationship_id} has no XML edge.")
+                continue
+            relationship_type = normalize_relationship_type(relationship.get("type"))
+            direction = normalize_association_direction(relationship.get("direction"))
+            if relationship_type is None or direction is None:
+                continue
+            expected_style = relationship_drawio_style(relationship_type, direction)
+            if edge.attrib.get("style") != expected_style:
+                errors.append(f"Relationship {relationship_id} has an incorrect UML edge style.")
+            if relationship_type in CARDINALITY_RELATIONSHIP_TYPES:
+                for suffix, field in (
+                    ("source_multiplicity", "sourceMultiplicity"),
+                    ("target_multiplicity", "targetMultiplicity"),
+                ):
+                    value = relationship.get(field)
+                    if value is None:
+                        continue
+                    label = parsed.find(f".//mxCell[@id='{relationship_id}_{suffix}']")
+                    if label is None or label.attrib.get("value") != str(value):
+                        errors.append(
+                            f"Relationship {relationship_id} is missing its {field} XML label."
+                        )
     return {"valid": not errors, "errors": errors, "matchedRuleId": "VAL_XML_DRAWIO_001"}
 
 

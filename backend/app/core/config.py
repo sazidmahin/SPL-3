@@ -23,9 +23,20 @@ class Settings(BaseSettings):
     llm_provider: str = "openai"
     openai_api_key: str | None = None
     openai_model: str = "gpt-4o-mini"
+    openai_models: str = "gpt-4o-mini"
+    anthropic_model: str = "claude-3-5-haiku-latest"
+    anthropic_models: str = "claude-3-5-haiku-latest"
+    gemini_model: str = "gemini-2.5-flash"
+    gemini_models: str = "gemini-2.5-flash"
     openai_temperature: float = 0
     openai_timeout_seconds: int = 20
     openai_max_retries: int = 0
+    ai_credential_encryption_key: str = "change-this-development-ai-credential-key"
+    srsgen_base_model: str = "Qwen/Qwen1.5-1.8B-Chat"
+    srsgen_artifact_path: str = "model_artifacts/srsgen-qwen1.5"
+    srsgen_load_in_4bit: bool = True
+    srsgen_max_new_tokens: int = 2048
+    srsgen_temperature: float = 0
     backend_cors_origins: str = Field(
         default="http://localhost:5173,http://127.0.0.1:5173",
         alias="BACKEND_CORS_ORIGINS",
@@ -41,6 +52,14 @@ class Settings(BaseSettings):
     @property
     def cors_origins(self) -> list[str]:
         return [origin.strip() for origin in self.backend_cors_origins.split(",") if origin.strip()]
+
+    def provider_models(self, provider: str) -> list[str]:
+        raw = {
+            "openai": self.openai_models,
+            "anthropic": self.anthropic_models,
+            "gemini": self.gemini_models,
+        }.get(provider, "")
+        return list(dict.fromkeys(model.strip() for model in raw.split(",") if model.strip()))
 
     model_config = SettingsConfigDict(
         env_file=".env",

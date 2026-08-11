@@ -1,4 +1,3 @@
-import html
 import json
 import re
 from dataclasses import dataclass
@@ -25,6 +24,7 @@ from app.services.llm_service import (
 )
 from app.services.project_service import ProjectNotFoundError, get_active_project
 from app.services.workspace_service import require_workspace_role
+from app.rule_engine.pipeline import analyze_text, generate_drawio_xml, normalize_relationship_type
 
 DIAGRAM_GENERATION_ROLES = {"owner", "admin", "member"}
 SUPPORTED_METHODS = {"llm", "rule_based"}
@@ -140,6 +140,10 @@ class DiagramRelationship:
     source: str
     target: str
     label: str
+    type: str = "association"
+    source_multiplicity: str | None = "1"
+    target_multiplicity: str | None = "0..*"
+    direction: str = "source-to-target"
 
 @dataclass(frozen=True)
 class ClassDiagramModel:
@@ -229,6 +233,38 @@ def _extract_rule_based_model(requirements: list[str]) -> ClassDiagramModel:
     relationships: list[DiagramRelationship] = []
 
     for requirement in requirements:
+        typed_facts = [
+            fact
+            for fact in analyze_text(requirement).get("facts", [])
+            if normalize_relationship_type(fact.get("relationshipType")) is not None
+        ]
+        if typed_facts:
+            for fact in typed_facts:
+                source = fact.get("actor")
+                target = fact.get("object")
+                relationship_type = normalize_relationship_type(fact.get("relationshipType"))
+                if not source or not target or not relationship_type or source == target:
+                    continue
+                for class_name in (source, target):
+                    if class_name not in class_names:
+                        class_names.append(class_name)
+                    methods_by_class.setdefault(class_name, [])
+                action = str(fact.get("action") or fact.get("rawAction") or relationship_type)
+                method = _method_name(action, target)
+                if method not in methods_by_class[source]:
+                    methods_by_class[source].append(method)
+                relationship = DiagramRelationship(
+                    source=source,
+                    target=target,
+                    label=action,
+                    type=relationship_type,
+                    source_multiplicity=fact.get("sourceMultiplicity"),
+                    target_multiplicity=fact.get("targetMultiplicity"),
+                    direction="source-to-target",
+                )
+                if relationship not in relationships:
+                    relationships.append(relationship)
+            continue
         tokens = [
             (match.start(), match.group(0), _class_name_from_token(match.group(0)), _normalize_action(match.group(0)))
             for match in re.finditer(r"[A-Za-z][A-Za-z0-9_-]*", requirement)
@@ -417,42 +453,53 @@ def merge_diagram_models(models: list[ClassDiagramModel]) -> ClassDiagramModel:
     return ClassDiagramModel(classes=list(classes_by_name.values()), relationships=relationships)
 
 def build_drawio_xml(model: ClassDiagramModel) -> str:
-    cells = [
-        '<mxCell id="0"/>',
-        '<mxCell id="1" parent="0"/>',
-    ]
-    class_ids: dict[str, str] = {}
-    for index, diagram_class in enumerate(model.classes, start=2):
-        cell_id = str(index)
-        class_ids[diagram_class.name] = cell_id
-        attributes = "\n".join(diagram_class.attributes)
-        methods = "\n".join(diagram_class.methods)
-        value = html.escape(f"{diagram_class.name}\n--\n{attributes}\n--\n{methods}")
-        x = 40 + ((index - 2) % 3) * 220
-        y = 40 + ((index - 2) // 3) * 150
-        cells.append(
-            f'<mxCell id="{cell_id}" value="{value}" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="1">'
-            f'<mxGeometry x="{x}" y="{y}" width="160" height="100" as="geometry"/>'
-            '</mxCell>'
-        )
-    edge_id = len(model.classes) + 2
-    for relationship in model.relationships:
-        source = class_ids.get(relationship.source)
-        target = class_ids.get(relationship.target)
-        if source is None or target is None:
-            continue
-        value = html.escape(relationship.label)
-        cells.append(
-            f'<mxCell id="{edge_id}" value="{value}" style="endArrow=block;html=1;rounded=0;" edge="1" parent="1" source="{source}" target="{target}">'
-            '<mxGeometry relative="1" as="geometry"/>'
-            '</mxCell>'
-        )
-        edge_id += 1
-    return (
-        '<mxfile><diagram name="Class Diagram"><mxGraphModel><root>'
-        + "".join(cells)
-        + '</root></mxGraphModel></diagram></mxfile>'
-    )
+    class_ids = {diagram_class.name: _element_id(diagram_class.name) for diagram_class in model.classes}
+    canonical_model = {
+        "classes": [
+            {
+                "id": class_ids[diagram_class.name],
+                "name": diagram_class.name,
+                "attributes": [
+                    {
+                        "id": f"attribute_{index}",
+                        "name": attribute.split(":", 1)[0].strip(),
+                        "type": attribute.split(":", 1)[1].strip() if ":" in attribute else "String",
+                    }
+                    for index, attribute in enumerate(diagram_class.attributes, start=1)
+                ],
+                "methods": [
+                    {
+                        "id": f"method_{index}",
+                        "name": method.split("(", 1)[0].strip(),
+                        "parameters": [],
+                        "returnType": "void",
+                    }
+                    for index, method in enumerate(diagram_class.methods, start=1)
+                ],
+                "enabled": True,
+            }
+            for diagram_class in model.classes
+        ],
+        "relationships": [
+            {
+                "id": f"edge_{index:03d}",
+                "sourceClassId": class_ids[relationship.source],
+                "targetClassId": class_ids[relationship.target],
+                "type": relationship.type,
+                "label": relationship.label,
+                "sourceMultiplicity": relationship.source_multiplicity,
+                "targetMultiplicity": relationship.target_multiplicity,
+                "direction": relationship.direction,
+                "enabled": True,
+            }
+            for index, relationship in enumerate(model.relationships, start=1)
+            if relationship.source in class_ids and relationship.target in class_ids
+        ],
+    }
+    xml_text, validation = generate_drawio_xml(canonical_model)
+    if not validation["valid"]:
+        raise InvalidDiagramGenerationRequestError("; ".join(validation["errors"]))
+    return xml_text
 
 def _load_extracted_requirements_for_srs(
     db: Session, *, workspace_id: UUID, project_id: UUID, srs_document_id: UUID | None

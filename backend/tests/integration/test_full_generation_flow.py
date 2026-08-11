@@ -115,7 +115,7 @@ def test_full_generation_flow_returns_reviewable_srs_diagram_and_traceability(
     assert body["job"]["status"] == "completed"
     assert body["srs_document"]["extracted_requirements"]
     assert len(body["diagrams"]) == 1
-    assert body["diagrams"][0]["current"]["drawio_xml"].startswith("<mxfile>")
+    assert body["diagrams"][0]["current"]["drawio_xml"].startswith("<mxfile")
     assert body["diagrams"][0]["requirement_links"]
 
     link = db_session.scalar(select(DiagramRequirementLink).where(DiagramRequirementLink.workspace_id == UUID(workspace_id)))

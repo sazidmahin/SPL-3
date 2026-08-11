@@ -11,11 +11,14 @@ from sqlalchemy.pool import StaticPool
 from app.db import models  # noqa: F401
 from app.db.base import Base
 from app.services.llm_service import (
+    LangChainAnthropicClient,
+    LangChainGeminiClient,
     LangChainOpenAIClient,
     LlmConfigurationError,
     LlmExecutionError,
     LlmRequest,
     build_llm_client,
+    build_external_llm_client,
     execute_llm_call,
     get_or_create_prompt_template,
     render_prompt,
@@ -128,6 +131,50 @@ def test_langchain_openai_client_invokes_chat_model(monkeypatch: pytest.MonkeyPa
     assert response.total_tokens == 8
     assert response.response_payload["provider"] == "openai"
     assert response.response_payload["model_name"] == "gpt-test"
+
+
+@pytest.mark.parametrize(
+    ("provider", "module_name", "class_name", "expected_type"),
+    [
+        ("anthropic", "langchain_anthropic", "ChatAnthropic", LangChainAnthropicClient),
+        ("gemini", "langchain_google_genai", "ChatGoogleGenerativeAI", LangChainGeminiClient),
+    ],
+)
+def test_external_provider_clients_use_selected_model(
+    monkeypatch: pytest.MonkeyPatch,
+    provider: str,
+    module_name: str,
+    class_name: str,
+    expected_type: type,
+) -> None:
+    captured: dict[str, object] = {}
+    fake_module = ModuleType(module_name)
+
+    class FakeChatModel:
+        def __init__(self, **kwargs: object) -> None:
+            captured.update(kwargs)
+
+    setattr(fake_module, class_name, FakeChatModel)
+    monkeypatch.setitem(sys.modules, module_name, fake_module)
+
+    client = build_external_llm_client(
+        provider=provider,
+        api_key="provider-key",
+        model_name="selected-model",
+        temperature=0,
+        timeout_seconds=15,
+        max_retries=1,
+    )
+
+    assert isinstance(client, expected_type)
+    assert client.model_name == "selected-model"
+    assert captured == {
+        "model": "selected-model",
+        "api_key": "provider-key",
+        "temperature": 0,
+        "timeout": 15,
+        "max_retries": 1,
+    }
 
 
 def test_prompt_template_is_versioned_and_renders_variables(db_session: Session) -> None:

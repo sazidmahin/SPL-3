@@ -165,7 +165,116 @@ class LangChainOpenAIClient:
         )
 
 
+class _LangChainProviderClient:
+    provider = "unknown"
+
+    def __init__(self, *, model_name: str, chat_model: Any) -> None:
+        self.model_name = model_name
+        self._chat_model = chat_model
+
+    def generate(self, request: LlmRequest) -> LlmResponse:
+        message = self._chat_model.invoke(request.prompt)
+        content = _content_to_text(getattr(message, "content", message))
+        usage_metadata = getattr(message, "usage_metadata", None) or {}
+        if not isinstance(usage_metadata, dict):
+            usage_metadata = {}
+        response_metadata = getattr(message, "response_metadata", None) or {}
+        if not isinstance(response_metadata, dict):
+            response_metadata = {}
+        token_usage = response_metadata.get("token_usage", {})
+        if not isinstance(token_usage, dict):
+            token_usage = {}
+        prompt_tokens = _first_int(
+            usage_metadata.get("input_tokens"),
+            token_usage.get("prompt_tokens"),
+            token_usage.get("input_tokens"),
+            len(request.prompt.split()),
+        ) or 0
+        completion_tokens = _first_int(
+            usage_metadata.get("output_tokens"),
+            token_usage.get("completion_tokens"),
+            token_usage.get("output_tokens"),
+            max(1, len(content.split())),
+        ) or 0
+        return LlmResponse(
+            content=content,
+            response_payload={
+                "content": content,
+                "provider": self.provider,
+                "model_name": self.model_name,
+                "usage_metadata": _json_ready(usage_metadata),
+                "response_metadata": _json_ready(response_metadata),
+            },
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+        )
+
+
+class LangChainAnthropicClient(_LangChainProviderClient):
+    provider = "anthropic"
+
+    def __init__(
+        self,
+        *,
+        api_key: str | None,
+        model_name: str,
+        temperature: float,
+        timeout_seconds: int,
+        max_retries: int,
+        chat_model: Any | None = None,
+    ) -> None:
+        cleaned_api_key = api_key.strip() if api_key else ""
+        if not cleaned_api_key and chat_model is None:
+            raise LlmConfigurationError("Anthropic API key is required for AI-Gen")
+        if chat_model is None:
+            try:
+                from langchain_anthropic import ChatAnthropic
+            except ImportError as exc:
+                raise LlmConfigurationError("langchain-anthropic is required for Anthropic generation") from exc
+            chat_model = ChatAnthropic(
+                model=model_name,
+                api_key=cleaned_api_key,
+                temperature=temperature,
+                timeout=timeout_seconds,
+                max_retries=max_retries,
+            )
+        super().__init__(model_name=model_name, chat_model=chat_model)
+
+
+class LangChainGeminiClient(_LangChainProviderClient):
+    provider = "gemini"
+
+    def __init__(
+        self,
+        *,
+        api_key: str | None,
+        model_name: str,
+        temperature: float,
+        timeout_seconds: int,
+        max_retries: int,
+        chat_model: Any | None = None,
+    ) -> None:
+        cleaned_api_key = api_key.strip() if api_key else ""
+        if not cleaned_api_key and chat_model is None:
+            raise LlmConfigurationError("Gemini API key is required for AI-Gen")
+        if chat_model is None:
+            try:
+                from langchain_google_genai import ChatGoogleGenerativeAI
+            except ImportError as exc:
+                raise LlmConfigurationError("langchain-google-genai is required for Gemini generation") from exc
+            chat_model = ChatGoogleGenerativeAI(
+                model=model_name,
+                api_key=cleaned_api_key,
+                temperature=temperature,
+                timeout=timeout_seconds,
+                max_retries=max_retries,
+            )
+        super().__init__(model_name=model_name, chat_model=chat_model)
+
+
 OPENAI_PROVIDER_NAMES = {"auto", "openai", "langchain-openai", "langchain_openai"}
+ANTHROPIC_PROVIDER_NAMES = {"anthropic", "claude", "langchain-anthropic", "langchain_anthropic"}
+GEMINI_PROVIDER_NAMES = {"gemini", "google", "google-genai", "langchain-google-genai"}
 
 
 def resolve_llm_provider(provider: str, openai_api_key: str | None) -> str:
@@ -192,6 +301,43 @@ def build_llm_client(
         timeout_seconds=openai_timeout_seconds,
         max_retries=openai_max_retries,
     )
+
+
+def normalize_external_provider(provider: str) -> str:
+    requested = provider.strip().lower()
+    if requested in OPENAI_PROVIDER_NAMES:
+        return "openai"
+    if requested in ANTHROPIC_PROVIDER_NAMES:
+        return "anthropic"
+    if requested in GEMINI_PROVIDER_NAMES:
+        return "gemini"
+    raise LlmConfigurationError(f"Unsupported AI provider: {provider}")
+
+
+def build_external_llm_client(
+    *,
+    provider: str,
+    api_key: str,
+    model_name: str,
+    temperature: float = 0,
+    timeout_seconds: int | None = None,
+    max_retries: int | None = None,
+) -> LlmClient:
+    normalized = normalize_external_provider(provider)
+    common = {
+        "api_key": api_key,
+        "model_name": model_name.strip(),
+        "temperature": temperature,
+        "timeout_seconds": timeout_seconds if timeout_seconds is not None else settings.openai_timeout_seconds,
+        "max_retries": max_retries if max_retries is not None else settings.openai_max_retries,
+    }
+    if not common["model_name"]:
+        raise LlmConfigurationError("Model name is required")
+    if normalized == "openai":
+        return LangChainOpenAIClient(**common)
+    if normalized == "anthropic":
+        return LangChainAnthropicClient(**common)
+    return LangChainGeminiClient(**common)
 
 
 def build_default_llm_client() -> LlmClient:

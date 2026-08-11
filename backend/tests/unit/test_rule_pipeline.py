@@ -1,5 +1,7 @@
 ﻿import xml.etree.ElementTree as ET
 
+import pytest
+
 from app.rule_engine.pipeline import (
     analyze_text,
     apply_answers,
@@ -7,6 +9,7 @@ from app.rule_engine.pipeline import (
     generate_drawio_xml,
     generate_final_story,
     generate_requirements,
+    validate_class_model,
 )
 
 
@@ -138,3 +141,110 @@ def test_clarification_answer_generates_class_diagram_entities() -> None:
     assert {item["id"] for item in class_model["classes"]} >= {"class_administrator", "class_order"}
     assert "Administrator" in xml
     assert "Order" in xml
+
+
+def _relationship_model(
+    relationship_type: str,
+    *,
+    direction: str = "source-to-target",
+    source_multiplicity: str | None = None,
+    target_multiplicity: str | None = None,
+) -> dict:
+    return {
+        "classes": [
+            {"id": "class_child", "name": "Child", "attributes": [], "methods": [], "enabled": True},
+            {"id": "class_parent", "name": "Parent", "attributes": [], "methods": [], "enabled": True},
+        ],
+        "relationships": [
+            {
+                "id": "edge_child_parent",
+                "sourceClassId": "class_child",
+                "targetClassId": "class_parent",
+                "type": relationship_type,
+                "label": relationship_type,
+                "sourceMultiplicity": source_multiplicity,
+                "targetMultiplicity": target_multiplicity,
+                "direction": direction,
+                "enabled": True,
+            }
+        ],
+    }
+
+
+@pytest.mark.parametrize(
+    ("relationship_type", "style_fragments"),
+    [
+        ("composition", ["startArrow=diamondThin", "startFill=1", "endArrow=none"]),
+        ("aggregation", ["startArrow=diamondThin", "startFill=0", "endArrow=none"]),
+        ("inheritance", ["endArrow=block", "endFill=0", "dashed=0"]),
+        ("dependency", ["dashed=1", "endArrow=open"]),
+        ("realization", ["dashed=1", "endArrow=block", "endFill=0"]),
+    ],
+)
+def test_xml_uses_predefined_uml_style_for_each_relationship(
+    relationship_type: str, style_fragments: list[str]
+) -> None:
+    xml, validation = generate_drawio_xml(_relationship_model(relationship_type))
+
+    assert validation["valid"] is True
+    edge = ET.fromstring(xml).find(".//mxCell[@id='edge_child_parent']")
+    assert edge is not None
+    assert all(fragment in edge.attrib["style"] for fragment in style_fragments)
+
+
+@pytest.mark.parametrize(
+    ("direction", "style_fragments"),
+    [
+        ("source-to-target", ["startArrow=none", "endArrow=open"]),
+        ("target-to-source", ["startArrow=open", "endArrow=none"]),
+        ("bidirectional", ["startArrow=open", "endArrow=open"]),
+        ("undirected", ["startArrow=none", "endArrow=none"]),
+    ],
+)
+def test_association_direction_controls_navigability_arrows(
+    direction: str, style_fragments: list[str]
+) -> None:
+    xml, validation = generate_drawio_xml(_relationship_model("association", direction=direction))
+
+    assert validation["valid"] is True
+    edge = ET.fromstring(xml).find(".//mxCell[@id='edge_child_parent']")
+    assert edge is not None
+    assert all(fragment in edge.attrib["style"] for fragment in style_fragments)
+
+
+def test_cardinality_relationship_renders_both_multiplicity_labels() -> None:
+    xml, validation = generate_drawio_xml(
+        _relationship_model(
+            "composition",
+            source_multiplicity="1",
+            target_multiplicity="1..*",
+        )
+    )
+
+    assert validation["valid"] is True
+    parsed = ET.fromstring(xml)
+    source_label = parsed.find(".//mxCell[@id='edge_child_parent_source_multiplicity']")
+    target_label = parsed.find(".//mxCell[@id='edge_child_parent_target_multiplicity']")
+    assert source_label is not None and source_label.attrib["value"] == "1"
+    assert target_label is not None and target_label.attrib["value"] == "1..*"
+
+
+def test_invalid_relationship_semantics_are_rejected() -> None:
+    validation = validate_class_model(
+        _relationship_model("not-a-uml-relation", direction="backwards")
+    )
+
+    assert validation["valid"] is False
+    assert any("unsupported type" in error for error in validation["errors"])
+    assert any("invalid direction" in error for error in validation["errors"])
+
+
+def test_rule_inheritance_has_child_to_parent_direction_without_multiplicity() -> None:
+    analysis, _, _, class_model = _flow("A savings account extends an account.")
+
+    assert analysis["facts"][0]["relationshipType"] == "inheritance"
+    relationship = class_model["relationships"][0]
+    assert relationship["sourceClassId"] == "class_savings_account"
+    assert relationship["targetClassId"] == "class_account"
+    assert relationship["sourceMultiplicity"] is None
+    assert relationship["targetMultiplicity"] is None

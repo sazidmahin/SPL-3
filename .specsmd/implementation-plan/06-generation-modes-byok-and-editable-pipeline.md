@@ -11,9 +11,11 @@ Add three explicit generation modes to the SRS/class-diagram workflow:
 
 1. **Rule Based** — run the deterministic local rule engine without an external LLM API key.
 2. **SrsGen** — run the platform's server-managed custom generation model.
-3. **AI API Key** — run the pipeline with the signed-in user's configured OpenAI, Anthropic, or Gemini credential and selected model.
+3. **AI-Gen** — run the pipeline with the active OpenAI, Anthropic, or Gemini credential/model already configured by the signed-in user in Settings.
 
-The generated output must no longer jump directly from generation to a final class diagram. The user must be able to review and edit generated artifacts—especially classes, attributes, methods, and relationships—then choose **Accept & Proceed** before Draw.io XML is generated.
+All three modes must execute the same canonical pipeline already defined by the Rule System. They differ only in which engine produces each stage's draft. The stage order, persisted artifact contracts, review screens, validation rules, approval gates, traceability, and Draw.io output must remain the same.
+
+The generated output must no longer jump directly from generation to a final class diagram. At every reviewable stage, the user can edit the generated artifact and then choose **Accept & Proceed** before the next stage runs.
 
 ## 2. Working Assumptions
 
@@ -25,8 +27,8 @@ These assumptions make the requested behavior implementable without blocking thi
 - One configured provider/model is marked as the active BYOK choice used by the **AI API Key** mode.
 - SrsGen credentials and endpoint configuration are managed by the platform through server environment settings; users do not enter the SrsGen secret.
 - Provider API keys are encrypted at rest and are never returned to the browser after submission.
-- Selecting **AI API Key** never silently falls back to SrsGen or Rule Based. Missing or invalid configuration produces an actionable error.
-- “Edit pipeline” means editing generated business artifacts at review checkpoints, not allowing users to reorder security-critical execution nodes such as guardrails.
+- Selecting **AI-Gen** never silently falls back to SrsGen or Rule Based. Missing or invalid configuration produces an actionable error.
+- “Edit pipeline” means editing the generated artifact at each canonical Rule System checkpoint. It does not mean changing or reordering the canonical stage sequence.
 
 ## 3. Current-State Findings
 
@@ -54,6 +56,7 @@ These assumptions make the requested behavior implementable without blocking thi
 - Generated SRS tabs are mostly read-only; several edit/regenerate buttons are visual placeholders.
 - `SettingsProfile.tsx` already supplies a user settings page and local settings sub-navigation, but has no AI provider/API-key section.
 - There is no class-model review editor or **Accept & Proceed** gate before diagram generation.
+- The current SRS page displays a different all-at-once pipeline (`input_guardrail`, `requirement_sufficiency`, `summary`, `requirement_extraction`, `requirement_classification`, and `srs_builder`). It is not connected to the canonical Rule System stages (`input`, `clarifications`, `final-story`, `requirements`, `class-model`, and `xml`). The new UI must represent the canonical pipeline for all three generation modes.
 
 ## 4. Target User Experience
 
@@ -65,12 +68,14 @@ Place a generation-method dropdown in the lower portion of the SRS generation in
   - Helper text: “Uses local deterministic extraction. No API key required.”
 - **SrsGen**
   - Helper text: “Uses the platform custom generation model.”
-- **AI API Key**
-  - Helper text shows the active provider and selected model, for example: “Anthropic · selected model”.
+- **AI-Gen**
+  - The generation dropdown contains only the `AI-Gen` label; provider, API-key, and model controls do not appear in this dropdown.
   - Disabled when no valid active credential/model is configured.
   - Disabled state includes a **Set up API key** link that opens Settings → AI Providers.
 
-The chosen mode applies to the full generation execution. The backend records a snapshot of the mode, provider, and model on the generation job so changing settings later does not rewrite job history.
+The dropdown therefore contains exactly `Rule Based`, `SrsGen`, and `AI-Gen`. All provider/API-key/model setup occurs only in the dedicated Settings → AI Providers tab. When `AI-Gen` is selected, the backend resolves the active provider/model from that saved configuration.
+
+The chosen mode applies to the full generation execution. The backend records a snapshot of the resolved mode, provider, and model on the generation job so changing settings later does not rewrite job history.
 
 ### 4.2 Settings → AI Providers
 
@@ -91,36 +96,62 @@ Each provider card supports:
 
 The browser must clear the plaintext key field immediately after a successful save. API responses must never include the ciphertext or full secret.
 
-### 4.3 Review and edit flow
+### 4.3 One canonical pipeline for all three modes
 
-The target flow is:
+The mode selector chooses the generation engine; it does not choose a provider/model or a different workflow. Rule Based, SrsGen, and AI-Gen all run through the same ordered stages and the same review gates:
 
 ```mermaid
-flowchart LR
-  A["Requirement input"] --> B["Choose generation mode"]
-  B --> C["Guardrail and sufficiency checks"]
-  C --> D["Generate SRS artifacts"]
-  D --> E["Review and edit requirements/SRS"]
-  E -->|"Accept & Proceed"| F["Generate class-model draft"]
-  F --> G["Review classes, attributes, methods, relationships"]
-  G -->|"Save changes"| G
-  G -->|"Accept & Proceed"| H["Generate Draw.io XML"]
-  H --> I["Open diagram editor / save versions"]
+flowchart TD
+  Start["Requirement input"] --> Mode{"Choose generation engine"}
+  Mode -->|"Rule Based"| Rule["Rule engine"]
+  Mode -->|"SrsGen"| Tuned["Platform tuned model"]
+  Mode -->|"AI-Gen"| Byok["Use active provider/model from Settings"]
+
+  Rule --> Input["1. Generate input/story draft"]
+  Tuned --> Input
+  Byok --> Input
+
+  Input --> InputReview["Review/edit input"]
+  InputReview -->|"Save changes"| InputReview
+  InputReview -->|"Accept & Proceed"| Clarify["2. Generate clarifications"]
+
+  Clarify --> ClarifyReview["Review/edit/answer clarifications"]
+  ClarifyReview -->|"Save changes"| ClarifyReview
+  ClarifyReview -->|"Accept & Proceed"| FinalStory["3. Generate final story"]
+
+  FinalStory --> StoryReview["Review/edit final story"]
+  StoryReview -->|"Save changes"| StoryReview
+  StoryReview -->|"Accept & Proceed"| Requirements["4. Generate requirements"]
+
+  Requirements --> RequirementsReview["Review/edit requirements"]
+  RequirementsReview -->|"Save changes"| RequirementsReview
+  RequirementsReview -->|"Accept & Proceed"| ClassModel["5. Generate class model"]
+
+  ClassModel --> ClassReview["Review/edit classes, attributes, methods, relationships"]
+  ClassReview -->|"Save changes"| ClassReview
+  ClassReview -->|"Accept & Proceed"| XML["6. Generate Draw.io XML"]
+
+  XML --> XMLReview["Review/edit diagram and save versions"]
 ```
 
-Review checkpoints should distinguish system stages from editable artifacts:
+The canonical stage order is the existing Rule System `STAGES` contract:
 
-| Stage | Editable | Approval behavior |
-| --- | --- | --- |
-| Input guardrail | No | Automatic pass/fail |
-| Requirement sufficiency | No | Clarification flow remains user-driven |
-| Summary | Yes | Save draft, then accept |
-| Extracted requirements and classifications | Yes | Add, edit, disable, or delete; then accept |
-| SRS document | Yes | Save a new revision; then accept |
-| Class model | Yes | Edit classes and relationships; then accept |
-| Draw.io XML | Editable in diagram editor | Versioned save |
+```text
+input -> clarifications -> final-story -> requirements -> class-model -> xml
+```
 
-At minimum, the first delivery must include the requirements/SRS review gate and the full class-model review gate. Security and sufficiency nodes remain non-editable.
+Every mode must produce the same normalized output schema at each stage. Therefore, the review UI and downstream stage never need provider-specific logic.
+
+| Canonical stage | Rule Based draft source | SrsGen draft source | AI-Gen draft source | User checkpoint |
+| --- | --- | --- | --- | --- |
+| `input` | Rule normalization and story revision | Tuned model using input-stage schema | Selected provider/model using input-stage schema | Review/edit input story, then accept |
+| `clarifications` | Rule ambiguity detection | Tuned model using clarification schema | Selected provider/model using clarification schema | Review/edit questions, answer, then accept |
+| `final-story` | Rule merge of original input and answers | Tuned model using final-story schema | Selected provider/model using final-story schema | Review/edit sections, then accept |
+| `requirements` | Rule requirement extraction | Tuned model using requirement schema | Selected provider/model using requirement schema | Add/edit/disable/delete, then accept |
+| `class-model` | Rule class-model generator | Tuned model using class-model schema | Selected provider/model using class-model schema | Edit all class components and relationships, then accept |
+| `xml` | Deterministic XML builder from approved class model | Same deterministic builder | Same deterministic builder | Open/edit in Draw.io and save versions |
+
+The XML builder should remain deterministic for all three modes. The selected engine influences the approved class-model draft, not the XML serialization contract.
 
 ### 4.4 Class-model editor
 
@@ -258,11 +289,14 @@ All routes use `get_current_user`; no workspace role is required for personal cr
 
 ### 5.7 Pipeline execution changes
 
-Refactor SRS generation so the selected execution context is resolved once at job start and passed to every model-driven node:
+Introduce one orchestrator implementing the canonical `input -> clarifications -> final-story -> requirements -> class-model -> xml` state machine. The selected execution context is resolved once at job start and supplied to a stage-generator strategy:
 
-- `rule_based`: invoke deterministic/rule components only; do not create external LLM calls.
-- `srsgen`: build the SrsGen client from server configuration.
-- `byok`: load the authenticated job owner's credential, verify active/validated configuration, decrypt, and construct the selected provider client.
+- `rule_based`: each stage delegates to the existing deterministic Rule System function; it does not create external LLM calls.
+- `srsgen`: each generative stage calls SrsGen and validates the result against that stage's canonical schema.
+- `byok`: each generative stage calls the authenticated user's selected provider/model and validates the result against the same canonical schema.
+- `xml`: all modes use the same deterministic XML generator after class-model approval.
+
+The mode is fixed for one pipeline run. A user cannot generate early stages with one mode and silently continue later stages with another mode. If mode switching for a project is added later, it must create a new downstream draft lineage and mark the previous downstream revisions stale.
 
 The job stores:
 
@@ -305,7 +339,16 @@ Recommended primary table: `class_model_revisions` with:
 - Generation mode/provider/model snapshot.
 - Created/updated/approved user and timestamps.
 
-For SRS review, either add an `srs_document_revisions` table or extend the existing document model with immutable revisions. In-place edits should be avoided because traceability and audit history are already product requirements.
+Every canonical stage needs a revision or persisted draft tied to the same workspace project and pipeline run. Existing Rule System revision models can guide the design:
+
+- Input/story revisions.
+- Clarification question and answer revisions/state.
+- Final-story revisions.
+- Requirement revisions and editable requirement rows.
+- Class-model revisions.
+- XML/diagram versions.
+
+In-place edits should be avoided because traceability and audit history are already product requirements.
 
 The existing Rule System's class/relationship mutation and stage approval concepts can be extracted into shared domain services, but its `rule_projects` persistence and unauthenticated routes should remain isolated until migrated.
 
@@ -329,7 +372,9 @@ Add secured workspace/project routes such as:
 | `POST /class-models/{id}/reopen` | Reopen and mark downstream artifacts stale |
 | `POST /class-models/{id}/diagram` | Generate Draw.io XML only from the approved version |
 
-All routes must use the main workspace membership dependency and existing generation-role policy. The diagram endpoint must reject unapproved or stale class-model revisions.
+Equivalent authenticated draft/edit/approve/reopen endpoints are required for `input`, `clarifications`, `final-story`, and `requirements`, not only for `class-model`. A generic stage approval route may be retained, but stage-specific edit APIs should validate their canonical payloads.
+
+All routes must use the main workspace membership dependency and existing generation-role policy. The orchestrator must reject a request to run stage N+1 until stage N's exact current version is approved. The diagram endpoint must reject unapproved or stale class-model revisions.
 
 ### 5.11 State enforcement
 
@@ -371,17 +416,22 @@ Update `SettingsProfile.tsx` and its styles:
 - Include inline validation, masked key status, last tested, and active-provider badge.
 - Require confirmation before replacing/removing a key.
 - Ensure organization admins still have a reachable personal AI Provider settings route; the current `App.tsx` sends organization-admin `settings` to billing/workspace settings, so account AI settings need an explicit route or section.
+- Keep provider, API-key, model, connection-test, and active-provider controls exclusively in this settings area; do not duplicate them in the generation dropdown.
 
 ### 6.3 Generation page changes
 
 Update `SrsGenerationFlow.tsx` and controller/API types:
 
 - Replace hard-coded `['llm']` with the structured generation selection.
-- Add the three-option dropdown and configuration summary.
+- Add the exact three-option dropdown: `Rule Based`, `SrsGen`, and `AI-Gen`.
+- Do not put provider or model selection inside the generation dropdown. `AI-Gen` uses the active provider/model saved in Settings.
 - Disable BYOK when configuration is missing/invalid.
 - Show mode/provider/model on job information and metadata using real backend values rather than hard-coded model labels.
-- Split generation completion from class-diagram completion: an SRS can be completed while a class model is awaiting review.
-- Make generated requirements/SRS review actions functional and persist revisions.
+- Replace the current display-only SRS stage list with the canonical Rule System stage list.
+- Show the same stage list and review components regardless of selected mode; only the engine badge/metadata changes.
+- Stop after each generated draft at `ready_for_review` and render that stage's editor.
+- Wire **Accept & Proceed** to approve the current version and run only the next canonical stage.
+- Make input, clarification, final-story, requirement, class-model, and XML review actions functional and persist revisions.
 
 ### 6.4 Class-model review component
 
@@ -437,16 +487,18 @@ The component should use backend revision data as the source of truth. Local opt
 - Add encrypted user credentials, provider catalog, settings APIs, and OpenAI/Anthropic/Gemini/SrsGen adapters.
 - Add provider contract tests with mocked LangChain clients; tests must never use real keys.
 
-### Phase B — Generation-mode selection
+### Phase B — Shared canonical orchestrator and generation-mode selection
 
 - Extend request/job schemas and persistence.
-- Inject request-scoped clients into all model-driven SRS stages.
+- Implement one canonical stage machine for all three modes.
+- Adapt Rule Based, SrsGen, and BYOK generators to the same per-stage output contracts.
+- Inject request-scoped clients into all model-driven stages.
 - Add dropdown and BYOK readiness checks in the generation UI.
 
-### Phase C — Editable SRS artifacts
+### Phase C — Editable input through requirements stages
 
-- Add revision persistence and edit/approve APIs for generated requirements/SRS.
-- Connect review controls and **Accept & Proceed** behavior.
+- Add revision persistence and edit/approve/reopen APIs for input, clarifications, final story, and requirements.
+- Connect review controls and stage-by-stage **Accept & Proceed** behavior.
 
 ### Phase D — Editable class-model checkpoint
 
@@ -480,8 +532,11 @@ The component should use backend revision data as the source of truth. Local opt
 
 ### Editable pipeline and class model
 
-- Generated editable artifacts can be changed and saved as revisions.
+- All three modes execute `input -> clarifications -> final-story -> requirements -> class-model -> xml` in that exact order.
+- All three modes produce the same canonical payload contract for every stage.
+- Generated editable artifacts at each stage can be changed and saved as revisions.
 - `Accept & Proceed` approves the exact saved revision.
+- A downstream stage cannot run until the preceding stage version is approved.
 - Invalid class references or relationships block approval and XML generation.
 - Editing/reopening an approved upstream stage marks downstream output stale.
 - Draw.io XML cannot be generated from a draft, stale, or unapproved class model.
@@ -498,7 +553,7 @@ The component should use backend revision data as the source of truth. Local opt
 
 1. **Credential ownership:** confirm personal user credentials versus workspace-shared credentials. This plan assumes personal ownership.
 2. **SrsGen transport:** confirm whether SrsGen is an HTTP endpoint, hosted inference service, or in-process model.
-3. **Review granularity:** confirm whether users must approve every editable SRS stage separately or only the final SRS plus class model. This plan supports stage checkpoints but recommends final-SRS and class-model approval as the first delivery.
+3. **Review granularity:** this revision assumes every canonical Rule System stage has its own review and **Accept & Proceed** checkpoint. Confirm whether the `input` stage itself needs manual approval or whether input submission counts as its approval.
 4. **Model catalog policy:** decide whether only curated models are allowed or advanced users may enter a custom model ID.
 5. **Credential validation cost:** provider connection tests may incur a small API charge; the UI should disclose this if a live generation call is used.
 6. **Billing policy:** decide whether BYOK jobs consume platform AI generation quota, a reduced orchestration quota, or no model-token quota.
