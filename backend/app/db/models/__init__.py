@@ -4,6 +4,7 @@ from app.db.models.diagram import Diagram, DiagramRequirementLink, DiagramVersio
 from app.db.models.generation import GenerationJob, RequirementInput
 from app.db.models.llm import LlmCall, PromptTemplate
 from app.db.models.project import Project
+from app.db.models import rule_system as rule_system
 from app.db.models.srs import ExtractedRequirement, SrsDocument
 from app.db.models.user import User
 from app.db.models.workspace import Workspace
@@ -20,6 +21,7 @@ __all__ = [
     "Plan",
     "PlatformSetting",
     "Project",
+    "rule_system",
     "RequirementInput",
     "PromptTemplate",
     "Subscription",

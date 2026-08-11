@@ -1,6 +1,7 @@
-from fastapi import FastAPI
+﻿from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.rule_v1.router import rule_api_router
 from app.api.v1.router import api_router
 from app.core.config import settings
 
@@ -15,6 +16,15 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     app.include_router(api_router, prefix=settings.api_v1_prefix)
+    app.include_router(rule_api_router)
+
+    @app.get("/health", tags=["health"])
+    def health_check() -> dict[str, str]:
+        return {"status": "ok"}
+
+    @app.get("/ready", tags=["health"])
+    def readiness_check() -> dict[str, str]:
+        return {"status": "ready"}
 
     @app.get("/", include_in_schema=False)
     def root() -> dict[str, str]:
@@ -24,3 +34,4 @@ def create_app() -> FastAPI:
 
 
 app = create_app()
+
