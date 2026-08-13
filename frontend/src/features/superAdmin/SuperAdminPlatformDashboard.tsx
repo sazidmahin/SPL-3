@@ -39,7 +39,6 @@ import type { Diagram } from '../../domains/diagram/types'
 import type { Project } from '../../domains/project/types'
 import type { GenerationJob, SrsDocument } from '../../domains/srs/types'
 import type { WorkspaceMembership } from '../../domains/workspace/types'
-import './SuperAdminPlatformDashboard.css'
 
 type SuperAdminPlatformDashboardProps = {
   user: AuthUser
@@ -144,37 +143,31 @@ const quickActions = [
 
 export function SuperAdminPlatformDashboard({ user }: SuperAdminPlatformDashboardProps) {
   return (
-    <section className="platform-dashboard" id="overview">
-      <header className="platform-dashboard-topbar">
+    <section className="mx-auto grid max-w-400 gap-5 p-4 sm:p-6" id="overview">
+      <header className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
         <div>
-          <h1>Platform Dashboard</h1>
-          <p>Overview of platform usage, health and activities</p>
+          <h1 className="text-xl font-bold text-slate-950">Platform Dashboard</h1><p className="mt-1 text-sm text-slate-500">Overview of platform usage, health and activities</p>
         </div>
-        <label className="platform-search">
+        <label className="flex min-w-60 flex-1 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 sm:max-w-90">
           <Search size={17} />
-          <input placeholder="Search users, workspaces, jobs, plans..." />
-          <kbd>? K</kbd>
+          <input className="min-w-0 flex-1 bg-transparent text-sm outline-none" placeholder="Search users, workspaces, jobs, plans..." /><kbd className="rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] text-slate-400">⌘ K</kbd>
         </label>
-        <div className="platform-top-actions">
-          <button type="button" aria-label="Notifications"><Bell size={19} /><span>8</span></button>
-          <div className="platform-top-user">
-            <span>{initials(user.full_name)}</span>
-            <div><strong>{user.full_name || 'Super Admin'}</strong><small>Platform Admin</small></div>
+        <div className="flex items-center gap-2"><button className="relative grid size-9 place-items-center rounded-lg text-slate-600 hover:bg-slate-100" type="button" aria-label="Notifications"><Bell size={19} /><span className="absolute -right-1 -top-1 grid size-4 place-items-center rounded-full bg-brand-600 text-[10px] font-bold text-white">8</span></button><div className="flex items-center gap-2"><span className="grid size-9 place-items-center rounded-full bg-brand-100 text-xs font-bold text-brand-700">{initials(user.full_name)}</span><div className="hidden sm:grid"><strong className="text-sm text-slate-900">{user.full_name || 'Super Admin'}</strong><small className="text-xs text-slate-500">Platform Admin</small></div>
             <ChevronDown size={15} />
           </div>
         </div>
       </header>
 
-      <section className="platform-metrics" aria-label="Platform metrics">
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5" aria-label="Platform metrics">
         {metrics.map((metric) => <MetricCard metric={metric} key={metric.label} />)}
       </section>
 
-      <section className="platform-dashboard-main-grid">
+      <section className="grid gap-5 2xl:grid-cols-[minmax(0,1.7fr)_minmax(22rem,.85fr)]">
         <RevenueTrend />
         <PlanDistribution />
       </section>
 
-      <section className="platform-dashboard-lists">
+      <section className="grid gap-5 xl:grid-cols-2 2xl:grid-cols-3">
         <RecentActivity />
         <SystemStatus />
         <RecentFailedJobs />
@@ -188,12 +181,9 @@ export function SuperAdminPlatformDashboard({ user }: SuperAdminPlatformDashboar
 function MetricCard({ metric }: { metric: Metric }) {
   const Icon = metric.icon
   return (
-    <article className="platform-metric-card">
-      <span className={`metric-icon tone-${metric.tone}`}><Icon size={26} /></span>
+    <article className="flex items-start gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><span className={metricIconClass(metric.tone)}><Icon size={22} /></span>
       <div>
-        <small>{metric.label}</small>
-        <strong>{metric.value}</strong>
-        <p><ArrowUp size={12} /> {metric.delta} <span>{metric.compare}</span></p>
+        <small className="text-xs font-semibold text-slate-500">{metric.label}</small><strong className="mt-1 block text-2xl text-slate-950">{metric.value}</strong><p className="mt-2 flex items-center gap-1 text-xs font-bold text-emerald-600"><ArrowUp size={12} /> {metric.delta} <span className="font-medium text-slate-400">{metric.compare}</span></p>
       </div>
     </article>
   )
@@ -201,22 +191,18 @@ function MetricCard({ metric }: { metric: Metric }) {
 
 function RevenueTrend() {
   return (
-    <article className="platform-card revenue-trend-card">
-      <header>
+    <article className={cardClass}><header className={headerClass}>
         <div>
-          <h2>Revenue &amp; Usage Trend</h2>
-          <div className="revenue-summary-row">
+          <h2 className="text-lg font-bold text-slate-950">Revenue &amp; Usage Trend</h2><div className="mt-3 flex flex-wrap gap-4">
             <SummaryStat label="Revenue" value="$128,740" delta="15.3%" />
             <SummaryStat label="AI Jobs" value="24,560" delta="12.6%" />
             <SummaryStat label="LLM Calls" value="1.58M" delta="9.8%" />
           </div>
         </div>
-        <div className="card-toolbar">
-          <button type="button">Last 30 days <CalendarDays size={14} /></button>
-          <button type="button" aria-label="More options"><MoreHorizontal size={16} /></button>
+        <div className="flex gap-2"><button className="flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1.5 text-xs font-semibold text-slate-600" type="button">Last 30 days <CalendarDays size={14} /></button><button className="grid size-8 place-items-center rounded-lg border border-slate-200 text-slate-500" type="button" aria-label="More options"><MoreHorizontal size={16} /></button>
         </div>
       </header>
-      <div className="trend-chart-wrap">
+      <div className="p-4">
         <ResponsiveContainer width="100%" height={220}>
           <LineChart data={revenueTrend} margin={{ left: 0, right: 10, top: 10, bottom: 0 }}>
             <defs>
@@ -242,18 +228,14 @@ function RevenueTrend() {
 }
 
 function SummaryStat({ label, value, delta }: { label: string; value: string; delta: string }) {
-  return <span><small>{label}</small><strong>{value}</strong><em><ArrowUp size={12} /> {delta}</em></span>
+  return <span className="grid gap-1"><small className="text-xs text-slate-500">{label}</small><strong className="text-lg text-slate-950">{value}</strong><em className="flex items-center gap-1 text-xs font-bold not-italic text-emerald-600"><ArrowUp size={12} /> {delta}</em></span>
 }
 
 function PlanDistribution() {
   return (
-    <article className="platform-card plan-distribution-card">
-      <header>
-        <h2>Plan Distribution</h2>
-        <div className="card-toolbar"><button type="button">By Active Subscriptions <ChevronDown size={14} /></button><button type="button" aria-label="More options"><MoreHorizontal size={16} /></button></div>
+    <article className={cardClass}><header className={headerClass}><h2 className="text-lg font-bold text-slate-950">Plan Distribution</h2><div className="flex gap-2"><button className="flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1.5 text-xs font-semibold text-slate-600" type="button">By Active Subscriptions <ChevronDown size={14} /></button><button className="grid size-8 place-items-center rounded-lg border border-slate-200 text-slate-500" type="button" aria-label="More options"><MoreHorizontal size={16} /></button></div>
       </header>
-      <div className="plan-distribution-body">
-        <div className="donut-wrap">
+      <div className="grid items-center gap-3 p-4 sm:grid-cols-2"><div className="relative h-58">
           <ResponsiveContainer width="100%" height={230}>
             <PieChart>
               <Pie data={planDistribution} innerRadius={62} outerRadius={94} paddingAngle={0} dataKey="value" stroke="none">
@@ -261,29 +243,24 @@ function PlanDistribution() {
               </Pie>
             </PieChart>
           </ResponsiveContainer>
-          <div className="donut-center"><strong>438</strong><span>Total</span></div>
+          <div className="absolute inset-0 grid place-content-center text-center"><strong className="text-2xl text-slate-950">438</strong><span className="text-xs text-slate-500">Total</span></div>
         </div>
-        <div className="plan-legend-list">
+        <div className="grid gap-2">
           {planDistribution.map((plan) => (
-            <div key={plan.name}><span style={{ background: plan.color }} /><strong>{plan.name}</strong><em>{plan.value} ({plan.share})</em></div>
+            <div className="flex items-center gap-2 text-sm" key={plan.name}><span className="size-2 rounded-full" style={{ background: plan.color }} /><strong className="flex-1 text-slate-700">{plan.name}</strong><em className="text-xs not-italic text-slate-500">{plan.value} ({plan.share})</em></div>
           ))}
         </div>
       </div>
-      <a href="#plans">View all plans <ChevronRight size={16} /></a>
+      <a className="flex items-center gap-1 border-t border-slate-100 px-4 py-3 text-sm font-bold text-brand-600" href="#plans">View all plans <ChevronRight size={16} /></a>
     </article>
   )
 }
 
 function RecentActivity() {
   return (
-    <article className="platform-card compact-card">
-      <header><h2>Recent Activity</h2><a href="#audit-logs">View all</a></header>
-      <div className="recent-activity-list">
+    <article className={cardClass}><header className={headerClass}><h2 className="font-bold text-slate-950">Recent Activity</h2><a className="text-xs font-bold text-brand-600" href="#audit-logs">View all</a></header><div className="grid px-4 pb-4">
         {activities.map((activity) => (
-          <div className="activity-item" key={`${activity.title}-${activity.time}`}>
-            <span className={`activity-avatar avatar-${activity.tone}`}>{activity.avatar}</span>
-            <div><strong>{activity.title}</strong><small>{activity.detail}</small></div>
-            <time>{activity.time}</time>
+          <div className="flex items-center gap-3 border-t border-slate-100 py-3 first:border-t-0" key={`${activity.title}-${activity.time}`}><span className={avatarClass(activity.tone)}>{activity.avatar}</span><div className="min-w-0 flex-1"><strong className="block truncate text-sm text-slate-900">{activity.title}</strong><small className="mt-1 block truncate text-xs text-slate-500">{activity.detail}</small></div><time className="whitespace-nowrap text-xs text-slate-500">{activity.time}</time>
           </div>
         ))}
       </div>
@@ -293,49 +270,36 @@ function RecentActivity() {
 
 function SystemStatus() {
   return (
-    <article className="platform-card compact-card">
-      <header><h2>System Status</h2><a href="#system-health">View all</a></header>
-      <div className="status-list">
+    <article className={cardClass}><header className={headerClass}><h2 className="font-bold text-slate-950">System Status</h2><a className="text-xs font-bold text-brand-600" href="#system-health">View all</a></header><div className="grid px-4 pb-4">
         {statuses.map((status) => (
-          <div className="status-row" key={status.service}>
-            {status.status === 'Operational' ? <span className="status-ok"><CheckCircle2 size={14} /></span> : <span className="status-warn"><AlertTriangle size={14} /></span>}
-            <strong>{status.service}</strong>
-            <em className={status.status === 'Operational' ? 'operational' : 'degraded'}>{status.status}</em>
+          <div className="flex items-center gap-2 border-t border-slate-100 py-2.5 first:border-t-0" key={status.service}>{status.status === 'Operational' ? <span className="text-emerald-600"><CheckCircle2 size={14} /></span> : <span className="text-amber-600"><AlertTriangle size={14} /></span>}<strong className="flex-1 text-sm text-slate-700">{status.service}</strong><em className={status.status === 'Operational' ? 'rounded bg-emerald-100 px-1.5 py-0.5 text-xs font-bold not-italic text-emerald-700' : 'rounded bg-amber-100 px-1.5 py-0.5 text-xs font-bold not-italic text-amber-700'}>{status.status}</em>
           </div>
         ))}
       </div>
-      <footer><span><i /> All systems operational</span><small>Updated 2m ago <RefreshCcw size={13} /></small></footer>
+      <footer className="flex items-center justify-between border-t border-slate-100 px-4 py-3 text-xs text-slate-500"><span className="flex items-center gap-1 font-semibold text-emerald-600"><i className="size-2 rounded-full bg-emerald-500" /> All systems operational</span><small className="flex items-center gap-1">Updated 2m ago <RefreshCcw size={13} /></small></footer>
     </article>
   )
 }
 
 function RecentFailedJobs() {
   return (
-    <article className="platform-card compact-card failed-jobs-card">
-      <header><h2>Recent Failed Jobs</h2><a href="#ai-jobs">View all</a></header>
-      <div className="failed-table" role="table" aria-label="Recent failed jobs">
-        <div role="row"><span>Job ID</span><span>Workspace</span><span>Error</span><span>Time</span></div>
+    <article className={cardClass}><header className={headerClass}><h2 className="font-bold text-slate-950">Recent Failed Jobs</h2><a className="text-xs font-bold text-brand-600" href="#ai-jobs">View all</a></header><div className="overflow-x-auto"><div className="min-w-135" role="table" aria-label="Recent failed jobs"><div className="grid grid-cols-4 gap-2 bg-slate-50 px-4 py-2 text-xs font-bold uppercase text-slate-500" role="row"><span>Job ID</span><span>Workspace</span><span>Error</span><span>Time</span></div>
         {failedJobs.map((job) => (
-          <div role="row" key={job.id}><span><i />{job.id}</span><span>{job.workspace}</span><span>{job.error}</span><span>{job.time}</span></div>
+          <div className="grid grid-cols-4 gap-2 border-t border-slate-100 px-4 py-2.5 text-xs text-slate-600" role="row" key={job.id}><span className="flex items-center gap-1 font-mono text-rose-600"><i className="size-1.5 rounded-full bg-rose-500" />{job.id}</span><span>{job.workspace}</span><span>{job.error}</span><span>{job.time}</span></div>
         ))}
       </div>
-      <a href="#ai-jobs">View all failed jobs <ChevronRight size={16} /></a>
+      </div><a className="flex items-center gap-1 border-t border-slate-100 px-4 py-3 text-sm font-bold text-brand-600" href="#ai-jobs">View all failed jobs <ChevronRight size={16} /></a>
     </article>
   )
 }
 
 function QuickActions() {
   return (
-    <article className="platform-card quick-actions-card">
-      <h2>Quick Actions</h2>
-      <div>
+    <article className={cardClass}><h2 className="border-b border-slate-100 px-4 py-4 font-bold text-slate-950">Quick Actions</h2><div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-4">
         {quickActions.map((action) => {
           const Icon = action.icon
           return (
-            <button type="button" key={action.label}>
-              <span><Icon size={21} /></span>
-              <div><strong>{action.label}</strong><small>{action.detail}</small></div>
-              <ChevronRight size={18} />
+            <button className="flex items-center gap-3 rounded-lg border border-slate-200 p-3 text-left hover:border-brand-300 hover:bg-brand-50" type="button" key={action.label}><span className="grid size-9 place-items-center rounded-lg bg-brand-100 text-brand-700"><Icon size={20} /></span><div className="min-w-0 flex-1"><strong className="block text-sm text-slate-900">{action.label}</strong><small className="mt-1 block text-xs text-slate-500">{action.detail}</small></div><ChevronRight className="text-slate-400" size={18} />
             </button>
           )
         })}
@@ -353,5 +317,10 @@ function initials(name: string) {
     .slice(0, 2)
     .toUpperCase() || 'SA'
 }
+
+const cardClass = 'overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm'
+const headerClass = 'flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-4'
+function metricIconClass(tone: Metric['tone']) { return tone === 'purple' ? 'grid size-11 place-items-center rounded-xl bg-brand-100 text-brand-700' : tone === 'blue' ? 'grid size-11 place-items-center rounded-xl bg-sky-100 text-sky-700' : tone === 'cyan' ? 'grid size-11 place-items-center rounded-xl bg-cyan-100 text-cyan-700' : 'grid size-11 place-items-center rounded-xl bg-emerald-100 text-emerald-700' }
+function avatarClass(tone: string) { return tone === 'purple' ? 'grid size-9 place-items-center rounded-full bg-brand-100 text-xs font-bold text-brand-700' : tone === 'green' ? 'grid size-9 place-items-center rounded-full bg-emerald-100 text-xs font-bold text-emerald-700' : tone === 'blue' ? 'grid size-9 place-items-center rounded-full bg-sky-100 text-xs font-bold text-sky-700' : tone === 'orange' ? 'grid size-9 place-items-center rounded-full bg-orange-100 text-xs font-bold text-orange-700' : 'grid size-9 place-items-center rounded-full bg-rose-100 text-xs font-bold text-rose-700' }
 
 

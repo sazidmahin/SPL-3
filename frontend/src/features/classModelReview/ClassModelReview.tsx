@@ -1,16 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, Plus, Trash2 } from 'lucide-react'
 import type { PipelineStageRevision } from '../../domains/generationPipeline/types'
-import './ClassModelReview.css'
 
 type Entity = Record<string, unknown>
-
-type Props = {
-  revision: PipelineStageRevision
-  busy: boolean
-  onSave: (payload: Record<string, unknown>, expectedVersion: number) => Promise<void>
-}
-
+type Props = { revision: PipelineStageRevision; busy: boolean; onSave: (payload: Record<string, unknown>, expectedVersion: number) => Promise<void> }
+const control = 'w-full rounded-md border border-slate-200 bg-white px-2.5 py-2 text-sm text-slate-800 outline-none focus:border-brand-600 focus:ring-3 focus:ring-brand-100'
+const button = 'inline-flex items-center gap-1.5 rounded-md border border-brand-100 bg-brand-600 px-3 py-2 text-sm font-bold text-white transition hover:bg-brand-700 disabled:cursor-wait disabled:opacity-65'
 function asRows(value: unknown): Entity[] { return Array.isArray(value) ? value.filter((item): item is Entity => typeof item === 'object' && item !== null) : [] }
 function value(item: Entity, key: string) { return typeof item[key] === 'string' ? item[key] : '' }
 function identifier(label: string, prefix: string) { return `${prefix}_${label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || Date.now()}` }
@@ -21,50 +16,18 @@ export function ClassModelReview({ revision, busy, onSave }: Props) {
   const classes = useMemo(() => asRows(draft.classes), [draft.classes])
   const relationships = useMemo(() => asRows(draft.relationships), [draft.relationships])
   const warnings = classes.flatMap((item) => asRows(item.warnings)).length + relationships.flatMap((item) => asRows(item.warnings)).length
+  const updateClass = (index: number, patch: Entity) => setDraft((current) => ({ ...current, classes: classes.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item) }))
+  const updateRelationship = (index: number, patch: Entity) => setDraft((current) => ({ ...current, relationships: relationships.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item) }))
+  const addClass = () => setDraft((current) => ({ ...current, classes: [...classes, { id: identifier('NewClass', 'class'), name: 'NewClass', enabled: true, attributes: [], methods: [], sourceRequirementIds: [], warnings: [] }] }))
+  function removeClass(index: number) { const removed = value(classes[index], 'id'); if (window.confirm('Delete this class? Relationships connected to it will also be removed.')) setDraft((current) => ({ ...current, classes: classes.filter((_, itemIndex) => itemIndex !== index), relationships: relationships.filter((relationship) => value(relationship, 'sourceClassId') !== removed && value(relationship, 'targetClassId') !== removed) })) }
+  const addRelationship = () => setDraft((current) => ({ ...current, relationships: [...relationships, { id: identifier(`edge_${relationships.length + 1}`, 'edge'), type: 'association', sourceClassId: value(classes[0] ?? {}, 'id'), targetClassId: value(classes[1] ?? classes[0] ?? {}, 'id'), direction: 'undirected', sourceMultiplicity: '1', targetMultiplicity: '0..*', label: '', enabled: true, warnings: [] }] }))
 
-  function updateClass(index: number, patch: Entity) {
-    setDraft((current) => ({ ...current, classes: classes.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item) }))
-  }
-  function updateRelationship(index: number, patch: Entity) {
-    setDraft((current) => ({ ...current, relationships: relationships.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item) }))
-  }
-  function addClass() {
-    const name = 'NewClass'
-    setDraft((current) => ({ ...current, classes: [...classes, { id: identifier(name, 'class'), name, enabled: true, attributes: [], methods: [], sourceRequirementIds: [], warnings: [] }] }))
-  }
-  function removeClass(index: number) {
-    const removed = value(classes[index], 'id')
-    if (!window.confirm('Delete this class? Relationships connected to it will also be removed.')) return
-    setDraft((current) => ({ ...current, classes: classes.filter((_, itemIndex) => itemIndex !== index), relationships: relationships.filter((relationship) => value(relationship, 'sourceClassId') !== removed && value(relationship, 'targetClassId') !== removed) }))
-  }
-  function addRelationship() {
-    setDraft((current) => ({ ...current, relationships: [...relationships, { id: identifier(`edge_${relationships.length + 1}`, 'edge'), type: 'association', sourceClassId: value(classes[0] ?? {}, 'id'), targetClassId: value(classes[1] ?? classes[0] ?? {}, 'id'), direction: 'undirected', sourceMultiplicity: '1', targetMultiplicity: '0..*', label: '', enabled: true, warnings: [] }] }))
-  }
-  async function save() { await onSave(draft, revision.version_number) }
-
-  return <section className="class-model-review">
-    <header><div><h2>Class model review</h2><p>Edit the generated model. Disabled items are omitted from the approved diagram.</p></div><button type="button" onClick={addClass}><Plus size={16} /> Add class</button></header>
-    {warnings ? <p className="class-model-warning"><AlertTriangle size={16} /> Review warnings before approval.</p> : null}
-    <div className="class-editor-grid">
-      <div className="class-list">{classes.map((item, index) => <article key={value(item, 'id') || index}>
-        <div><input aria-label="Class name" value={value(item, 'name')} onChange={(event) => updateClass(index, { name: event.target.value })} /><label><input type="checkbox" checked={item.enabled !== false} onChange={(event) => updateClass(index, { enabled: event.target.checked })} /> Enabled</label></div>
-        <small>{value(item, 'id')} · requirements: {asRows(item.sourceRequirementIds).length || (Array.isArray(item.sourceRequirementIds) ? item.sourceRequirementIds.length : 0)}</small>
-        <label>Attributes<textarea value={JSON.stringify(item.attributes ?? [], null, 2)} onChange={(event) => { try { updateClass(index, { attributes: JSON.parse(event.target.value) }) } catch {} }} /></label>
-        <label>Methods<textarea value={JSON.stringify(item.methods ?? [], null, 2)} onChange={(event) => { try { updateClass(index, { methods: JSON.parse(event.target.value) }) } catch {} }} /></label>
-        <button className="danger" type="button" onClick={() => removeClass(index)}><Trash2 size={15} /> Delete</button>
-      </article>)}</div>
-      <div className="relationship-list"><header><h3>Relationships</h3><button type="button" onClick={addRelationship}><Plus size={15} /> Add</button></header>{relationships.map((item, index) => <article key={value(item, 'id') || index}>
-        <select value={value(item, 'sourceClassId')} onChange={(event) => updateRelationship(index, { sourceClassId: event.target.value })}>{classes.map((classItem) => <option key={value(classItem, 'id')} value={value(classItem, 'id')}>{value(classItem, 'name')}</option>)}</select>
-        <select value={value(item, 'type') || 'association'} onChange={(event) => updateRelationship(index, { type: event.target.value })}>{['association', 'aggregation', 'composition', 'dependency', 'inheritance', 'realization'].map((type) => <option key={type}>{type}</option>)}</select>
-        <select value={value(item, 'targetClassId')} onChange={(event) => updateRelationship(index, { targetClassId: event.target.value })}>{classes.map((classItem) => <option key={value(classItem, 'id')} value={value(classItem, 'id')}>{value(classItem, 'name')}</option>)}</select>
-        <input placeholder="Label" value={value(item, 'label')} onChange={(event) => updateRelationship(index, { label: event.target.value })} />
-        <select value={value(item, 'direction') || 'undirected'} onChange={(event) => updateRelationship(index, { direction: event.target.value })}>{['undirected', 'source-to-target', 'target-to-source', 'bidirectional'].map((direction) => <option key={direction}>{direction}</option>)}</select>
-        <input placeholder="Source multiplicity" value={value(item, 'sourceMultiplicity')} onChange={(event) => updateRelationship(index, { sourceMultiplicity: event.target.value || null })} />
-        <input placeholder="Target multiplicity" value={value(item, 'targetMultiplicity')} onChange={(event) => updateRelationship(index, { targetMultiplicity: event.target.value || null })} />
-        <label className="relationship-enabled"><input type="checkbox" checked={item.enabled !== false} onChange={(event) => updateRelationship(index, { enabled: event.target.checked })} /> Enabled</label>
-        <button className="danger" type="button" onClick={() => setDraft((current) => ({ ...current, relationships: relationships.filter((_, itemIndex) => itemIndex !== index) }))}><Trash2 size={15} /></button>
-      </article>)}</div>
-    </div>
-    <footer><button type="button" onClick={() => void save()} disabled={busy}>{busy ? 'Saving…' : 'Save draft'}</button></footer>
+  return <section className="grid gap-4"><header className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center"><div><h2 className="text-xl font-bold text-ink">Class model review</h2><p className="mt-1 text-sm text-muted">Edit the generated model. Disabled items are omitted from the approved diagram.</p></div><button className={button} type="button" onClick={addClass}><Plus size={16} /> Add class</button></header>{warnings ? <p className="flex items-center gap-2 rounded-lg bg-amber-50 p-3 text-sm text-amber-800"><AlertTriangle size={16} /> Review warnings before approval.</p> : null}
+    <div className="grid gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(22rem,.75fr)]"><div className="grid gap-3">{classes.map((item, index) => <article className="grid gap-3 rounded-lg border border-slate-200 p-3" key={value(item, 'id') || index}><div className="flex flex-col justify-between gap-3 sm:flex-row"><input className={control} aria-label="Class name" value={value(item, 'name')} onChange={(event) => updateClass(index, { name: event.target.value })} /><label className="flex items-center gap-2 whitespace-nowrap text-xs font-bold text-slate-600"><input className="size-4 accent-brand-600" type="checkbox" checked={item.enabled !== false} onChange={(event) => updateClass(index, { enabled: event.target.checked })} /> Enabled</label></div><small className="text-xs text-muted">{value(item, 'id')} · requirements: {Array.isArray(item.sourceRequirementIds) ? item.sourceRequirementIds.join(', ') || 'none' : 'none'}</small><JsonField label="Attributes" value={item.attributes ?? []} onChange={(next) => updateClass(index, { attributes: next })} /><JsonField label="Methods" value={item.methods ?? []} onChange={(next) => updateClass(index, { methods: next })} /><button className="inline-flex w-max items-center gap-1.5 rounded-md border border-red-200 bg-white px-3 py-2 text-sm font-bold text-red-700 hover:bg-red-50" type="button" onClick={() => removeClass(index)}><Trash2 size={15} /> Delete</button></article>)}</div>
+      <div className="grid content-start gap-3"><header className="flex items-center justify-between"><h3 className="font-bold text-ink">Relationships</h3><button className={button} type="button" onClick={addRelationship}><Plus size={15} /> Add</button></header>{relationships.map((item, index) => <article className="grid gap-2 rounded-lg border border-slate-200 p-3 sm:grid-cols-2" key={value(item, 'id') || index}><ClassSelect classes={classes} value={value(item, 'sourceClassId')} onChange={(sourceClassId) => updateRelationship(index, { sourceClassId })} /><select className={control} value={value(item, 'type') || 'association'} onChange={(event) => updateRelationship(index, { type: event.target.value })}>{['association', 'aggregation', 'composition', 'dependency', 'inheritance', 'realization'].map((type) => <option key={type}>{type}</option>)}</select><ClassSelect classes={classes} value={value(item, 'targetClassId')} onChange={(targetClassId) => updateRelationship(index, { targetClassId })} /><input className={control} placeholder="Label" value={value(item, 'label')} onChange={(event) => updateRelationship(index, { label: event.target.value })} /><select className={control} value={value(item, 'direction') || 'undirected'} onChange={(event) => updateRelationship(index, { direction: event.target.value })}>{['undirected', 'source-to-target', 'target-to-source', 'bidirectional'].map((direction) => <option key={direction}>{direction}</option>)}</select><input className={control} placeholder="Source multiplicity" value={value(item, 'sourceMultiplicity')} onChange={(event) => updateRelationship(index, { sourceMultiplicity: event.target.value || null })} /><input className={control} placeholder="Target multiplicity" value={value(item, 'targetMultiplicity')} onChange={(event) => updateRelationship(index, { targetMultiplicity: event.target.value || null })} /><div className="flex items-center justify-between"><label className="flex items-center gap-2 text-xs font-bold text-slate-600"><input className="size-4 accent-brand-600" type="checkbox" checked={item.enabled !== false} onChange={(event) => updateRelationship(index, { enabled: event.target.checked })} /> Enabled</label><button className="rounded-md p-2 text-red-700 hover:bg-red-50" type="button" aria-label="Delete relationship" onClick={() => setDraft((current) => ({ ...current, relationships: relationships.filter((_, itemIndex) => itemIndex !== index) }))}><Trash2 size={15} /></button></div></article>)}</div></div>
+    <footer className="border-t border-slate-100 pt-4"><button className={button} type="button" onClick={() => void onSave(draft, revision.version_number)} disabled={busy}>{busy ? 'Saving…' : 'Save draft'}</button></footer>
   </section>
 }
+
+function ClassSelect({ classes, value: selected, onChange }: { classes: Entity[]; value: string; onChange: (value: string) => void }) { return <select className={control} value={selected} onChange={(event) => onChange(event.target.value)}>{classes.map((item) => <option key={value(item, 'id')} value={value(item, 'id')}>{value(item, 'name')}</option>)}</select> }
+function JsonField({ label, value, onChange }: { label: string; value: unknown; onChange: (value: unknown) => void }) { const [text, setText] = useState(JSON.stringify(value, null, 2)); useEffect(() => setText(JSON.stringify(value, null, 2)), [value]); return <label className="grid gap-1.5 text-xs font-bold text-slate-600">{label}<textarea className={`${control} min-h-16 resize-y font-mono text-xs`} value={text} onChange={(event) => { setText(event.target.value); try { onChange(JSON.parse(event.target.value)) } catch {} }} /></label> }

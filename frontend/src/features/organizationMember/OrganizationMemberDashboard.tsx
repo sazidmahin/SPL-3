@@ -21,7 +21,6 @@ import type { Project } from '../../domains/project/types'
 import type { SrsDocument } from '../../domains/srs/types'
 import type { AuthUser } from '../../domains/auth/types'
 import type { WorkspaceMembership } from '../../domains/workspace/types'
-import './OrganizationMemberDashboard.css'
 
 type OrganizationMemberDashboardProps = {
   user: AuthUser
@@ -75,32 +74,29 @@ export function OrganizationMemberDashboard({
   const creditPercent = Math.min(100, Math.round((creditsUsed / creditLimit) * 100))
 
   return (
-    <section className="org-member-dashboard" id="overview">
+    <section className="mx-auto grid max-w-400 gap-5 p-4 sm:p-6" id="overview">
       <MemberTopbar workspaceName={workspaceName} user={user} />
 
-      <header className="org-member-hero">
+      <header>
         <div>
-          <h1>Welcome back, {firstName(user.full_name)}!</h1>
-          <p>Here's an overview of your work and contributions.</p>
+          <h1 className="text-3xl font-bold tracking-tight text-slate-950">Welcome back, {firstName(user.full_name)}!</h1>
+          <p className="mt-1 text-sm text-slate-500">Here's an overview of your work and contributions.</p>
         </div>
       </header>
 
-      <div className="org-member-metrics">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <MemberMetric icon={Folder} label="Projects Assigned" value={projects.length || 5} detail="Active projects you're working on" tone="purple" />
         <MemberMetric icon={ListChecks} label="Tasks To Do" value={assignedTasks.length || 8} detail="Tasks assigned to you" tone="blue" />
         <MemberMetric icon={FileText} label="Documents Updated" value={srsDocuments.length || 12} detail="SRS documents updated by or to you" tone="green" />
         <ReadOnlyUsage value={creditPercent} used={creditsUsed} limit={creditLimit} />
       </div>
 
-      <div className="org-member-grid">
+      <div className="grid items-start gap-4 xl:grid-cols-2 2xl:grid-cols-3">
         <MemberPanel title="My Assigned Projects" icon={Folder} action="View all projects" className="assigned-projects-panel">
-          <div className="assigned-project-list">
+          <div className="grid px-4 pb-4">
             {assignedProjects.map((project) => (
-              <article className="assigned-project-row" key={project.id}>
-                <div>
-                  <strong>{project.name}</strong>
-                  <small>{project.meta}</small>
-                </div>
+              <article className="flex items-center justify-between gap-3 border-t border-slate-100 py-3 first:border-t-0" key={project.id}>
+                <div className="min-w-0"><strong className="block truncate text-sm text-slate-900">{project.name}</strong><small className="mt-1 block text-xs text-slate-500">{project.meta}</small></div>
                 <StatusTag tone={project.tone}>{project.status}</StatusTag>
               </article>
             ))}
@@ -108,32 +104,26 @@ export function OrganizationMemberDashboard({
         </MemberPanel>
 
         <MemberPanel title="My Tasks" icon={ListChecks} action="View all" className="tasks-panel">
-          <div className="task-list">
+          <div className="grid px-4 pb-4">
             {assignedTasks.map((task) => (
-              <article className="task-row" key={`${task.project}-${task.title}`}>
-                <div>
-                  <strong>{task.title}</strong>
-                  <small>{task.project}</small>
-                </div>
+              <article className="grid grid-cols-[1fr_auto_auto] items-center gap-3 border-t border-slate-100 py-3 first:border-t-0" key={`${task.project}-${task.title}`}>
+                <div className="min-w-0"><strong className="block truncate text-sm text-slate-900">{task.title}</strong><small className="mt-1 block text-xs text-slate-500">{task.project}</small></div>
                 <PriorityTag priority={task.priority} />
-                <time>{task.due}</time>
+                <time className="text-xs text-slate-500">{task.due}</time>
               </article>
             ))}
           </div>
         </MemberPanel>
 
         <MemberPanel title="My Recent Activity" icon={Clock3} action="View all" className="member-activity-panel">
-          <div className="org-member-activity-list">
+          <div className="grid px-4 pb-4">
             {recentActivities.map((activity) => {
               const Icon = activity.icon
               return (
-                <article className="org-member-activity-row" key={`${activity.title}-${activity.meta}`}>
-                  <span className={`activity-icon tone-${activity.tone}`}><Icon size={17} /></span>
-                  <div>
-                    <strong>{activity.title}</strong>
-                    <small>{activity.meta}</small>
-                  </div>
-                  <time>{activity.time}</time>
+                <article className="flex items-center gap-3 border-t border-slate-100 py-3 first:border-t-0" key={`${activity.title}-${activity.meta}`}>
+                  <span className={iconClass(activity.tone)}><Icon size={17} /></span>
+                  <div className="min-w-0 flex-1"><strong className="block truncate text-sm text-slate-900">{activity.title}</strong><small className="mt-1 block text-xs text-slate-500">{activity.meta}</small></div>
+                  <time className="whitespace-nowrap text-xs text-slate-500">{activity.time}</time>
                 </article>
               )
             })}
@@ -149,30 +139,25 @@ export function OrganizationMemberDashboard({
         </MemberPanel>
 
         <MemberPanel title="Upcoming Deadlines" icon={Bell} action="View all" className="deadlines-panel">
-          <div className="deadline-list">
+          <div className="grid px-4 pb-4">
             {deadlines.map((deadline) => (
-              <article className="deadline-row" key={deadline.title}>
-                <span className={`deadline-dot tone-${deadline.tone}`} />
-                <div>
-                  <strong>{deadline.title}</strong>
-                  <small>{deadline.project}</small>
-                </div>
-                <time>{deadline.due}</time>
+              <article className="flex items-center gap-3 border-t border-slate-100 py-3 first:border-t-0" key={deadline.title}>
+                <span className={dotClass(deadline.tone)} />
+                <div className="min-w-0 flex-1"><strong className="block truncate text-sm text-slate-900">{deadline.title}</strong><small className="mt-1 block text-xs text-slate-500">{deadline.project}</small></div>
+                <time className="text-xs text-slate-500">{deadline.due}</time>
               </article>
             ))}
           </div>
         </MemberPanel>
 
-        <section className="contribution-card">
-          <header>
-            <div><BarChart3 size={18} /><h2>My Contributions This Month</h2></div>
-          </header>
-          <div className="contribution-body">
-            <strong>Great work!</strong>
+        <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          <header className="flex items-center gap-2 border-b border-slate-100 px-4 py-4 text-brand-600"><BarChart3 size={18} /><h2 className="text-base font-bold text-slate-950">My Contributions This Month</h2></header>
+          <div className="grid gap-3 p-4">
+            <strong className="text-slate-950">Great work!</strong>
             <ContributionLine label="Documents updated" value={12} />
             <ContributionLine label="Requirements contributed" value={28} />
             <ContributionLine label="Tasks completed" value={9} />
-            <a href="#profile">View detailed activity</a>
+            <a className="text-sm font-bold text-brand-600" href="#profile">View detailed activity</a>
           </div>
         </section>
       </div>
@@ -182,20 +167,20 @@ export function OrganizationMemberDashboard({
 
 function MemberTopbar({ workspaceName, user }: { workspaceName: string; user: AuthUser }) {
   return (
-    <header className="org-member-topbar">
-      <button className="org-member-workspace" type="button">
+    <header className="grid gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm lg:grid-cols-[16rem_minmax(0,1fr)_auto] lg:items-center">
+      <button className="flex min-h-10 items-center justify-between rounded-lg border border-slate-200 px-3 text-sm font-bold text-slate-700" type="button">
         {workspaceName}
         <ChevronDown size={16} />
       </button>
-      <label className="org-member-search">
+      <label className="flex min-h-10 items-center gap-2 rounded-lg border border-slate-200 px-3 text-slate-400">
         <Search size={18} />
-        <input placeholder="Search projects, documents, diagrams..." />
-        <kbd>Ctrl K</kbd>
+        <input className="min-w-0 flex-1 text-sm text-slate-800 outline-none" placeholder="Search projects, documents, diagrams..." />
+        <kbd className="rounded border border-slate-200 px-1.5 py-0.5 text-[10px] font-semibold text-slate-400">Ctrl K</kbd>
       </label>
-      <div className="org-member-toolbar">
-        <button type="button" aria-label="Notifications"><Bell size={19} /><span>3</span></button>
-        <button type="button" aria-label="Help"><CircleHelp size={19} /></button>
-        <button className="member-avatar-button" type="button" aria-label={user.full_name}>{initials(user.full_name)}</button>
+      <div className="flex items-center gap-2 lg:justify-end">
+        <button className="relative grid size-9 place-items-center rounded-full text-slate-600 hover:bg-slate-100" type="button" aria-label="Notifications"><Bell size={19} /><span className="absolute -right-1 -top-1 grid size-4 place-items-center rounded-full border-2 border-white bg-brand-600 text-[10px] font-bold text-white">3</span></button>
+        <button className="grid size-9 place-items-center rounded-full text-slate-600 hover:bg-slate-100" type="button" aria-label="Help"><CircleHelp size={19} /></button>
+        <button className="grid size-9 place-items-center rounded-full bg-brand-600 text-xs font-bold text-white" type="button" aria-label={user.full_name}>{initials(user.full_name)}</button>
       </div>
     </header>
   )
@@ -209,12 +194,10 @@ function MemberMetric({ icon: Icon, label, value, detail, tone }: {
   tone: Tone
 }) {
   return (
-    <article className="org-member-metric-card">
-      <span className={`member-metric-icon tone-${tone}`}><Icon size={24} /></span>
+    <article className="grid grid-cols-[3rem_minmax(0,1fr)] gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <span className={iconClass(tone)}><Icon size={22} /></span>
       <div>
-        <small>{label}</small>
-        <strong>{value}</strong>
-        <p>{detail}</p>
+        <small className="text-xs font-semibold text-slate-500">{label}</small><strong className="mt-1 block text-2xl font-bold text-slate-950">{value}</strong><p className="mt-1 text-xs text-slate-500">{detail}</p>
       </div>
     </article>
   )
@@ -222,18 +205,13 @@ function MemberMetric({ icon: Icon, label, value, detail, tone }: {
 
 function ReadOnlyUsage({ value, used, limit }: { value: number; used: number; limit: number }) {
   return (
-    <article className="org-member-metric-card read-only-usage-card">
-      <span className="member-metric-icon tone-blue"><BarChart3 size={24} /></span>
+    <article className="grid gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="grid grid-cols-[3rem_minmax(0,1fr)] gap-3"><span className={iconClass('blue')}><BarChart3 size={22} /></span>
       <div>
-        <small>Workspace Usage (Read-only)</small>
-        <strong>{value}%</strong>
-        <p>{formatNumber(used)} credits used</p>
-      </div>
-      <div className="member-usage-progress"><span style={{ width: `${value}%` }} /></div>
-      <footer>
-        <span>{formatNumber(Math.max(0, limit - used))} credits remaining</span>
-        <small>Resets on Jun 1, 2025</small>
-      </footer>
+        <small className="text-xs font-semibold text-slate-500">Workspace Usage (Read-only)</small><strong className="mt-1 block text-2xl font-bold text-slate-950">{value}%</strong><p className="mt-1 text-xs text-slate-500">{formatNumber(used)} credits used</p>
+      </div></div>
+      <div className="h-1.5 overflow-hidden rounded-full bg-slate-100"><span className="block h-full rounded-full bg-brand-600" style={{ width: `${value}%` }} /></div>
+      <footer className="flex justify-between gap-2 text-xs text-slate-500"><span>{formatNumber(Math.max(0, limit - used))} credits remaining</span><small>Resets on Jun 1, 2025</small></footer>
     </article>
   )
 }
@@ -246,11 +224,8 @@ function MemberPanel({ title, icon: Icon, action, className, children }: {
   children: ReactNode
 }) {
   return (
-    <section className={`org-member-panel ${className ?? ''}`}>
-      <header>
-        <div><Icon size={18} /><h2>{title}</h2></div>
-        {action ? <a href="#overview">{action}</a> : null}
-      </header>
+    <section className={`overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm ${className ?? ''}`}>
+      <header className="flex min-h-14 items-center justify-between gap-3 border-b border-slate-100 px-4"><div className="flex items-center gap-2 text-brand-600"><Icon size={18} /><h2 className="text-base font-bold text-slate-950">{title}</h2></div>{action ? <a className="text-xs font-bold text-brand-600" href="#overview">{action}</a> : null}</header>
       {children}
     </section>
   )
@@ -258,14 +233,11 @@ function MemberPanel({ title, icon: Icon, action, className, children }: {
 
 function CompactList({ rows, icon: Icon }: { rows: Array<{ title: string; meta: string; tone: Tone }>; icon: LucideIcon }) {
   return (
-    <div className="compact-member-list">
+    <div className="grid px-4 pb-4">
       {rows.map((row) => (
-        <article className="compact-member-row" key={row.title}>
-          <span className={`compact-icon tone-${row.tone}`}><Icon size={17} /></span>
-          <div>
-            <strong>{row.title}</strong>
-            <small>{row.meta}</small>
-          </div>
+        <article className="flex items-center gap-3 border-t border-slate-100 py-3 first:border-t-0" key={row.title}>
+          <span className={iconClass(row.tone)}><Icon size={17} /></span>
+          <div className="min-w-0"><strong className="block truncate text-sm text-slate-900">{row.title}</strong><small className="mt-1 block text-xs text-slate-500">{row.meta}</small></div>
         </article>
       ))}
     </div>
@@ -274,21 +246,23 @@ function CompactList({ rows, icon: Icon }: { rows: Array<{ title: string; meta: 
 
 function ContributionLine({ label, value }: { label: string; value: number }) {
   return (
-    <div className="contribution-line">
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </div>
+    <div className="flex items-center justify-between gap-3 text-sm"><span className="text-slate-600">{label}</span><strong className="text-slate-950">{value}</strong></div>
   )
 }
 
 function StatusTag({ tone, children }: { tone: Tone; children: string }) {
-  return <span className={`org-member-status tone-${tone}`}>{children}</span>
+  return <span className={tagClass(tone)}>{children}</span>
 }
 
 function PriorityTag({ priority }: { priority: TaskPriority }) {
   const tone = priority === 'High' ? 'red' : priority === 'Medium' ? 'orange' : 'blue'
-  return <span className={`priority-tag tone-${tone}`}>{priority}</span>
+  return <span className={tagClass(tone)}>{priority}</span>
 }
+
+function toneClass(tone: Tone) { return tone === 'purple' ? 'bg-brand-100 text-brand-700' : tone === 'blue' ? 'bg-sky-100 text-sky-700' : tone === 'green' ? 'bg-emerald-100 text-emerald-700' : tone === 'orange' ? 'bg-orange-100 text-orange-700' : tone === 'red' ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-600' }
+function iconClass(tone: Tone) { return `grid size-10 shrink-0 place-items-center rounded-lg ${toneClass(tone)}` }
+function dotClass(tone: Tone) { return `size-2 shrink-0 rounded-full ${toneClass(tone).split(' ')[0]}` }
+function tagClass(tone: Tone) { return `inline-flex shrink-0 rounded-full px-2 py-1 text-xs font-bold ${toneClass(tone)}` }
 
 const fallbackAssignedProjects = [
   { id: 'assigned-1', name: 'E-Commerce Platform', meta: 'In Progress - Updated 2 hours ago', status: 'In Progress', tone: 'green' as const },

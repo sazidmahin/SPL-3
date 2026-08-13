@@ -24,7 +24,6 @@ import {
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { Cell, Pie, PieChart, ResponsiveContainer } from 'recharts'
-import './AiGenerationJobs.css'
 
 type MetricTone = 'purple' | 'green' | 'blue' | 'red' | 'orange'
 type JobStatus = 'In Progress' | 'Completed' | 'Failed' | 'Canceled'
@@ -91,14 +90,14 @@ const usageData = [
 
 export function AiGenerationJobs() {
   return (
-    <section className="ai-jobs-page" id="ai-jobs">
+    <section className="mx-auto grid max-w-400 gap-5 p-4 text-slate-800 sm:p-6" id="ai-jobs">
       <AiJobsTopbar />
-      <div className="ai-jobs-metrics">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         {metrics.map((metric) => <JobMetricCard metric={metric} key={metric.label} />)}
       </div>
-      <div className="ai-jobs-content-grid">
+      <div className="grid gap-5 2xl:grid-cols-[minmax(0,1fr)_22rem]">
         <JobQueue />
-        <aside className="ai-jobs-side-stack">
+        <aside className="grid content-start gap-5">
           <GenerationPresets />
           <UsageThisMonth />
           <RecentCompletedOutputs />
@@ -110,24 +109,24 @@ export function AiGenerationJobs() {
 
 function AiJobsTopbar() {
   return (
-    <header className="ai-jobs-topbar">
-      <div className="ai-jobs-heading">
-        <button className="ai-jobs-menu" type="button" aria-label="Toggle menu"><Menu size={21} /></button>
+    <header className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+      <div className="flex items-center gap-3">
+        <button className="grid size-9 place-items-center rounded-lg text-slate-600 transition hover:bg-slate-100" type="button" aria-label="Toggle menu"><Menu size={21} /></button>
         <div>
-          <h1>AI Generation Jobs</h1>
-          <p>Track and manage AI-generated SRS and diagram jobs</p>
+          <h1 className="text-xl font-bold tracking-tight text-slate-950">AI Generation Jobs</h1>
+          <p className="text-sm text-slate-500">Track and manage AI-generated SRS and diagram jobs</p>
         </div>
       </div>
-      <div className="ai-jobs-top-actions">
-        <label className="ai-jobs-search">
+      <div className="flex flex-1 flex-wrap items-center justify-end gap-3">
+        <label className="flex min-w-58 flex-1 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-slate-400 sm:max-w-85">
           <Search size={18} />
-          <input placeholder="Search projects, docs, diagrams..." />
-          <kbd>Ctrl + K</kbd>
+          <input className="min-w-0 flex-1 bg-transparent text-sm text-slate-800 outline-none placeholder:text-slate-400" placeholder="Search projects, docs, diagrams..." />
+          <kbd className="hidden rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-semibold text-slate-400 sm:block">Ctrl + K</kbd>
         </label>
-        <button className="ai-jobs-notification" type="button" aria-label="Notifications"><Bell size={19} /><span>2</span></button>
-        <div className="ai-jobs-user">
-          <span><User size={20} /></span>
-          <div><strong>Mahin Rahman</strong><small>Owner</small></div>
+        <button className="relative grid size-9 place-items-center rounded-lg text-slate-600 transition hover:bg-slate-100" type="button" aria-label="Notifications"><Bell size={19} /><span className="absolute -right-0.5 -top-0.5 grid size-4 place-items-center rounded-full bg-brand-600 text-[10px] font-bold text-white">2</span></button>
+        <div className="flex items-center gap-2">
+          <span className="grid size-9 place-items-center rounded-full bg-brand-100 text-brand-700"><User size={20} /></span>
+          <div className="hidden sm:grid"><strong className="text-sm">Mahin Rahman</strong><small className="text-xs text-slate-500">Owner</small></div>
           <ChevronDown size={16} />
         </div>
       </div>
@@ -139,38 +138,38 @@ function JobMetricCard({ metric }: { metric: JobMetric }) {
   const Icon = metric.icon
   const DirectionIcon = metric.direction === 'up' ? ArrowUp : ArrowDown
   return (
-    <article className="ai-job-metric-card">
-      <div>
-        <span>{metric.label}</span>
-        <strong>{metric.value}</strong>
-        <small className={metric.direction === 'up' ? 'trend-up' : 'trend-down'}>
+    <article className="flex items-start justify-between rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="grid gap-1">
+        <span className="text-sm font-medium text-slate-500">{metric.label}</span>
+        <strong className="text-2xl font-bold text-slate-950">{metric.value}</strong>
+        <small className={metric.direction === 'up' ? 'flex items-center gap-1 text-xs font-semibold text-emerald-600' : 'flex items-center gap-1 text-xs font-semibold text-rose-600'}>
           <DirectionIcon size={13} /> {metric.trend}
         </small>
       </div>
-      <span className={`ai-job-metric-icon tone-${metric.tone}`}><Icon size={27} /></span>
+      <span className={`grid size-11 place-items-center rounded-xl ${metric.tone === 'purple' ? 'bg-brand-100 text-brand-700' : metric.tone === 'green' ? 'bg-emerald-100 text-emerald-700' : metric.tone === 'blue' ? 'bg-sky-100 text-sky-700' : metric.tone === 'red' ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700'}`}><Icon size={23} /></span>
     </article>
   )
 }
 
 function JobQueue() {
   return (
-    <section className="job-queue-card">
-      <header className="job-queue-header">
-        <h2>Job Queue</h2>
-        <div className="job-tabs" role="tablist" aria-label="Job filters">
+    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <header className="grid gap-4 border-b border-slate-200 p-4">
+        <h2 className="text-lg font-bold text-slate-950">Job Queue</h2>
+        <div className="flex gap-1 overflow-x-auto" role="tablist" aria-label="Job filters">
           {['All Jobs', 'In Progress', 'Completed', 'Failed', 'Canceled'].map((tab, index) => (
-            <button className={index === 0 ? 'active' : ''} type="button" key={tab}>{tab}</button>
+            <button className={index === 0 ? 'shrink-0 rounded-md bg-brand-50 px-3 py-1.5 text-sm font-bold text-brand-700' : 'shrink-0 rounded-md px-3 py-1.5 text-sm font-semibold text-slate-500 transition hover:bg-slate-100'} type="button" key={tab}>{tab}</button>
           ))}
         </div>
-        <div className="job-queue-tools">
-          <label><Search size={16} /><input placeholder="Search jobs..." /></label>
-          <button type="button"><Filter size={16} />Filters</button>
-          <button type="button" aria-label="Refresh"><RefreshCcw size={17} /></button>
+        <div className="flex flex-wrap gap-2">
+          <label className="flex flex-1 items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-slate-400"><Search size={16} /><input className="min-w-0 flex-1 text-sm text-slate-800 outline-none" placeholder="Search jobs..." /></label>
+          <button className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" type="button"><Filter size={16} />Filters</button>
+          <button className="grid size-9 place-items-center rounded-lg border border-slate-200 text-slate-600 transition hover:bg-slate-50" type="button" aria-label="Refresh"><RefreshCcw size={17} /></button>
         </div>
       </header>
-      <div className="jobs-table-wrap">
-        <div className="jobs-table" role="table" aria-label="AI generation jobs">
-          <div className="jobs-table-head" role="row">
+      <div className="overflow-x-auto">
+        <div className="min-w-245" role="table" aria-label="AI generation jobs">
+          <div className="grid grid-cols-[2.5rem_1.55fr_1.15fr_0.85fr_1fr_1.25fr_0.85fr_0.85fr_5rem] items-center gap-3 bg-slate-50 px-4 py-3 text-xs font-bold uppercase tracking-wide text-slate-500" role="row">
             <span><input type="checkbox" aria-label="Select all jobs" /></span>
             <span>Job Name</span>
             <span>Project</span>
@@ -184,18 +183,18 @@ function JobQueue() {
           {jobs.map((job) => <JobRow job={job} key={job.id} />)}
         </div>
       </div>
-      <footer className="job-queue-footer">
+      <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-4 py-3 text-sm text-slate-500">
         <span>Showing 1 to 8 of 56 results</span>
-        <div className="job-pagination" aria-label="Pagination">
-          <button type="button" disabled><ChevronLeft size={16} /></button>
-          <button className="active" type="button">1</button>
-          <button type="button">2</button>
-          <button type="button">3</button>
+        <div className="flex items-center gap-1" aria-label="Pagination">
+          <button className="grid size-8 place-items-center rounded border border-slate-200 disabled:opacity-40" type="button" disabled><ChevronLeft size={16} /></button>
+          <button className="grid size-8 place-items-center rounded bg-brand-600 text-sm font-bold text-white" type="button">1</button>
+          <button className="grid size-8 place-items-center rounded text-sm font-semibold transition hover:bg-slate-100" type="button">2</button>
+          <button className="grid size-8 place-items-center rounded text-sm font-semibold transition hover:bg-slate-100" type="button">3</button>
           <span>...</span>
-          <button type="button">7</button>
-          <button type="button"><ChevronRight size={16} /></button>
+          <button className="grid size-8 place-items-center rounded text-sm font-semibold transition hover:bg-slate-100" type="button">7</button>
+          <button className="grid size-8 place-items-center rounded transition hover:bg-slate-100" type="button"><ChevronRight size={16} /></button>
         </div>
-        <button className="page-size-button" type="button">10 / page <ChevronDown size={14} /></button>
+        <button className="flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm font-semibold text-slate-700" type="button">10 / page <ChevronDown size={14} /></button>
       </footer>
     </section>
   )
@@ -204,64 +203,64 @@ function JobQueue() {
 function JobRow({ job }: { job: GenerationJobRow }) {
   const Icon = job.type === 'SRS Document' ? FileText : LayoutGrid
   return (
-    <article className="jobs-table-row" role="row">
+    <article className="grid grid-cols-[2.5rem_1.55fr_1.15fr_0.85fr_1fr_1.25fr_0.85fr_0.85fr_5rem] items-center gap-3 border-t border-slate-100 px-4 py-3 text-sm text-slate-600 hover:bg-slate-50" role="row">
       <span><input type="checkbox" aria-label={`Select ${job.name}`} /></span>
-      <span className="job-name-cell"><i className={job.type === 'SRS Document' ? 'doc' : 'diagram'}><Icon size={20} /></i><strong>{job.name}</strong></span>
+      <span className="flex items-center gap-2 font-semibold text-slate-800"><i className={job.type === 'SRS Document' ? 'grid size-8 place-items-center rounded-lg bg-brand-100 text-brand-700 not-italic' : 'grid size-8 place-items-center rounded-lg bg-sky-100 text-sky-700 not-italic'}><Icon size={17} /></i><strong>{job.name}</strong></span>
       <span>{job.project}</span>
       <span>{job.type}</span>
       <span>{job.createdBy}</span>
       <span>{job.createdTime}</span>
       <span><ProgressCell job={job} /></span>
       <span><JobStatusBadge status={job.status} /></span>
-      <span className="job-row-actions"><button type="button" aria-label="View"><Eye size={16} /></button>{job.status === 'Completed' ? <button type="button" aria-label="Download"><Download size={16} /></button> : job.status === 'Failed' ? <button type="button" aria-label="Retry"><RefreshCcw size={16} /></button> : <button type="button" aria-label="More"><MoreVertical size={16} /></button>}</span>
+      <span className="flex items-center gap-1"><button className="grid size-7 place-items-center rounded text-slate-500 hover:bg-slate-200" type="button" aria-label="View"><Eye size={16} /></button>{job.status === 'Completed' ? <button className="grid size-7 place-items-center rounded text-slate-500 hover:bg-slate-200" type="button" aria-label="Download"><Download size={16} /></button> : job.status === 'Failed' ? <button className="grid size-7 place-items-center rounded text-slate-500 hover:bg-slate-200" type="button" aria-label="Retry"><RefreshCcw size={16} /></button> : <button className="grid size-7 place-items-center rounded text-slate-500 hover:bg-slate-200" type="button" aria-label="More"><MoreVertical size={16} /></button>}</span>
     </article>
   )
 }
 
 function ProgressCell({ job }: { job: GenerationJobRow }) {
   if (job.status === 'Failed' || job.status === 'Canceled') {
-    return <span className={`progress-text ${job.status.toLowerCase()}`}>{job.status}</span>
+    return <span className={job.status === 'Failed' ? 'font-semibold text-rose-600' : 'font-semibold text-slate-500'}>{job.status}</span>
   }
 
   return (
-    <div className="job-progress-cell">
-      <i><b style={{ width: `${job.progress}%` }} /></i>
-      <small>{job.progress}%</small>
+    <div className="flex items-center gap-2">
+      <i className="h-1.5 w-16 overflow-hidden rounded-full bg-slate-200"><b className="block h-full rounded-full bg-brand-600" style={{ width: `${job.progress}%` }} /></i>
+      <small className="text-xs font-semibold text-slate-600">{job.progress}%</small>
     </div>
   )
 }
 
 function JobStatusBadge({ status }: { status: JobStatus }) {
-  return <span className={`job-status-badge status-${status.toLowerCase().replace(' ', '-')}`}>{status}</span>
+  return <span className={status === 'Completed' ? 'rounded-full bg-emerald-100 px-2 py-1 text-xs font-bold text-emerald-700' : status === 'In Progress' ? 'rounded-full bg-sky-100 px-2 py-1 text-xs font-bold text-sky-700' : status === 'Failed' ? 'rounded-full bg-rose-100 px-2 py-1 text-xs font-bold text-rose-700' : 'rounded-full bg-slate-100 px-2 py-1 text-xs font-bold text-slate-600'}>{status}</span>
 }
 
 function GenerationPresets() {
   return (
-    <section className="ai-side-card presets-card">
-      <header><h2>Generation Presets</h2><button type="button">Manage</button></header>
-      <div className="preset-list">
+    <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <header className="flex items-center justify-between gap-2"><h2 className="font-bold text-slate-950">Generation Presets</h2><button className="text-sm font-bold text-brand-600" type="button">Manage</button></header>
+      <div className="mt-3 grid gap-2">
         {presets.map((preset) => {
           const Icon = preset.type === 'SRS Document' ? FileText : LayoutGrid
           return (
-            <article className="preset-row" key={preset.title}>
-              <span className={preset.type === 'SRS Document' ? 'doc' : 'diagram'}><Icon size={18} /></span>
-              <div><strong>{preset.title}</strong><small>{preset.description}</small></div>
-              {preset.isDefault ? <b>Default</b> : null}
+            <article className="flex items-start gap-2.5 rounded-lg bg-slate-50 p-2.5" key={preset.title}>
+              <span className={preset.type === 'SRS Document' ? 'grid size-8 shrink-0 place-items-center rounded-lg bg-brand-100 text-brand-700' : 'grid size-8 shrink-0 place-items-center rounded-lg bg-sky-100 text-sky-700'}><Icon size={17} /></span>
+              <div className="grid flex-1 gap-0.5"><strong className="text-sm text-slate-800">{preset.title}</strong><small className="text-xs leading-4 text-slate-500">{preset.description}</small></div>
+              {preset.isDefault ? <b className="rounded bg-brand-100 px-1.5 py-0.5 text-[10px] uppercase text-brand-700">Default</b> : null}
             </article>
           )
         })}
       </div>
-      <a href="#ai-jobs">View all presets <ChevronRight size={15} /></a>
+      <a className="mt-3 flex items-center gap-1 text-sm font-bold text-brand-600" href="#ai-jobs">View all presets <ChevronRight size={15} /></a>
     </section>
   )
 }
 
 function UsageThisMonth() {
   return (
-    <section className="ai-side-card usage-month-card">
-      <h2>Usage This Month</h2>
-      <div className="usage-month-body">
-        <div className="usage-donut">
+    <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <h2 className="font-bold text-slate-950">Usage This Month</h2>
+      <div className="grid items-center gap-2 sm:grid-cols-2 2xl:grid-cols-1">
+        <div className="relative h-38">
           <ResponsiveContainer width="100%" height={150}>
             <PieChart>
               <Pie data={usageData} dataKey="value" innerRadius={48} outerRadius={62} startAngle={92} endAngle={-268} stroke="none">
@@ -269,31 +268,31 @@ function UsageThisMonth() {
               </Pie>
             </PieChart>
           </ResponsiveContainer>
-          <div><strong>72%</strong><span>7,234 / 10,000<br />credits used</span></div>
+          <div className="absolute inset-0 grid place-content-center text-center"><strong className="text-xl text-slate-900">72%</strong><span className="text-[10px] leading-3 text-slate-500">7,234 / 10,000<br />credits used</span></div>
         </div>
-        <dl>
-          <div><dt>Total Credits</dt><dd>10,000</dd></div>
-          <div><dt>Used Credits</dt><dd>7,234</dd></div>
-          <div><dt>Remaining</dt><dd>2,766</dd></div>
+        <dl className="grid gap-2 text-sm">
+          <div className="flex justify-between"><dt className="text-slate-500">Total Credits</dt><dd className="font-bold">10,000</dd></div>
+          <div className="flex justify-between"><dt className="text-slate-500">Used Credits</dt><dd className="font-bold">7,234</dd></div>
+          <div className="flex justify-between"><dt className="text-slate-500">Remaining</dt><dd className="font-bold">2,766</dd></div>
         </dl>
       </div>
-      <footer><span>Resets on Jul 1, 2025</span><a href="#usage">View Usage <ChevronRight size={14} /></a></footer>
+      <footer className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3 text-xs text-slate-500"><span>Resets on Jul 1, 2025</span><a className="flex items-center font-bold text-brand-600" href="#usage">View Usage <ChevronRight size={14} /></a></footer>
     </section>
   )
 }
 
 function RecentCompletedOutputs() {
   return (
-    <section className="ai-side-card recent-outputs-card">
-      <header><h2>Recent Completed Outputs</h2><button type="button">View all</button></header>
-      <div className="recent-output-list">
+    <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <header className="flex items-center justify-between gap-2"><h2 className="font-bold text-slate-950">Recent Completed Outputs</h2><button className="text-sm font-bold text-brand-600" type="button">View all</button></header>
+      <div className="mt-3 grid gap-2">
         {completedOutputs.map((job) => {
           const Icon = job.type === 'SRS Document' ? FileText : LayoutGrid
           return (
-            <article className="recent-output-row" key={job.id}>
-              <span className={job.type === 'SRS Document' ? 'doc' : 'diagram'}><Icon size={18} /></span>
-              <div><strong>{job.name}</strong><small>{job.createdTime}</small></div>
-              <button type="button" aria-label={`Download ${job.name}`}><Download size={16} /></button>
+            <article className="flex items-center gap-2.5 rounded-lg bg-slate-50 p-2.5" key={job.id}>
+              <span className={job.type === 'SRS Document' ? 'grid size-8 shrink-0 place-items-center rounded-lg bg-brand-100 text-brand-700' : 'grid size-8 shrink-0 place-items-center rounded-lg bg-sky-100 text-sky-700'}><Icon size={17} /></span>
+              <div className="grid flex-1 gap-0.5"><strong className="text-sm text-slate-800">{job.name}</strong><small className="text-xs text-slate-500">{job.createdTime}</small></div>
+              <button className="grid size-8 place-items-center rounded text-slate-500 transition hover:bg-slate-200" type="button" aria-label={`Download ${job.name}`}><Download size={16} /></button>
             </article>
           )
         })}

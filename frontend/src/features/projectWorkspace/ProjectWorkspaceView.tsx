@@ -1,131 +1,19 @@
-﻿import type { ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import type { Diagram } from '../../domains/diagram/types'
 import type { Project } from '../../domains/project/types'
 import type { GenerationJob, SrsDocument } from '../../domains/srs/types'
 import { CompactList, SectionHeader, StatusChip } from '../../shared/ui/primitives'
 import { mockActivities, mockRequirements } from '../../app/designMockData'
-import './ProjectWorkspaceView.css'
 
-type ProjectWorkspaceViewProps = {
-  activeProject: Project | undefined
-  srsDocuments: SrsDocument[]
-  diagrams: Diagram[]
-  generationJobs: GenerationJob[]
-  srsTools: ReactNode
-  diagramTools: ReactNode
-}
+type ProjectWorkspaceViewProps = { activeProject: Project | undefined; srsDocuments: SrsDocument[]; diagrams: Diagram[]; generationJobs: GenerationJob[]; srsTools: ReactNode; diagramTools: ReactNode }
+const card = 'grid gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm'
 
-export function ProjectWorkspaceView({
-  activeProject,
-  srsDocuments,
-  diagrams,
-  generationJobs,
-  srsTools,
-  diagramTools,
-}: ProjectWorkspaceViewProps) {
+export function ProjectWorkspaceView({ activeProject, srsDocuments, diagrams, generationJobs, srsTools, diagramTools }: ProjectWorkspaceViewProps) {
   const projectTitle = activeProject?.name ?? 'Select a project'
   const projectDescription = activeProject?.description ?? 'Requirements, SRS documents, diagrams, and activity appear here.'
-
-  return (
-    <section className="project-workspace" id="project-workspace">
-      <div className="workspace-hero dashboard-band">
-        <SectionHeader label="Project workspace" title={projectTitle} description={projectDescription} />
-        <div className="workspace-hero-stats" aria-label="Project summary">
-          <SummaryPill label="Requirements" value={mockRequirements.length} />
-          <SummaryPill label="SRS docs" value={srsDocuments.length} />
-          <SummaryPill label="Diagrams" value={diagrams.length} />
-          <SummaryPill label="AI jobs" value={generationJobs.length} />
-        </div>
-      </div>
-
-      <div className="project-workspace-grid">
-        <section className="dashboard-band requirements-panel">
-          <SectionHeader label="Requirements" title="Traceable requirements" />
-          <div className="requirement-table" role="table" aria-label="Requirements">
-            <div className="requirement-table-head" role="row">
-              <span>Code</span>
-              <span>Requirement</span>
-              <span>Priority</span>
-              <span>Status</span>
-            </div>
-            {mockRequirements.map((requirement) => (
-              <article className="requirement-table-row" role="row" key={requirement.id}>
-                <strong>{requirement.code}</strong>
-                <span>{requirement.text}</span>
-                <StatusChip tone={requirement.priority === 'high' ? 'danger' : requirement.priority === 'medium' ? 'warning' : 'neutral'}>
-                  {requirement.priority}
-                </StatusChip>
-                <StatusChip tone={requirement.status === 'approved' ? 'success' : 'warning'}>
-                  {requirement.status}
-                </StatusChip>
-              </article>
-            ))}
-          </div>
-        </section>
-
-        <aside className="project-side-stack">
-          <section className="dashboard-band">
-            <SectionHeader label="SRS documents" title="Recent docs" />
-            <CompactList
-              items={srsDocuments.slice(0, 4).map((document) => ({
-                id: document.id,
-                title: document.title,
-                meta: new Date(document.created_at).toLocaleDateString(),
-                value: document.status,
-                tone: 'info' as const,
-              }))}
-              emptyText="No SRS documents yet."
-            />
-          </section>
-
-          <section className="dashboard-band">
-            <SectionHeader label="Diagrams" title="Diagram library" />
-            <CompactList
-              items={diagrams.slice(0, 4).map((diagram) => ({
-                id: diagram.id,
-                title: diagram.title,
-                meta: `${diagram.diagram_type} / v${diagram.current_version}`,
-                value: diagram.status,
-                tone: 'success' as const,
-              }))}
-              emptyText="No diagrams yet."
-            />
-          </section>
-
-          <section className="dashboard-band">
-            <SectionHeader label="Activity" title="Project feed" />
-            <CompactList
-              items={mockActivities.slice(0, 3).map((activity) => ({
-                id: activity.id,
-                title: activity.title,
-                meta: activity.meta,
-                value: activity.kind,
-                tone: activity.kind === 'diagram' ? 'info' : 'neutral',
-              }))}
-              emptyText="No project activity yet."
-            />
-          </section>
-        </aside>
-      </div>
-
-      <div className="project-tools-grid">
-        {srsTools}
-        {diagramTools}
-      </div>
-    </section>
-  )
+  return <section className="grid gap-4" id="project-workspace"><div className={`${card} gap-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center`}><SectionHeader label="Project workspace" title={projectTitle} description={projectDescription} /><div className="grid grid-cols-2 gap-2 sm:grid-cols-4" aria-label="Project summary"><SummaryPill label="Requirements" value={mockRequirements.length} /><SummaryPill label="SRS docs" value={srsDocuments.length} /><SummaryPill label="Diagrams" value={diagrams.length} /><SummaryPill label="AI jobs" value={generationJobs.length} /></div></div>
+    <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_20.5rem]"><section className={card}><SectionHeader label="Requirements" title="Traceable requirements" /><div className="grid overflow-hidden rounded-lg border border-slate-200" role="table" aria-label="Requirements"><div className="grid min-h-12 grid-cols-[6.875rem_minmax(0,1fr)_6rem_6rem] items-center gap-3 bg-slate-100 px-3 py-2 text-xs font-extrabold uppercase text-muted"><span>Code</span><span>Requirement</span><span>Priority</span><span>Status</span></div>{mockRequirements.map((requirement) => <article className="grid min-h-12 grid-cols-[6.875rem_minmax(0,1fr)_6rem_6rem] items-center gap-3 border-t border-slate-200 px-3 py-2" role="row" key={requirement.id}><strong className="text-sm text-brand-700">{requirement.code}</strong><span className="text-sm text-ink">{requirement.text}</span><StatusChip tone={requirement.priority === 'high' ? 'danger' : requirement.priority === 'medium' ? 'warning' : 'neutral'}>{requirement.priority}</StatusChip><StatusChip tone={requirement.status === 'approved' ? 'success' : 'warning'}>{requirement.status}</StatusChip></article>)}</div></section><aside className="grid gap-4"><RecentCard label="SRS documents" title="Recent docs" items={srsDocuments.slice(0, 4).map((document) => ({ id: document.id, title: document.title, meta: new Date(document.created_at).toLocaleDateString(), value: document.status, tone: 'info' as const }))} emptyText="No SRS documents yet." /><RecentCard label="Diagrams" title="Diagram library" items={diagrams.slice(0, 4).map((diagram) => ({ id: diagram.id, title: diagram.title, meta: `${diagram.diagram_type} / v${diagram.current_version}`, value: diagram.status, tone: 'success' as const }))} emptyText="No diagrams yet." /><RecentCard label="Activity" title="Project feed" items={mockActivities.slice(0, 3).map((activity) => ({ id: activity.id, title: activity.title, meta: activity.meta, value: activity.kind, tone: activity.kind === 'diagram' ? 'info' as const : 'neutral' as const }))} emptyText="No project activity yet." /></aside></div><div className="grid gap-4">{srsTools}{diagramTools}</div></section>
 }
 
-type SummaryPillProps = {
-  label: string
-  value: number
-}
-
-function SummaryPill({ label, value }: SummaryPillProps) {
-  return (
-    <div className="summary-pill">
-      <strong>{value}</strong>
-      <span>{label}</span>
-    </div>
-  )
-}
+function RecentCard({ label, title, items, emptyText }: { label: string; title: string; items: Array<{ id: string; title: string; meta: string; value: string; tone: 'neutral' | 'success' | 'warning' | 'danger' | 'info' }>; emptyText: string }) { return <section className={card}><SectionHeader label={label} title={title} /><CompactList items={items} emptyText={emptyText} /></section> }
+function SummaryPill({ label, value }: { label: string; value: number }) { return <div className="grid min-w-20 justify-items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5"><strong className="text-xl font-bold leading-none text-ink">{value}</strong><span className="text-center text-xs font-bold text-muted">{label}</span></div> }
