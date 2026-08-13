@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import '../App.css'
+import '../shared/ui.css'
 import {
   Activity,
   BarChart3,
@@ -265,8 +265,8 @@ export function App() {
   ]
 
   const workspaceTools = (
-    <aside className="workbench-side">
-      <div id="workspace">
+    <aside className="grid min-w-0 gap-4 lg:sticky lg:top-5">
+      <div className="grid gap-4" id="workspace">
         <article className="panel identity-panel">
           <span className="panel-label">Signed in</span>
           <h2>{currentUser.full_name}</h2>
@@ -275,7 +275,7 @@ export function App() {
         <WorkspacePanel {...controller.workspacePanel} />
         <CreateWorkspacePanel {...controller.createWorkspacePanel} />
       </div>
-      <div id="billing">
+      <div className="grid gap-4" id="billing">
         <BillingPanel {...controller.billingPanel} />
       </div>
       <CreateDiagramPanel {...controller.createDiagramPanel} />
@@ -393,8 +393,8 @@ export function App() {
 
     if (activeSection === 'diagram-editor') {
       return (
-        <section className="workbench-layout">
-          <div className="workbench-main"><DiagramEditorMock /></div>
+        <section className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_23.75rem]">
+          <div className="min-w-0"><DiagramEditorMock /></div>
           {workspaceTools}
         </section>
       )
@@ -406,8 +406,8 @@ export function App() {
 
     if (['srs', 'requirements', 'exports'].includes(activeSection)) {
       return (
-        <section className="workbench-layout">
-          <div className="workbench-main">{projectWorkspace}</div>
+        <section className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_23.75rem]">
+          <div className="min-w-0">{projectWorkspace}</div>
           {workspaceTools}
         </section>
       )
@@ -425,8 +425,8 @@ export function App() {
       }
 
       return (
-        <section className="workbench-layout">
-          <div className="workbench-main"><BillingPanel {...controller.billingPanel} /></div>
+        <section className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_23.75rem]">
+          <div className="min-w-0"><BillingPanel {...controller.billingPanel} /></div>
           {workspaceTools}
         </section>
       )
@@ -448,8 +448,8 @@ export function App() {
 
     if (activeSection === 'settings' && isOrganizationAdmin) {
       return (
-        <section className="workbench-layout">
-          <div className="workbench-main"><SettingsProfile user={currentUser} {...controller.aiSettingsPanel} /></div>
+        <section className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_23.75rem]">
+          <div className="min-w-0"><SettingsProfile user={currentUser} {...controller.aiSettingsPanel} /></div>
           {workspaceTools}
         </section>
       )
@@ -457,8 +457,8 @@ export function App() {
 
     if (['profile', 'settings', 'admin', 'members'].includes(activeSection)) {
       return (
-        <section className="workbench-layout">
-          <div className="workbench-main"><SettingsProfile user={currentUser} {...controller.aiSettingsPanel} /></div>
+        <section className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_23.75rem]">
+          <div className="min-w-0"><SettingsProfile user={currentUser} {...controller.aiSettingsPanel} /></div>
           {workspaceTools}
         </section>
       )
@@ -511,7 +511,9 @@ export function App() {
   }
 
   function navLinkClass(id: SectionId) {
-    return activeSection === id ? 'active' : undefined
+    const active = activeSection === id
+    const collapsed = isPlatformAdminShell && isAdminSidebarCollapsed
+    return `flex min-h-11 items-center gap-3.5 rounded-lg px-3.5 text-[15px] font-bold transition ${collapsed ? 'justify-center px-0' : ''} ${active ? 'bg-linear-to-r from-violet-700 to-violet-900 text-white shadow-lg shadow-violet-950/20' : 'text-slate-200 hover:bg-slate-800 hover:text-white'}`
   }
 
   function renderNavItem(item: { id: SectionId; label: string; icon: LucideIcon }) {
@@ -519,16 +521,16 @@ export function App() {
     return (
       <a className={navLinkClass(item.id)} href={`#${item.id}`} key={item.id}>
         <Icon size={20} />
-        <span className="nav-item-label">{item.label}</span>
+        <span className={isPlatformAdminShell && isAdminSidebarCollapsed ? 'hidden' : undefined}>{item.label}</span>
       </a>
     )
   }
 
   function renderSuperAdminNav() {
     return superAdminNavGroups.map((group) => (
-      <section className="admin-sidebar-group" key={group.title}>
-        <h2>{group.title}</h2>
-        <div>
+      <section className={`grid gap-2 border-b border-slate-700/50 px-2.5 py-4 ${isAdminSidebarCollapsed ? 'justify-items-center px-0' : ''}`} key={group.title}>
+        <h2 className={`text-xs font-extrabold uppercase tracking-wide text-slate-400 ${isAdminSidebarCollapsed ? 'hidden' : ''}`}>{group.title}</h2>
+        <div className={`grid gap-1 ${isAdminSidebarCollapsed ? 'justify-items-center' : ''}`}>
           {group.items.map(renderNavItem)}
         </div>
       </section>
@@ -536,11 +538,11 @@ export function App() {
   }
 
   return (
-    <main className={`platform-shell target-user-shell ${isPlatformAdminShell ? 'platform-admin-shell' : ''} ${isPlatformAdminShell && isAdminSidebarCollapsed ? 'platform-admin-shell-collapsed' : ''}`}>
-      <aside className="platform-sidebar" aria-label="Primary">
+    <main className={`grid min-h-svh bg-slate-50 xl:grid-cols-[15.25rem_minmax(0,1fr)] ${isPlatformAdminShell ? 'xl:grid-cols-[16.25rem_minmax(0,1fr)]' : ''} ${isPlatformAdminShell && isAdminSidebarCollapsed ? 'xl:grid-cols-[4.5rem_minmax(0,1fr)]' : ''}`}>
+      <aside className={`grid min-h-0 grid-rows-[auto_1fr_auto] gap-5 overflow-y-auto bg-linear-to-b from-slate-950 via-slate-950 to-slate-950 px-4 py-6 text-slate-100 shadow-xl xl:sticky xl:top-0 xl:h-svh ${isAdminSidebarCollapsed ? 'px-2' : ''}`} aria-label="Primary">
         {isPlatformAdminShell ? (
           <button
-            className="admin-sidebar-toggle"
+            className="absolute right-2.5 top-3 grid size-7 place-items-center rounded-full border border-slate-600 bg-slate-900 text-slate-100 shadow-lg transition hover:bg-violet-700"
             type="button"
             aria-label={isAdminSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
             onClick={() => setIsAdminSidebarCollapsed((collapsed) => !collapsed)}
@@ -548,60 +550,60 @@ export function App() {
             {isAdminSidebarCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
           </button>
         ) : null}
-        <div className="brand-lockup">
-          <span className="brand-mark"><Network size={22} /></span>
-          <div>
-            <strong>SRS Platform</strong>
-            {isPlatformAdminShell ? <small>Platform Admin</small> : null}
+        <div className={`flex min-h-15 items-center gap-3 border-b border-slate-700/50 pb-4 ${isAdminSidebarCollapsed ? 'justify-center' : ''}`}>
+          <span className="grid size-11 place-items-center rounded-xl border border-violet-500/70 bg-violet-700/15 text-violet-300"><Network size={22} /></span>
+          <div className={isAdminSidebarCollapsed ? 'hidden' : undefined}>
+            <strong className="block text-xl font-extrabold text-white">SRS Platform</strong>
+            {isPlatformAdminShell ? <small className="mt-1 block text-sm font-bold text-violet-400">Platform Admin</small> : null}
           </div>
         </div>
 
-        <nav className="sidebar-nav" aria-label="Dashboard sections">
+        <nav className="grid content-start gap-1" aria-label="Dashboard sections">
           {isPlatformAdminShell ? (
             renderSuperAdminNav()
           ) : (
             <>
               {primaryNavItems.map(renderNavItem)}
-              <span className="sidebar-divider" />
+              <span className="my-3 h-px bg-slate-700/50" />
               {billingNavItems.map(renderNavItem)}
-              {billingNavItems.length > 0 ? <span className="sidebar-divider" /> : null}
+              {billingNavItems.length > 0 ? <span className="my-3 h-px bg-slate-700/50" /> : null}
               {accountNavItems.map(renderNavItem)}
               {canAccessAdmin ? renderNavItem({ id: 'admin', label: 'Admin', icon: Settings }) : null}
-              <button className="sidebar-logout-button" type="button" onClick={signOut}>
+              <button className={`flex min-h-11 items-center gap-3.5 rounded-lg px-3.5 text-[15px] font-bold text-red-200 transition hover:bg-red-950/60 hover:text-white ${isAdminSidebarCollapsed ? 'justify-center px-0' : ''}`} type="button" onClick={signOut}>
                 <LogOut size={20} />
-                Logout
+                <span className={isAdminSidebarCollapsed ? 'hidden' : undefined}>Logout</span>
               </button>
             </>
           )}
         </nav>
 
-        <div className="sidebar-context pro-plan-card">
+        <div className={`grid gap-2 rounded-xl bg-slate-900 p-3 ${isAdminSidebarCollapsed ? 'bg-transparent p-0' : ''}`}>
           {isPlatformAdminShell ? (
-            <div className="admin-profile-stack">
-              <div className="admin-profile-card">
-                <span>{isSuperAdmin ? 'SA' : 'PA'}</span>
-                <div>
-                  <strong>{isSuperAdmin ? 'Super Admin' : 'Platform Admin'}</strong>
-                  <p>{currentUser.email || 'superadmin@srs.com'}</p>
+            <div className={`grid gap-2.5 ${isAdminSidebarCollapsed ? 'justify-items-center' : ''}`}>
+              <div className={`grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 ${isAdminSidebarCollapsed ? 'flex justify-center' : ''}`}>
+                <span className="grid size-11 place-items-center rounded-full bg-linear-to-br from-violet-500 to-violet-800 text-sm font-extrabold text-white">{isSuperAdmin ? 'SA' : 'PA'}</span>
+                <div className={isAdminSidebarCollapsed ? 'hidden' : undefined}>
+                  <strong className="block text-sm font-extrabold text-white">{isSuperAdmin ? 'Super Admin' : 'Platform Admin'}</strong>
+                  <p className="mt-1 truncate text-xs text-slate-400">{currentUser.email || 'superadmin@srs.com'}</p>
                 </div>
               </div>
-              <button className="admin-sidebar-logout" type="button" onClick={signOut}>
+              <button className={`flex min-h-10 items-center gap-2.5 rounded-lg border border-red-400/20 bg-red-950/30 px-3 text-sm font-bold text-red-200 transition hover:bg-red-900/50 hover:text-white ${isAdminSidebarCollapsed ? 'grid size-10 place-items-center p-0' : ''}`} type="button" onClick={signOut}>
                 <LogOut size={18} />
-                <span>Logout</span>
+                <span className={isAdminSidebarCollapsed ? 'hidden' : undefined}>Logout</span>
               </button>
             </div>
           ) : (
             <>
-              <span>Pro Plan</span>
-              <p>Renews on Jun 18, 2025</p>
-              <button type="button">Manage Subscription</button>
+              <span className="text-base font-extrabold text-white">Pro Plan</span>
+              <p className="text-sm text-slate-400">Renews on Jun 18, 2025</p>
+              <button className="min-h-10 rounded-lg bg-linear-to-b from-violet-600 to-violet-700 px-3 text-sm font-extrabold text-white transition hover:from-violet-500 hover:to-violet-600" type="button">Manage Subscription</button>
             </>
           )}
         </div>
       </aside>
 
-      <div className="platform-main target-user-main">
-        {error ? <p className="status-message error-message">{error}</p> : null}
+      <div className="min-w-0 bg-slate-50 p-4 sm:p-7">
+        {error ? <p className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</p> : null}
         {renderActiveSection()}
         <FooterSection />
       </div>

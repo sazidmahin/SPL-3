@@ -1,106 +1,15 @@
 import type { FormEvent } from 'react'
-import './WorkspacePanels.css'
 import type { WorkspaceMembership } from '../../domains/workspace/types'
 
-type WorkspacePanelProps = {
-  workspaces: WorkspaceMembership[]
-  activeWorkspace: WorkspaceMembership | undefined
-  isRefreshing: boolean
-  onRefresh: () => void
-  onSelectWorkspace: (workspaceId: string) => void
+type WorkspacePanelProps = { workspaces: WorkspaceMembership[]; activeWorkspace: WorkspaceMembership | undefined; isRefreshing: boolean; onRefresh: () => void; onSelectWorkspace: (workspaceId: string) => void }
+const panel = 'grid gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm'
+const action = 'rounded-lg px-2 py-1.5 text-sm font-bold text-brand-700 transition hover:bg-brand-50 disabled:cursor-wait disabled:opacity-55'
+const option = 'grid w-full gap-1 rounded-lg border px-3 py-2.5 text-left transition'
+const input = 'w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand-600 focus:ring-4 focus:ring-brand-100'
+
+export function WorkspacePanel({ workspaces, activeWorkspace, isRefreshing, onRefresh, onSelectWorkspace }: WorkspacePanelProps) {
+  return <article className={panel}><header className="flex items-center justify-between gap-3"><span className="text-xs font-extrabold uppercase tracking-wide text-brand-600">Workspaces</span><button className={action} type="button" onClick={onRefresh} disabled={isRefreshing}>{isRefreshing ? 'Refreshing' : 'Refresh'}</button></header><div className="grid gap-2">{workspaces.map((membership) => <button key={membership.workspace.id} className={`${option} ${membership.workspace.id === activeWorkspace?.workspace.id ? 'border-brand-600 bg-brand-50' : 'border-slate-200 hover:bg-slate-50'}`} type="button" onClick={() => onSelectWorkspace(membership.workspace.id)}><span className="font-bold text-ink">{membership.workspace.name}</span><small className="text-xs text-muted">{membership.workspace.type} / {membership.role}</small></button>)}</div>{activeWorkspace ? <div className="flex items-center justify-between gap-3 border-t border-slate-100 pt-3"><div><h2 className="text-base font-bold text-ink">{activeWorkspace.workspace.name}</h2><p className="mt-1 text-sm text-muted">{activeWorkspace.workspace.type}</p></div><span className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-bold capitalize text-emerald-800">{activeWorkspace.role}</span></div> : <p className="text-sm text-muted">No active workspace found.</p>}</article>
 }
 
-export function WorkspacePanel({
-  workspaces,
-  activeWorkspace,
-  isRefreshing,
-  onRefresh,
-  onSelectWorkspace,
-}: WorkspacePanelProps) {
-  return (
-    <article className="panel workspace-panel">
-      <div className="panel-heading">
-        <span className="panel-label">Workspaces</span>
-        <button className="text-button" type="button" onClick={onRefresh} disabled={isRefreshing}>
-          {isRefreshing ? 'Refreshing' : 'Refresh'}
-        </button>
-      </div>
-      <div className="workspace-switcher">
-        {workspaces.map((membership) => (
-          <button
-            key={membership.workspace.id}
-            className={
-              membership.workspace.id === activeWorkspace?.workspace.id
-                ? 'workspace-option active'
-                : 'workspace-option'
-            }
-            type="button"
-            onClick={() => onSelectWorkspace(membership.workspace.id)}
-          >
-            <span>{membership.workspace.name}</span>
-            <small>
-              {membership.workspace.type} / {membership.role}
-            </small>
-          </button>
-        ))}
-      </div>
-      {activeWorkspace ? (
-        <div className="workspace-row">
-          <div>
-            <h2>{activeWorkspace.workspace.name}</h2>
-            <p>{activeWorkspace.workspace.type}</p>
-          </div>
-          <span className="role-chip">{activeWorkspace.role}</span>
-        </div>
-      ) : (
-        <p>No active workspace found.</p>
-      )}
-    </article>
-  )
-}
-
-type CreateWorkspacePanelProps = {
-  workspaceName: string
-  workspaceSlug: string
-  isCreatingWorkspace: boolean
-  onWorkspaceNameChange: (value: string) => void
-  onWorkspaceSlugChange: (value: string) => void
-  onSubmit: (event: FormEvent<HTMLFormElement>) => void
-}
-
-export function CreateWorkspacePanel({
-  workspaceName,
-  workspaceSlug,
-  isCreatingWorkspace,
-  onWorkspaceNameChange,
-  onWorkspaceSlugChange,
-  onSubmit,
-}: CreateWorkspacePanelProps) {
-  return (
-    <article className="panel create-workspace-panel">
-      <span className="panel-label">New organization</span>
-      <form className="workspace-form" onSubmit={onSubmit}>
-        <label>
-          Name
-          <input
-            value={workspaceName}
-            onChange={(event) => onWorkspaceNameChange(event.target.value)}
-            required
-          />
-        </label>
-        <label>
-          Slug
-          <input
-            value={workspaceSlug}
-            onChange={(event) => onWorkspaceSlugChange(event.target.value)}
-            pattern="[a-z0-9]+(-[a-z0-9]+)*"
-            required
-          />
-        </label>
-        <button className="primary-button" type="submit" disabled={isCreatingWorkspace}>
-          {isCreatingWorkspace ? 'Creating' : 'Create workspace'}
-        </button>
-      </form>
-    </article>
-  )
-}
+type CreateWorkspacePanelProps = { workspaceName: string; workspaceSlug: string; isCreatingWorkspace: boolean; onWorkspaceNameChange: (value: string) => void; onWorkspaceSlugChange: (value: string) => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void }
+export function CreateWorkspacePanel({ workspaceName, workspaceSlug, isCreatingWorkspace, onWorkspaceNameChange, onWorkspaceSlugChange, onSubmit }: CreateWorkspacePanelProps) { return <article className={panel}><span className="text-xs font-extrabold uppercase tracking-wide text-brand-600">New organization</span><form className="grid gap-3 sm:grid-cols-2" onSubmit={onSubmit}><label className="grid gap-1.5 text-sm font-bold text-slate-700">Name<input className={input} value={workspaceName} onChange={(event) => onWorkspaceNameChange(event.target.value)} required /></label><label className="grid gap-1.5 text-sm font-bold text-slate-700">Slug<input className={input} value={workspaceSlug} onChange={(event) => onWorkspaceSlugChange(event.target.value)} pattern="[a-z0-9]+(-[a-z0-9]+)*" required /></label><button className="min-h-10 rounded-lg bg-brand-600 px-4 text-sm font-extrabold text-white transition hover:bg-brand-700 disabled:cursor-wait disabled:opacity-60 sm:col-span-2" type="submit" disabled={isCreatingWorkspace}>{isCreatingWorkspace ? 'Creating' : 'Create workspace'}</button></form></article> }

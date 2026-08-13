@@ -1,11 +1,17 @@
 import { useState } from 'react'
 import type { ChangeEvent, FormEvent } from 'react'
-import './AuthView.css'
 import type { AuthMode } from '../../domains/auth/types'
 import { AuthField, AuthFrame, AuthIcon, AuthLinkButton, AuthPanelHeader } from './components/AuthFrame'
 import { Check } from 'lucide-react'
 
 type AuthFlowView = AuthMode | 'forgot' | 'forgot-code' | 'reset' | 'verify' | 'workspace'
+
+const formClass = 'grid gap-4'
+const spaciousFormClass = 'grid gap-5'
+const submitClass = 'w-full rounded-lg bg-brand-600 px-4 py-3 text-sm font-bold text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50'
+const manualFieldClass = 'grid gap-1.5'
+const manualInputClass = 'min-w-0 flex-1 bg-transparent text-sm text-slate-900 outline-none'
+const inputWrapClass = 'flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2.5 transition focus-within:border-brand-500 focus-within:ring-3 focus-within:ring-brand-100'
 
 type AuthViewProps = {
   mode: AuthMode
@@ -184,7 +190,7 @@ export function AuthView({
         subtitle={mode === 'register' ? 'Create your workspace and start building better SRS documents with AI.' : 'Sign in to continue to your SRS workspace'}
       />
 
-      <form className={`auth-form ${mode === 'register' ? 'auth-register-form' : ''}`} noValidate onSubmit={handleAuthSubmit}>
+      <form className={formClass} noValidate onSubmit={handleAuthSubmit}>
         {mode === 'register' ? (
           <AuthField
             autoComplete="name"
@@ -213,11 +219,12 @@ export function AuthView({
 
         {mode === 'register' ? (
           <>
-            <label className={`auth-field auth-company-field ${fieldErrors.companyName ? 'auth-field-error' : ''}`}>
-              <span>Company Name <small>Optional</small></span>
-              <span className="auth-input-wrap">
-                <span className="auth-input-icon" aria-hidden="true"><AuthIcon name="home" /></span>
+            <label className={manualFieldClass}>
+              <span className="text-sm font-semibold text-slate-700">Company Name <small className="font-normal text-slate-400">Optional</small></span>
+              <span className={`${inputWrapClass} ${fieldErrors.companyName ? 'border-rose-400' : ''}`}>
+                <span className="text-slate-400" aria-hidden="true"><AuthIcon name="home" /></span>
                 <input
+                  className={manualInputClass}
                   aria-invalid={Boolean(fieldErrors.companyName)}
                   autoComplete="organization"
                   placeholder="Enter company name"
@@ -226,13 +233,13 @@ export function AuthView({
                   onChange={(event) => updateCompanyName(event.target.value)}
                 />
               </span>
-              {fieldErrors.companyName ? <small className="auth-field-message">{fieldErrors.companyName}</small> : null}
+              {fieldErrors.companyName ? <small className="text-xs font-medium text-rose-600">{fieldErrors.companyName}</small> : null}
             </label>
-            <label className={`auth-field auth-role-field ${fieldErrors.role ? 'auth-field-error' : ''}`}>
-              <span>Role <small>Optional</small></span>
-              <span className="auth-input-wrap">
-                <span className="auth-input-icon" aria-hidden="true"><AuthIcon name="user" /></span>
-                <select aria-invalid={Boolean(fieldErrors.role)} value={role} onChange={updateRole}>
+            <label className={manualFieldClass}>
+              <span className="text-sm font-semibold text-slate-700">Role <small className="font-normal text-slate-400">Optional</small></span>
+              <span className={`${inputWrapClass} ${fieldErrors.role ? 'border-rose-400' : ''}`}>
+                <span className="text-slate-400" aria-hidden="true"><AuthIcon name="user" /></span>
+                <select className={manualInputClass} aria-invalid={Boolean(fieldErrors.role)} value={role} onChange={updateRole}>
                   <option value="">Select your role</option>
                   <option>Product Manager</option>
                   <option>Business Analyst</option>
@@ -240,7 +247,7 @@ export function AuthView({
                   <option>Organization Admin</option>
                 </select>
               </span>
-              {fieldErrors.role ? <small className="auth-field-message">{fieldErrors.role}</small> : null}
+              {fieldErrors.role ? <small className="text-xs font-medium text-rose-600">{fieldErrors.role}</small> : null}
             </label>
           </>
         ) : null}
@@ -273,47 +280,47 @@ export function AuthView({
         ) : null}
 
         {mode === 'login' ? (
-          <div className="auth-form-row">
-            <label className="auth-checkline">
+          <div className="flex items-center justify-between gap-3">
+            <label className="flex items-center gap-2 text-sm text-slate-600">
               <input defaultChecked type="checkbox" />
               <span>Remember me</span>
             </label>
             <AuthLinkButton onClick={() => setFlowView('forgot')}>Forgot password?</AuthLinkButton>
           </div>
         ) : (
-          <div className={`auth-terms-group ${fieldErrors.terms ? 'auth-field-error' : ''}`}>
-            <label className="auth-checkline auth-terms-line">
+          <div className="grid gap-1">
+            <label className="flex items-start gap-2 text-sm leading-5 text-slate-600">
               <input checked={termsAccepted} type="checkbox" required onChange={updateTermsAccepted} />
               <span>
                 I agree to the <a href="#terms">Terms of Service</a> and <a href="#privacy">Privacy Policy</a>
               </span>
             </label>
-            {fieldErrors.terms ? <small className="auth-field-message auth-terms-message">{fieldErrors.terms}</small> : null}
+            {fieldErrors.terms ? <small className="text-xs font-medium text-rose-600">{fieldErrors.terms}</small> : null}
           </div>
         )}
 
-        {error ? <p className="status-message error-message">{error}</p> : null}
+        {error ? <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p> : null}
 
-        <button className="primary-button auth-submit-button" type="submit" disabled={isSubmitting}>
+        <button className={submitClass} type="submit" disabled={isSubmitting}>
           {isSubmitting ? 'Submitting' : mode === 'register' ? 'Create Account' : 'Sign In'}
         </button>
       </form>
 
-      <div className="auth-social-divider"><span>or continue with</span></div>
-      <div className="auth-social-actions">
-        <button type="button"><GoogleLogo /> {mode === 'register' ? 'Sign up with Google' : 'Continue with Google'}</button>
-        <button type="button"><MicrosoftLogo /> {mode === 'register' ? 'Sign up with Microsoft' : 'Continue with Microsoft'}</button>
+      <div className="my-6 flex items-center gap-3 text-xs font-semibold text-slate-400 before:h-px before:flex-1 before:bg-slate-200 after:h-px after:flex-1 after:bg-slate-200"><span>or continue with</span></div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <button className="flex items-center justify-center gap-2 rounded-lg border border-slate-300 px-3 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50" type="button"><GoogleLogo /> {mode === 'register' ? 'Sign up with Google' : 'Continue with Google'}</button>
+        <button className="flex items-center justify-center gap-2 rounded-lg border border-slate-300 px-3 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50" type="button"><MicrosoftLogo /> {mode === 'register' ? 'Sign up with Microsoft' : 'Continue with Microsoft'}</button>
       </div>
 
 
 
       {mode === 'login' ? (
-        <footer className="auth-footer-switch">
+        <footer className="mt-6 flex items-center justify-center gap-2 text-sm text-slate-500">
           <span>Don't have an account?</span>
           <AuthLinkButton onClick={() => switchMode('register')}>Create account</AuthLinkButton>
         </footer>
       ) : (
-        <footer className="auth-footer-switch">
+        <footer className="mt-6 flex items-center justify-center gap-2 text-sm text-slate-500">
           <span>Already have an account?</span>
           <AuthLinkButton onClick={() => switchMode('login')}>Sign in</AuthLinkButton>
         </footer>
@@ -325,7 +332,7 @@ export function AuthView({
 function GoogleLogo() {
   return (
     <img
-      className="auth-provider-logo"
+      className="size-4"
       src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg"
       alt=""
       aria-hidden="true"
@@ -336,7 +343,7 @@ function GoogleLogo() {
 function MicrosoftLogo() {
   return (
     <img
-      className="auth-provider-logo"
+      className="size-4"
       src="https://upload.wikimedia.org/wikipedia/commons/4/44/Microsoft_logo.svg"
       alt=""
       aria-hidden="true"
@@ -372,7 +379,7 @@ function ForgotPasswordView({ email, onEmailChange, onBack, onSent }: EmailProps
   return (
     <AuthFrame artwork="question">
       <AuthPanelHeader title="Forgot your password?" subtitle="Enter your email address and we'll send you a link to reset your password." />
-      <form className="auth-form auth-spacious-form" noValidate onSubmit={submitForgotPassword}>
+      <form className={spaciousFormClass} noValidate onSubmit={submitForgotPassword}>
         <AuthField
           autoComplete="email"
           icon="mail"
@@ -385,11 +392,11 @@ function ForgotPasswordView({ email, onEmailChange, onBack, onSent }: EmailProps
           error={emailError}
           onChange={updateForgotEmail}
         />
-        <button className="primary-button auth-submit-button" type="submit">
+        <button className={submitClass} type="submit">
           Send Reset Link
         </button>
       </form>
-      <footer className="auth-back-row">
+      <footer className="mt-6 text-center">
         <AuthLinkButton onClick={onBack}>Back to sign in</AuthLinkButton>
       </footer>
     </AuthFrame>
@@ -435,7 +442,7 @@ function ForgotPasswordCodeView({
   return (
     <AuthFrame artwork="mail">
       <AuthPanelHeader title="Enter verification code" subtitle={`We sent a 6 digit code to ${email || 'your email'}.`} />
-      <form className="auth-form auth-spacious-form" noValidate onSubmit={submitCode}>
+      <form className={spaciousFormClass} noValidate onSubmit={submitCode}>
         <AuthField
           autoComplete="one-time-code"
           icon="mail"
@@ -448,11 +455,11 @@ function ForgotPasswordCodeView({
           error={codeError}
           onChange={updateCode}
         />
-        <button className="primary-button auth-submit-button" type="submit">
+        <button className={submitClass} type="submit">
           Verify Code
         </button>
       </form>
-      <footer className="auth-back-row">
+      <footer className="mt-6 text-center">
         <AuthLinkButton onClick={onBack}>Back to email</AuthLinkButton>
       </footer>
     </AuthFrame>
@@ -468,7 +475,7 @@ function ResetPasswordView({ password, onPasswordChange, onBack }: { password: s
   return (
     <AuthFrame artwork="key">
       <AuthPanelHeader title="Reset your password" subtitle="Enter and confirm your new password." />
-      <form className="auth-form" onSubmit={(event) => event.preventDefault()}>
+      <form className={formClass} onSubmit={(event) => event.preventDefault()}>
         <AuthField
           autoComplete="new-password"
           icon="lock"
@@ -479,10 +486,10 @@ function ResetPasswordView({ password, onPasswordChange, onBack }: { password: s
           value={password}
           onChange={onPasswordChange}
         />
-        <ul className="password-rules">
+        <ul className="grid gap-2 rounded-lg bg-slate-50 p-3 text-xs text-slate-500">
           {passwordRules.map((rule) => (
-            <li className={rule.passed ? 'passed' : undefined} key={rule.label}>
-              <span aria-hidden="true"><Check size={12} strokeWidth={3} /></span>
+            <li className={rule.passed ? 'flex items-center gap-2 font-semibold text-emerald-600' : 'flex items-center gap-2'} key={rule.label}>
+              <span className={rule.passed ? 'grid size-4 place-items-center rounded-full bg-emerald-100' : 'grid size-4 place-items-center rounded-full bg-slate-200'} aria-hidden="true"><Check size={12} strokeWidth={3} /></span>
               {rule.label}
             </li>
           ))}
@@ -497,11 +504,11 @@ function ResetPasswordView({ password, onPasswordChange, onBack }: { password: s
           value={password}
           onChange={onPasswordChange}
         />
-        <button className="primary-button auth-submit-button" type="button" onClick={onBack}>
+        <button className={submitClass} type="button" onClick={onBack}>
           Reset Password
         </button>
       </form>
-      <footer className="auth-back-row">
+      <footer className="mt-6 text-center">
         <AuthLinkButton onClick={onBack}>Back to sign in</AuthLinkButton>
       </footer>
     </AuthFrame>
@@ -529,10 +536,9 @@ function VerifyEmailView({
 }) {
   return (
     <AuthFrame artwork="mail">
-      <section className="auth-state-panel">
-        <span className="success-orb"><AuthIcon name="check" /></span>
+      <section className="grid gap-5"><span className="grid size-12 place-items-center rounded-full bg-emerald-100 text-emerald-600"><AuthIcon name="check" /></span>
         <AuthPanelHeader title="Verify your email" subtitle={`Enter the 6 digit verification code sent to ${email || 'your email'}.`} />
-        <form className="auth-form auth-spacious-form" onSubmit={onSubmit}>
+        <form className={spaciousFormClass} onSubmit={onSubmit}>
           <AuthField
             autoComplete="one-time-code"
             icon="mail"
@@ -543,13 +549,13 @@ function VerifyEmailView({
             value={verificationCode}
             onChange={onCodeChange}
           />
-          {error ? <p className="status-message error-message">{error}</p> : null}
-          <button className="primary-button auth-submit-button" type="submit" disabled={isSubmitting}>
+          {error ? <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p> : null}
+          <button className={submitClass} type="submit" disabled={isSubmitting}>
             {isSubmitting ? 'Verifying' : 'Verify Email'}
           </button>
         </form>
-        <p className="auth-info-box">In console email mode, the backend returns the code automatically so local testing stays quick.</p>
-        <div className="auth-state-actions">
+        <p className="rounded-lg bg-brand-50 px-3 py-2 text-sm leading-6 text-brand-800">In console email mode, the backend returns the code automatically so local testing stays quick.</p>
+        <div className="flex flex-wrap justify-between gap-3">
           <AuthLinkButton onClick={onBack}>Back to sign in</AuthLinkButton>
           <AuthLinkButton onClick={onChangeEmail}>Change email address</AuthLinkButton>
         </div>
@@ -562,25 +568,24 @@ function WorkspaceOnboardingView({ onContinue }: { onContinue: () => void }) {
   return (
     <AuthFrame artwork="home">
       <AuthPanelHeader title="Choose your workspace" subtitle="Select how you plan to use SRS Platform." />
-      <section className="workspace-choice-card">
-        <div className="workspace-choice-main">
-          <span className="workspace-choice-icon"><AuthIcon name="user" /></span>
+      <section className="flex items-start justify-between gap-3 rounded-xl border border-brand-300 bg-brand-50 p-4">
+        <div className="flex gap-3"><span className="grid size-10 place-items-center rounded-lg bg-brand-100 text-brand-700"><AuthIcon name="user" /></span>
           <div>
-            <strong>Personal Use</strong>
-            <p>For individual projects, documents, diagrams, and personal productivity.</p>
+            <strong className="text-slate-900">Personal Use</strong>
+            <p className="mt-1 text-sm leading-5 text-slate-600">For individual projects, documents, diagrams, and personal productivity.</p>
           </div>
         </div>
         <StatusBadge>Recommended</StatusBadge>
       </section>
-      <section className="workspace-auto-card">
-        <strong>Your personal workspace will be created automatically</strong>
-        <ul>
+      <section className="mt-4 rounded-xl bg-slate-50 p-4">
+        <strong className="text-sm text-slate-900">Your personal workspace will be created automatically</strong>
+        <ul className="mt-3 grid gap-1.5 text-sm text-slate-600">
           <li>Get your own private workspace</li>
           <li>Invite collaborators anytime</li>
           <li>Upgrade or change later</li>
         </ul>
       </section>
-      <button className="primary-button auth-submit-button" type="button" onClick={onContinue}>
+      <button className={`${submitClass} mt-4`} type="button" onClick={onContinue}>
         Continue to Workspace
       </button>
     </AuthFrame>
@@ -588,7 +593,7 @@ function WorkspaceOnboardingView({ onContinue }: { onContinue: () => void }) {
 }
 
 function StatusBadge({ children }: { children: string }) {
-  return <span className="auth-status-badge">{children}</span>
+  return <span className="shrink-0 rounded-full bg-brand-100 px-2 py-1 text-xs font-bold text-brand-700">{children}</span>
 }
 
 

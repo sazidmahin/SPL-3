@@ -18,7 +18,6 @@ import type { Project } from '../../domains/project/types'
 import type { SrsDocument } from '../../domains/srs/types'
 import type { AuthUser } from '../../domains/auth/types'
 import type { WorkspaceMembership } from '../../domains/workspace/types'
-import './OrganizationMemberProjectWorkspace.css'
 
 type OrganizationMemberProjectWorkspaceProps = {
   user: AuthUser
@@ -90,44 +89,37 @@ export function OrganizationMemberProjectWorkspace({
   const diagramRows = diagrams.length > 0 ? diagrams.slice(0, 3).map(diagramToRow) : fallbackDiagramRows
 
   return (
-    <section className="org-member-workspace-page" id="projects">
+    <section className="mx-auto grid max-w-400 gap-5 p-4 sm:p-6" id="projects">
       <WorkspaceTopbar workspaceName={workspaceName} user={user} />
 
-      <section className="member-workspace-hero">
-        <div>
-          <span>Project Workspace</span>
-          <h1>{projectName}</h1>
-          <p>{projectDescription}</p>
+      <section className="flex flex-wrap items-start justify-between gap-4">
+        <div><span className="text-xs font-bold uppercase tracking-[0.12em] text-brand-600">Project Workspace</span><h1 className="mt-1 text-3xl font-bold tracking-tight text-slate-950">{projectName}</h1><p className="mt-1 max-w-2xl text-sm text-slate-500">{projectDescription}</p>
         </div>
         <StatusPill tone="green">In Progress</StatusPill>
       </section>
 
-      <nav className="workspace-tabs" aria-label="Project workspace tabs">
-        <a className="active" href="#requirements">Requirements</a>
-        <a href="#srs-documents">SRS Documents</a>
-        <a href="#workspace-diagrams">Diagrams</a>
-        <a href="#workspace-activity">Activity</a>
+      <nav className="flex w-fit max-w-full gap-1 overflow-x-auto rounded-lg border border-slate-200 bg-white p-1" aria-label="Project workspace tabs">
+        <a className="shrink-0 rounded-md bg-brand-50 px-3 py-2 text-sm font-bold text-brand-700" href="#requirements">Requirements</a>
+        <a className="shrink-0 rounded-md px-3 py-2 text-sm font-semibold text-slate-500 hover:bg-slate-50" href="#srs-documents">SRS Documents</a>
+        <a className="shrink-0 rounded-md px-3 py-2 text-sm font-semibold text-slate-500 hover:bg-slate-50" href="#workspace-diagrams">Diagrams</a>
+        <a className="shrink-0 rounded-md px-3 py-2 text-sm font-semibold text-slate-500 hover:bg-slate-50" href="#workspace-activity">Activity</a>
       </nav>
 
-      <div className="workspace-stat-grid">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <WorkspaceStat icon={FileText} label="Requirements" value={48} tone="purple" />
         <WorkspaceStat icon={FileText} label="SRS Documents" value={srsRows.length || 3} tone="blue" />
         <WorkspaceStat icon={Network} label="Diagrams" value={diagrams.length || 12} tone="green" />
         <WorkspaceStat icon={MessageSquare} label="Activity Comments" value={24} tone="orange" />
       </div>
 
-      <div className="member-workspace-layout">
-        <main className="member-workspace-main">
-          <div className="workspace-columns">
+      <div className="grid items-start gap-5 2xl:grid-cols-[minmax(0,1fr)_22rem]">
+        <main className="grid gap-5">
+          <div className="grid gap-4 xl:grid-cols-3">
             <WorkspacePanel title="Requirements" icon={FileText} action="New Requirement" id="requirements">
-              <div className="workspace-requirement-list">
+              <div className="grid px-4 pb-4">
                 {requirementRows.map((requirement) => (
-                  <article className="workspace-requirement-row" key={requirement.code}>
-                    <div>
-                      <span>{requirement.code}</span>
-                      <strong>{requirement.title}</strong>
-                      <p>{requirement.summary}</p>
-                    </div>
+                  <article className="flex items-start justify-between gap-3 border-t border-slate-100 py-3 first:border-t-0" key={requirement.code}>
+                    <div className="min-w-0"><span className="text-xs font-bold text-brand-600">{requirement.code}</span><strong className="mt-1 block text-sm text-slate-900">{requirement.title}</strong><p className="mt-1 text-xs leading-5 text-slate-500">{requirement.summary}</p></div>
                     <StatusPill tone={requirement.tone}>{requirement.status}</StatusPill>
                   </article>
                 ))}
@@ -136,35 +128,26 @@ export function OrganizationMemberProjectWorkspace({
 
             <WorkspacePanel title="SRS Documents" icon={FileText} action="New Document" id="srs-documents">
               <ArtifactList rows={srsRows} icon={FileText} />
-              <a className="workspace-panel-link" href="#srs">View all documents</a>
+              <a className="mx-4 mb-4 text-sm font-bold text-brand-600" href="#srs">View all documents</a>
             </WorkspacePanel>
 
             <WorkspacePanel title="Diagrams" icon={Network} action="New Diagram" id="workspace-diagrams">
               <ArtifactList rows={diagramRows} icon={Network} />
-              <a className="workspace-panel-link" href="#diagram-editor">Open latest</a>
+              <a className="mx-4 mb-4 text-sm font-bold text-brand-600" href="#diagram-editor">Open latest</a>
             </WorkspacePanel>
           </div>
 
-          <section className="document-preview-card">
-            <header>
-              <div><FileText size={18} /><h2>{projectName} - SRS (v1.2)</h2></div>
-              <button type="button">Open</button>
-            </header>
-            <article>
-              <h3>1. Introduction</h3>
-              <p>This SRS describes the functional and non-functional behavior for the e-commerce platform, including search, cart management, checkout, and payment processing.</p>
-              <h3>2. Scope</h3>
-              <p>The platform shall support product discovery, customer authentication, order placement, inventory visibility, and integration with payment gateways.</p>
+          <section className={cardClass}>
+            <header className={cardHeader}><div className="flex items-center gap-2 text-brand-600"><FileText size={18} /><h2 className="text-base font-bold text-slate-950">{projectName} - SRS (v1.2)</h2></div><button className={textButton} type="button">Open</button></header>
+            <article className="grid gap-2 p-4 text-sm leading-6 text-slate-600"><h3 className="font-bold text-slate-900">1. Introduction</h3><p>This SRS describes the functional and non-functional behavior for the e-commerce platform, including search, cart management, checkout, and payment processing.</p><h3 className="mt-2 font-bold text-slate-900">2. Scope</h3><p>The platform shall support product discovery, customer authentication, order placement, inventory visibility, and integration with payment gateways.</p>
             </article>
           </section>
 
-          <div className="workspace-bottom-grid">
+          <div className="grid gap-4 xl:grid-cols-3">
             <WorkspacePanel title="My Tasks" icon={CheckCircle2}>
-              <div className="workspace-task-list">
+              <div className="grid px-4 pb-4">
                 {workspaceTasks.map((task) => (
-                  <article className="workspace-task-row" key={task.title}>
-                    <span className={`task-dot tone-${task.tone}`} />
-                    <div><strong>{task.title}</strong><small>{task.due}</small></div>
+                  <article className="flex items-center gap-3 border-t border-slate-100 py-3 first:border-t-0" key={task.title}><span className={dotClass(task.tone)} /><div><strong className="block text-sm text-slate-900">{task.title}</strong><small className="text-xs text-slate-500">{task.due}</small></div>
                   </article>
                 ))}
               </div>
@@ -174,33 +157,23 @@ export function OrganizationMemberProjectWorkspace({
               <ArtifactList rows={recentExports} icon={Download} compact />
             </WorkspacePanel>
 
-            <section className="project-progress-card">
-              <header><div><Activity size={18} /><h2>Project Progress</h2></div></header>
-              <div>
-                <strong>72%</strong>
-                <div className="project-progress"><span style={{ width: '72%' }} /></div>
-                <p>Requirements reviewed and artifacts updated this sprint.</p>
+            <section className={cardClass}>
+              <header className={cardHeader}><div className="flex items-center gap-2 text-brand-600"><Activity size={18} /><h2 className="text-base font-bold text-slate-950">Project Progress</h2></div></header>
+              <div className="grid gap-3 p-4"><strong className="text-3xl text-slate-950">72%</strong><div className="h-2 overflow-hidden rounded-full bg-slate-100"><span className="block h-full rounded-full bg-brand-600" style={{ width: '72%' }} /></div><p className="text-sm leading-5 text-slate-500">Requirements reviewed and artifacts updated this sprint.</p>
               </div>
             </section>
           </div>
         </main>
 
-        <aside className="workspace-activity-card" id="workspace-activity">
-          <header>
-            <div><MessageSquare size={18} /><h2>Activity Comments</h2></div>
-            <button type="button">All Activity <ChevronDown size={14} /></button>
+        <aside className={cardClass} id="workspace-activity">
+          <header className={cardHeader}><div className="flex items-center gap-2 text-brand-600"><MessageSquare size={18} /><h2 className="text-base font-bold text-slate-950">Activity Comments</h2></div><button className={`${textButton} flex items-center gap-1`} type="button">All Activity <ChevronDown size={14} /></button>
           </header>
-          <div className="workspace-comment-list">
+          <div className="grid px-4 pb-4">
             {comments.map((comment) => (
-              <article className="workspace-comment" key={`${comment.author}-${comment.title}`}>
-                <span className={`comment-avatar tone-${comment.tone}`}>{initials(comment.author)}</span>
-                <div>
-                  <strong>{comment.author}</strong>
-                  <small>{comment.title}</small>
-                  <p>{comment.body}</p>
-                  <button type="button">Reply</button>
-                </div>
-                <time>{comment.time}</time>
+              <article className="flex gap-3 border-t border-slate-100 py-3 first:border-t-0" key={`${comment.author}-${comment.title}`}>
+                <span className={avatarClass(comment.tone)}>{initials(comment.author)}</span>
+                <div className="min-w-0 flex-1"><strong className="block text-sm text-slate-900">{comment.author}</strong><small className="text-xs text-slate-500">{comment.title}</small><p className="mt-1 text-sm leading-5 text-slate-600">{comment.body}</p><button className="mt-2 text-xs font-bold text-brand-600" type="button">Reply</button></div>
+                <time className="whitespace-nowrap text-xs text-slate-500">{comment.time}</time>
               </article>
             ))}
           </div>
@@ -212,19 +185,16 @@ export function OrganizationMemberProjectWorkspace({
 
 function WorkspaceTopbar({ workspaceName, user }: { workspaceName: string; user: AuthUser }) {
   return (
-    <header className="member-workspace-topbar">
-      <button className="member-workspace-select" type="button">
+    <header className="grid gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm lg:grid-cols-[16rem_minmax(0,1fr)_auto] lg:items-center">
+      <button className="flex min-h-10 items-center justify-between rounded-lg border border-slate-200 px-3 text-sm font-bold text-slate-700" type="button">
         {workspaceName}
         <ChevronDown size={16} />
       </button>
-      <label className="member-workspace-search">
+      <label className="flex min-h-10 items-center gap-2 rounded-lg border border-slate-200 px-3 text-slate-400">
         <Search size={18} />
-        <input placeholder="Search project artifacts..." />
-        <kbd>Ctrl K</kbd>
+        <input className="min-w-0 flex-1 text-sm text-slate-800 outline-none" placeholder="Search project artifacts..." /><kbd className="rounded border border-slate-200 px-1.5 py-0.5 text-[10px] font-semibold text-slate-400">Ctrl K</kbd>
       </label>
-      <div className="member-workspace-toolbar">
-        <button type="button" aria-label="Notifications"><Bell size={19} /><span>3</span></button>
-        <button className="workspace-user-avatar" type="button" aria-label={user.full_name}>{initials(user.full_name)}</button>
+      <div className="flex items-center gap-2 lg:justify-end"><button className="relative grid size-9 place-items-center rounded-full text-slate-600 hover:bg-slate-100" type="button" aria-label="Notifications"><Bell size={19} /><span className="absolute -right-1 -top-1 grid size-4 place-items-center rounded-full border-2 border-white bg-brand-600 text-[10px] font-bold text-white">3</span></button><button className="grid size-9 place-items-center rounded-full bg-brand-600 text-xs font-bold text-white" type="button" aria-label={user.full_name}>{initials(user.full_name)}</button>
       </div>
     </header>
   )
@@ -237,9 +207,7 @@ function WorkspaceStat({ icon: Icon, label, value, tone }: {
   tone: Tone
 }) {
   return (
-    <article className="workspace-stat-card">
-      <span className={`workspace-stat-icon tone-${tone}`}><Icon size={23} /></span>
-      <div><strong>{value}</strong><small>{label}</small></div>
+    <article className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><span className={iconClass(tone)}><Icon size={21} /></span><div><strong className="block text-2xl text-slate-950">{value}</strong><small className="text-xs font-semibold text-slate-500">{label}</small></div>
     </article>
   )
 }
@@ -252,11 +220,8 @@ function WorkspacePanel({ title, icon: Icon, action, id, children }: {
   children: ReactNode
 }) {
   return (
-    <section className="member-workspace-panel" id={id}>
-      <header>
-        <div><Icon size={18} /><h2>{title}</h2></div>
-        {action ? <button type="button"><Plus size={15} />{action}</button> : null}
-      </header>
+    <section className={cardClass} id={id}>
+      <header className={cardHeader}><div className="flex items-center gap-2 text-brand-600"><Icon size={18} /><h2 className="text-base font-bold text-slate-950">{title}</h2></div>{action ? <button className="flex items-center gap-1 text-xs font-bold text-brand-600" type="button"><Plus size={15} />{action}</button> : null}</header>
       {children}
     </section>
   )
@@ -268,13 +233,11 @@ function ArtifactList({ rows, icon: Icon, compact = false }: {
   compact?: boolean
 }) {
   return (
-    <div className={compact ? 'workspace-artifact-list compact' : 'workspace-artifact-list'}>
+    <div className={`grid px-4 pb-4 ${compact ? '' : ''}`}>
       {rows.map((row) => {
         const RowIcon = row.icon ?? Icon
         return (
-          <article className="workspace-artifact-row" key={row.title}>
-            <span className={`artifact-workspace-icon tone-${row.tone}`}><RowIcon size={17} /></span>
-            <div><strong>{row.title}</strong><small>{row.meta}</small></div>
+          <article className="flex items-center gap-3 border-t border-slate-100 py-3 first:border-t-0" key={row.title}><span className={iconClass(row.tone)}><RowIcon size={17} /></span><div className="min-w-0 flex-1"><strong className="block truncate text-sm text-slate-900">{row.title}</strong><small className="mt-1 block text-xs text-slate-500">{row.meta}</small></div>
             {row.status ? <StatusPill tone={row.tone}>{row.status}</StatusPill> : null}
           </article>
         )
@@ -284,8 +247,17 @@ function ArtifactList({ rows, icon: Icon, compact = false }: {
 }
 
 function StatusPill({ tone, children }: { tone: Tone; children: string }) {
-  return <span className={`workspace-status-pill tone-${tone}`}>{children}</span>
+  return <span className={tagClass(tone)}>{children}</span>
 }
+
+const cardClass = 'overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm'
+const cardHeader = 'flex min-h-14 items-center justify-between gap-3 border-b border-slate-100 px-4'
+const textButton = 'rounded-md px-2 py-1 text-xs font-bold text-brand-600 hover:bg-brand-50'
+function toneClass(tone: Tone) { return tone === 'purple' ? 'bg-brand-100 text-brand-700' : tone === 'blue' ? 'bg-sky-100 text-sky-700' : tone === 'green' ? 'bg-emerald-100 text-emerald-700' : tone === 'orange' ? 'bg-orange-100 text-orange-700' : tone === 'red' ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-600' }
+function iconClass(tone: Tone) { return `grid size-10 shrink-0 place-items-center rounded-lg ${toneClass(tone)}` }
+function tagClass(tone: Tone) { return `inline-flex shrink-0 rounded-full px-2 py-1 text-xs font-bold ${toneClass(tone)}` }
+function dotClass(tone: Tone) { return `size-2 shrink-0 rounded-full ${toneClass(tone).split(' ')[0]}` }
+function avatarClass(tone: Tone) { return `grid size-9 shrink-0 place-items-center rounded-full text-xs font-bold ${toneClass(tone)}` }
 
 const requirementRows = mockRequirements.slice(0, 5).map((requirement, index) => ({
   code: requirement.code,
