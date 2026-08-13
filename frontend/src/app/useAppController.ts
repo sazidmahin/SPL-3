@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { fetchCurrentUser } from '../domains/auth/api'
+import { deleteAiCredential, fetchAiProviders, patchAiCredential, saveAiCredential, testAiCredential } from '../domains/aiSettings/api'
+import type { AiProviderId, AiProviderSetting } from '../domains/aiSettings/types'
 import { clearStoredSession, readStoredSession, writeStoredSession } from '../domains/auth/sessionStorage'
 import type { AuthSession } from '../domains/auth/types'
 import { checkoutPlan as checkoutPlanRequest, fetchBillingSummary } from '../domains/billing/api'
@@ -28,6 +30,8 @@ import {
 } from '../domains/srs/api'
 import type { AiSrsGenerateResponse, ClarificationAnswer, GenerationJob, SrsDocument, SrsPipelineResponse } from '../domains/srs/types'
 import type { WorkspaceMembership } from '../domains/workspace/types'
+import { approvePipelineStage, createPipelineRun, fetchPipelineRuns, reopenPipelineStage, savePipelineStage } from '../domains/generationPipeline/api'
+import type { GenerationMode, PipelineRun, PipelineStage } from '../domains/generationPipeline/types'
 import { filenameFromContentDisposition, downloadTextFile } from '../shared/download'
 import { isUnauthorizedError } from '../shared/apiClient'
 import { useAuthForm } from './hooks/useAuthForm'
@@ -47,6 +51,8 @@ export function useAppController() {
   const [generationJobs, setGenerationJobs] = useState<GenerationJob[]>([])
   const [srsDocuments, setSrsDocuments] = useState<SrsDocument[]>([])
   const [activeSrsDocument, setActiveSrsDocument] = useState<SrsDocument | null>(null)
+  const [pipelineRuns, setPipelineRuns] = useState<PipelineRun[]>([])
+  const [aiProviders, setAiProviders] = useState<AiProviderSetting[]>([])
   const [plans, setPlans] = useState<Plan[]>([])
   const [subscription, setSubscription] = useState<Subscription | null>(null)
   const [usage, setUsage] = useState<Usage | null>(null)
@@ -74,6 +80,7 @@ export function useAppController() {
   const [isCheckingOut, setIsCheckingOut] = useState(false)
   const [isStartingGeneration, setIsStartingGeneration] = useState(false)
   const [isGeneratingClassDiagram, setIsGeneratingClassDiagram] = useState(false)
+  const [isLoadingAiProviders, setIsLoadingAiProviders] = useState(false)
   const didValidateStoredSession = useRef(false)
 
   const activeWorkspace = useMemo(
@@ -143,6 +150,8 @@ export function useAppController() {
     setGenerationJobs([])
     setSrsDocuments([])
     setActiveSrsDocument(null)
+    setPipelineRuns([])
+    setPipelineRuns([])
     setActiveProjectId(null)
     setActiveDiagramId(null)
     setDiagramXml(BLANK_DRAWIO_XML)
@@ -206,6 +215,15 @@ export function useAppController() {
     } finally {
       setIsLoadingGenerationJobs(false)
     }
+  }
+
+  async function loadPipelineRuns(authSession: AuthSession, workspaceId: string, projectId: string) {
+    try { setPipelineRuns(await fetchPipelineRuns(authSession.access_token, workspaceId, projectId)) } catch (caught) { setError(handleRequestError(caught, 'Unable to load generation pipeline')) }
+  }
+
+  async function loadAiProviderSettings(authSession: AuthSession) {
+    setIsLoadingAiProviders(true)
+    try { setAiProviders(await fetchAiProviders(authSession.access_token)) } catch (caught) { setError(handleRequestError(caught, 'Unable to load AI provider settings')) } finally { setIsLoadingAiProviders(false) }
   }
 
   async function loadSrsDocumentDetail(
@@ -294,6 +312,7 @@ export function useAppController() {
           loadDiagrams(authSession, workspaceId, nextProjectId),
           loadGenerationJobs(authSession, workspaceId, nextProjectId),
           loadSrsDocuments(authSession, workspaceId, nextProjectId),
+          loadPipelineRuns(authSession, workspaceId, nextProjectId),
         ])
       } else {
         clearProjectState()
@@ -321,7 +340,7 @@ export function useAppController() {
       writeStoredSession(nextSession)
       if (nextWorkspaceId) {
         window.localStorage.setItem(WORKSPACE_STORAGE_KEY, nextWorkspaceId)
-        await Promise.all([loadBilling(nextSession, nextWorkspaceId), loadProjects(nextSession, nextWorkspaceId)])
+        await Promise.all([loadBilling(nextSession, nextWorkspaceId), loadProjects(nextSession, nextWorkspaceId), loadAiProviderSettings(nextSession)])
       } else {
         setSubscription(null)
         setUsage(null)
@@ -879,9 +898,56 @@ export function useAppController() {
       void Promise.all([
         loadGenerationJobs(session, activeWorkspace.workspace.id, activeProject.id),
         loadSrsDocuments(session, activeWorkspace.workspace.id, activeProject.id),
+        loadPipelineRuns(session, activeWorkspace.workspace.id, activeProject.id),
       ])
     }
   }
+
+  function requirePipelineContext() {
+    if (!session || !activeWorkspace || !activeProject) throw new Error('Select a workspace and project before using the generation pipeline')
+    return { accessToken: session.access_token, workspaceId: activeWorkspace.workspace.id, projectId: activeProject.id }
+  }
+
+  async function startPipeline(payload: { title: string; raw_text: string; generation_mode: GenerationMode }) {
+    const context = requirePipelineContext()
+    setIsStartingGeneration(true); setError(null)
+    try {
+      const run = await createPipelineRun(context.accessToken, context.workspaceId, context.projectId, payload)
+      setPipelineRuns((current) => [run, ...current.filter((item) => item.id !== run.id)])
+      return run
+    } catch (caught) { const message = handleRequestError(caught, 'Unable to start generation pipeline'); throw new Error(message) } finally { setIsStartingGeneration(false) }
+  }
+
+  async function savePipelineRevision(runId: string, stage: PipelineStage, payload: Record<string, unknown>, expectedVersion: number) {
+    const context = requirePipelineContext()
+    setIsStartingGeneration(true); setError(null)
+    try {
+      const revision = await savePipelineStage(context.accessToken, context.workspaceId, context.projectId, runId, stage, payload, expectedVersion)
+      setPipelineRuns((current) => current.map((run) => run.id !== runId ? run : { ...run, current_stage: stage, status: 'ready_for_review', stages: [...run.stages.filter((item) => item.stage_name !== stage), revision] }))
+      return revision
+    } catch (caught) { const message = handleRequestError(caught, 'Unable to save pipeline draft'); throw new Error(message) } finally { setIsStartingGeneration(false) }
+  }
+
+  async function approvePipelineRevision(runId: string, stage: PipelineStage, version: number) {
+    const context = requirePipelineContext()
+    setIsStartingGeneration(true); setError(null)
+    try {
+      const run = await approvePipelineStage(context.accessToken, context.workspaceId, context.projectId, runId, stage, version)
+      setPipelineRuns((current) => current.map((item) => item.id === run.id ? run : item)); return run
+    } catch (caught) { const message = handleRequestError(caught, 'Unable to approve pipeline stage'); throw new Error(message) } finally { setIsStartingGeneration(false) }
+  }
+
+  async function reopenPipelineRevision(runId: string, stage: PipelineStage) {
+    const context = requirePipelineContext()
+    const revision = await reopenPipelineStage(context.accessToken, context.workspaceId, context.projectId, runId, stage)
+    setPipelineRuns((current) => current.map((run) => run.id !== runId ? run : { ...run, current_stage: stage, status: 'ready_for_review', stages: [...run.stages.filter((item) => item.stage_name !== stage), revision] }))
+  }
+
+  async function refreshAiProviders() { if (session) await loadAiProviderSettings(session) }
+  async function saveProviderCredential(provider: AiProviderId, payload: { api_key: string; selected_model: string; is_default: boolean }) { if (!session) throw new Error('Sign in to save an API key'); await saveAiCredential(session.access_token, provider, payload); await refreshAiProviders() }
+  async function patchProviderCredential(provider: AiProviderId, payload: { selected_model?: string; is_default?: boolean }) { if (!session) throw new Error('Sign in to update an API key'); await patchAiCredential(session.access_token, provider, payload); await refreshAiProviders() }
+  async function testProviderCredential(provider: AiProviderId) { if (!session) throw new Error('Sign in to test an API key'); await testAiCredential(session.access_token, provider); await refreshAiProviders() }
+  async function removeProviderCredential(provider: AiProviderId) { if (!session) throw new Error('Sign in to remove an API key'); await deleteAiCredential(session.access_token, provider); await refreshAiProviders() }
 
   function reloadDiagrams() {
     if (session && activeWorkspace && activeProject) {
@@ -988,6 +1054,20 @@ export function useAppController() {
       onRunIntake: runSrsGenerationIntake,
       onSubmitClarifications: answerSrsGenerationClarifications,
       onGenerateFromRequirement: generateSrsFromReadyInput,
+      pipelineRuns,
+      aiProviders,
+      onStartPipeline: startPipeline,
+      onSavePipelineRevision: savePipelineRevision,
+      onApprovePipelineRevision: approvePipelineRevision,
+      onReopenPipelineRevision: reopenPipelineRevision,
+    },
+    aiSettingsPanel: {
+      aiProviders,
+      aiSettingsLoading: isLoadingAiProviders,
+      onSaveAiCredential: saveProviderCredential,
+      onPatchAiCredential: patchProviderCredential,
+      onTestAiCredential: testProviderCredential,
+      onDeleteAiCredential: removeProviderCredential,
     },
     diagramsPanel: {
       activeWorkspace,

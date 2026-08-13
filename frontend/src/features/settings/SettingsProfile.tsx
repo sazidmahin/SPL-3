@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import {
   Bell,
   Camera,
@@ -12,10 +13,17 @@ import {
   User,
 } from 'lucide-react'
 import type { AuthUser } from '../../domains/auth/types'
+import type { AiProviderId, AiProviderSetting } from '../../domains/aiSettings/types'
 import './SettingsProfile.css'
 
 type SettingsProfileProps = {
   user: AuthUser
+  aiProviders?: AiProviderSetting[]
+  aiSettingsLoading?: boolean
+  onSaveAiCredential?: (provider: AiProviderId, payload: { api_key: string; selected_model: string; is_default: boolean }) => Promise<void>
+  onTestAiCredential?: (provider: AiProviderId) => Promise<void>
+  onPatchAiCredential?: (provider: AiProviderId, payload: { selected_model?: string; is_default?: boolean }) => Promise<void>
+  onDeleteAiCredential?: (provider: AiProviderId) => Promise<void>
 }
 
 type SettingsSection = {
@@ -30,6 +38,7 @@ const settingsSections: SettingsSection[] = [
   { id: 'notifications', label: 'Notifications', icon: Bell },
   { id: 'preferences', label: 'Preferences', icon: SlidersHorizontal },
   { id: 'security', label: 'Security', icon: Shield },
+  { id: 'ai-providers', label: 'AI Providers', icon: KeyRound },
   { id: 'export', label: 'Export Preferences', icon: FileOutput },
 ]
 
@@ -42,7 +51,7 @@ const notificationRows = [
 
 const passwordRules = ['At least 8 characters', 'One uppercase letter', 'One lowercase letter', 'One number or symbol']
 
-export function SettingsProfile({ user }: SettingsProfileProps) {
+export function SettingsProfile({ user, aiProviders = [], aiSettingsLoading = false, onSaveAiCredential, onTestAiCredential, onPatchAiCredential, onDeleteAiCredential }: SettingsProfileProps) {
   const fullName = user.full_name || 'John Doe'
   const email = user.email || 'john.doe@example.com'
 
@@ -61,6 +70,7 @@ export function SettingsProfile({ user }: SettingsProfileProps) {
           <NotificationsCard />
           <PreferencesCard />
           <ExportPreferencesCard />
+          <AiProvidersCard providers={aiProviders} loading={aiSettingsLoading} onSave={onSaveAiCredential} onTest={onTestAiCredential} onPatch={onPatchAiCredential} onDelete={onDeleteAiCredential} />
         </div>
       </div>
 
@@ -78,6 +88,27 @@ export function SettingsProfile({ user }: SettingsProfileProps) {
       </div>
     </section>
   )
+}
+
+function AiProvidersCard({ providers, loading, onSave, onTest, onPatch, onDelete }: {
+  providers: AiProviderSetting[]; loading: boolean
+  onSave?: SettingsProfileProps['onSaveAiCredential']; onTest?: SettingsProfileProps['onTestAiCredential']; onPatch?: SettingsProfileProps['onPatchAiCredential']; onDelete?: SettingsProfileProps['onDeleteAiCredential']
+}) {
+  return <section className="settings-card ai-providers-card" id="ai-providers"><header><div><h2>AI Providers</h2><p>Configure your personal API credentials for AI-Gen. Keys are encrypted and never shown again.</p></div></header>
+    {loading ? <p>Loading providers…</p> : providers.map((provider) => <ProviderCard key={provider.provider} provider={provider} onSave={onSave} onTest={onTest} onPatch={onPatch} onDelete={onDelete} />)}
+    {!loading && providers.length === 0 ? <p>Provider settings are unavailable right now.</p> : null}
+  </section>
+}
+
+function ProviderCard({ provider, onSave, onTest, onPatch, onDelete }: { provider: AiProviderSetting; onSave?: SettingsProfileProps['onSaveAiCredential']; onTest?: SettingsProfileProps['onTestAiCredential']; onPatch?: SettingsProfileProps['onPatchAiCredential']; onDelete?: SettingsProfileProps['onDeleteAiCredential'] }) {
+  const [apiKey, setApiKey] = useState(''); const [model, setModel] = useState(provider.credential?.selected_model ?? provider.default_model); const [busy, setBusy] = useState(false); const credential = provider.credential
+  async function execute(action: () => Promise<void>) { setBusy(true); try { await action() } finally { setBusy(false) } }
+  return <article className="provider-card"><header><div><h3>{provider.label}</h3><p>{credential?.configured ? `Configured •••• ${credential.key_last_four}${credential.is_default ? ' · Active for AI-Gen' : ''}` : 'No API key configured'}</p></div><span className={credential?.status === 'valid' ? 'provider-status valid' : 'provider-status'}>{credential?.status ?? 'unconfigured'}</span></header>
+    <label>Model<select value={model} onChange={(event) => setModel(event.target.value)}>{provider.models.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+    <label>API key<input type="password" autoComplete="off" value={apiKey} placeholder={credential ? 'Enter a new key to replace the saved key' : 'Paste your API key'} onChange={(event) => setApiKey(event.target.value)} /></label>
+    <footer><button type="button" disabled={busy || !apiKey.trim()} onClick={() => void execute(async () => { await onSave?.(provider.provider, { api_key: apiKey.trim(), selected_model: model, is_default: credential?.is_default ?? false }); setApiKey('') })}>Save key</button>
+      {credential ? <><button type="button" disabled={busy} onClick={() => void execute(async () => { await onPatch?.(provider.provider, { selected_model: model }) })}>Save model</button><button type="button" disabled={busy} onClick={() => void execute(async () => { await onTest?.(provider.provider) })}>Test connection</button><button type="button" disabled={busy || credential.is_default} onClick={() => void execute(async () => { await onPatch?.(provider.provider, { is_default: true }) })}>Use for AI-Gen</button><button className="danger" type="button" disabled={busy} onClick={() => { if (window.confirm(`Remove the ${provider.label} credential?`)) void execute(async () => onDelete?.(provider.provider)) }}>Remove</button></> : null}</footer>
+  </article>
 }
 
 function SettingsNav({ active, compact = false }: { active: string; compact?: boolean }) {

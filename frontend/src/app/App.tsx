@@ -448,18 +448,17 @@ export function App() {
 
     if (activeSection === 'settings' && isOrganizationAdmin) {
       return (
-        <OrganizationBillingSettings
-          activeWorkspace={activeWorkspace}
-          subscription={subscription}
-          usage={controller.billingPanel.usage}
-        />
+        <section className="workbench-layout">
+          <div className="workbench-main"><SettingsProfile user={currentUser} {...controller.aiSettingsPanel} /></div>
+          {workspaceTools}
+        </section>
       )
     }
 
     if (['profile', 'settings', 'admin', 'members'].includes(activeSection)) {
       return (
         <section className="workbench-layout">
-          <div className="workbench-main"><SettingsProfile user={currentUser} /></div>
+          <div className="workbench-main"><SettingsProfile user={currentUser} {...controller.aiSettingsPanel} /></div>
           {workspaceTools}
         </section>
       )
