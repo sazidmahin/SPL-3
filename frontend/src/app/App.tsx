@@ -49,7 +49,7 @@ import { SuperAdminPlatformDashboard } from '../features/superAdmin/SuperAdminPl
 import { SuperAdminPlatformPage } from '../features/superAdmin/SuperAdminPlatformPages'
 import type { SuperAdminSection } from '../features/superAdmin/SuperAdminPlatformPages'
 import { FooterSection } from '../features/footer/FooterSection'
-import { SettingsProfile } from '../features/settings/SettingsProfile'
+import { AiSettingsPanel, SettingsProfile } from '../features/settings/SettingsProfile'
 import { SrsGenerationFlow } from '../features/srs/SrsGenerationFlow'
 import { SrsPanel } from '../features/srs/SrsPanel'
 import { UpgradeFlow } from '../features/upgrade/UpgradeFlow'
@@ -78,6 +78,7 @@ type SectionId =
   | 'invoices'
   | 'profile'
   | 'settings'
+  | 'ai-settings'
   | 'platform-settings'
   | 'audit-logs'
   | 'feature-flags'
@@ -112,6 +113,7 @@ const validSections = new Set<SectionId>([
   'invoices',
   'profile',
   'settings',
+  'ai-settings',
   'platform-settings',
   'audit-logs',
   'feature-flags',
@@ -211,6 +213,7 @@ export function App() {
       title: 'Configuration',
       items: [
         { id: 'prompt-templates', label: 'Prompt Templates', icon: MessageSquare },
+        { id: 'ai-settings', label: 'AI Settings', icon: Bot },
         { id: 'platform-settings', label: 'Platform Settings', icon: Settings },
         { id: 'feature-flags', label: 'Feature Flags', icon: Flag },
         { id: 'integrations', label: 'Integrations', icon: Plug },
@@ -240,6 +243,7 @@ export function App() {
     { id: 'srs', label: 'SRS Documents', icon: FileText },
     { id: 'diagram-editor', label: 'Diagrams', icon: Network },
     { id: 'ai-jobs', label: 'AI Generation Jobs', icon: WandSparkles },
+    { id: 'ai-settings', label: 'AI Settings', icon: Bot },
     { id: 'members', label: 'Members', icon: UserCircle },
     { id: 'prompt-templates', label: 'Prompt Templates', icon: BriefcaseBusiness },
     { id: 'billing', label: 'Billing', icon: CircleDollarSign },
@@ -262,6 +266,7 @@ export function App() {
   const accountNavItems: Array<{ id: SectionId; label: string; icon: LucideIcon }> = isSuperAdmin ? [] : [
     { id: 'profile', label: 'Profile', icon: UserCircle },
     { id: 'settings', label: 'Settings', icon: Settings },
+    { id: 'ai-settings', label: 'AI Settings', icon: Bot },
   ]
 
   const workspaceTools = (
@@ -304,6 +309,15 @@ export function App() {
   )
 
   function renderActiveSection() {
+    if (activeSection === 'ai-settings') {
+      return (
+        <section className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_23.75rem]">
+          <div className="min-w-0"><AiSettingsPanel {...controller.aiSettingsPanel} /></div>
+          {workspaceTools}
+        </section>
+      )
+    }
+
     if (isSuperAdmin) {
       const superAdminSection = superAdminSectionFrom(activeSection)
 
@@ -455,7 +469,7 @@ export function App() {
       )
     }
 
-    if (['profile', 'settings', 'admin', 'members'].includes(activeSection)) {
+    if (['profile', 'settings', 'ai-settings', 'admin', 'members'].includes(activeSection)) {
       return (
         <section className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_23.75rem]">
           <div className="min-w-0"><SettingsProfile user={currentUser} {...controller.aiSettingsPanel} /></div>

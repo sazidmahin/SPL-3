@@ -1,5 +1,8 @@
 from datetime import UTC, datetime
+import json
 from typing import Any
+from urllib.error import URLError
+from urllib.request import Request, urlopen
 from uuid import UUID
 
 from sqlalchemy import select, update
@@ -74,10 +77,43 @@ def list_ai_provider_settings(db: Session, *, user_id: UUID) -> list[dict[str, A
     return response
 
 
+def list_models_for_credential(db: Session, *, user_id: UUID, provider: str) -> list[str]:
+    credential = get_ai_credential(db, user_id=user_id, provider=provider)
+    api_key = decrypt_api_key(credential.encrypted_api_key)
+    try:
+        models = _fetch_provider_models(credential.provider, api_key)
+    except (OSError, ValueError, KeyError, URLError) as exc:
+        raise AiSettingsError("Unable to load models from this provider") from exc
+    if not models:
+        raise AiSettingsError("This provider did not return any compatible generation models")
+    return models
+
+
+def _fetch_provider_models(provider: str, api_key: str) -> list[str]:
+    if provider == "openai":
+        payload = _fetch_json("https://api.openai.com/v1/models", {"Authorization": f"Bearer {api_key}"})
+        return sorted({str(item["id"]) for item in payload.get("data", []) if str(item.get("id", "")).startswith(("gpt-", "o"))})
+    if provider == "anthropic":
+        payload = _fetch_json("https://api.anthropic.com/v1/models?limit=1000", {"x-api-key": api_key, "anthropic-version": "2023-06-01"})
+        return sorted({str(item["id"]) for item in payload.get("data", []) if item.get("id")})
+    if provider == "gemini":
+        payload = _fetch_json(f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}")
+        return sorted({str(item["name"]).removeprefix("models/") for item in payload.get("models", []) if "generateContent" in item.get("supportedGenerationMethods", [])})
+    raise AiSettingsError("Unsupported AI provider")
+
+
+def _fetch_json(url: str, headers: dict[str, str] | None = None) -> dict[str, Any]:
+    request = Request(url, headers=headers or {})
+    with urlopen(request, timeout=15) as response:  # noqa: S310 - endpoints are fixed provider APIs
+        return json.loads(response.read().decode("utf-8"))
+
+
 def _validate_model(provider: str, model_name: str) -> str:
     cleaned = model_name.strip()
-    if cleaned not in _models(provider):
-        raise AiSettingsError(f"Model is not enabled for {provider}: {cleaned}")
+    if not cleaned:
+        raise AiSettingsError("Model name is required")
+    if len(cleaned) > 255:
+        raise AiSettingsError("Model name is too long")
     return cleaned
 
 

@@ -153,6 +153,11 @@ def test_ai_settings_encrypt_key_and_gate_ai_gen(
     workspace_id, project_id = setup_project(client, token)
     base_url = pipeline_url(workspace_id, project_id)
 
+    providers = client.get("/api/v1/users/me/ai-settings/providers", headers=auth_header(token))
+    assert providers.status_code == 200, providers.text
+    openai = next(provider for provider in providers.json() if provider["provider"] == "openai")
+    assert {"gpt-5.6", "gpt-5.5", "gpt-5.4", "gpt-5.4-mini"}.issubset(openai["models"])
+
     blocked = client.post(
         base_url,
         headers=auth_header(token),
@@ -173,6 +178,26 @@ def test_ai_settings_encrypt_key_and_gate_ai_gen(
     assert stored is not None
     assert stored.encrypted_api_key != api_key
     assert api_key not in stored.encrypted_api_key
+
+    monkeypatch.setattr(
+        "app.services.ai_settings_service._fetch_provider_models",
+        lambda provider, key: ["gpt-4.1", "gpt-4.1-nano"],
+    )
+    models = client.get(
+        "/api/v1/users/me/ai-settings/credentials/openai/models",
+        headers=auth_header(token),
+    )
+    assert models.status_code == 200, models.text
+    assert models.json() == ["gpt-4.1", "gpt-4.1-nano"]
+
+    custom_model = "gpt-5.4"
+    updated = client.patch(
+        "/api/v1/users/me/ai-settings/credentials/openai",
+        headers=auth_header(token),
+        json={"selected_model": custom_model},
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["selected_model"] == custom_model
 
     class HealthyClient:
         provider = "openai"
@@ -205,6 +230,5 @@ def test_ai_settings_encrypt_key_and_gate_ai_gen(
     assert created.status_code == 201, created.text
     assert created.json()["generation_mode"] == "byok"
     assert created.json()["provider"] == "openai"
-    assert created.json()["model_name"] == "gpt-4o-mini"
+    assert created.json()["model_name"] == custom_model
     assert api_key not in created.text
-
