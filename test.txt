@@ -1,0 +1,11 @@
+ I want to build a web-based project management system for small software teams. Users should be able to sign
+  > up, create a workspace, invite team members, and create multiple projects. Inside a project, they should be
+  > able to create tasks, assign tasks to users, set priority and due dates, and update task status like todo, in
+  > progress, and completed.
+  >
+  > There should be a dashboard showing upcoming tasks, overdue tasks, project progress, and team activity. Users
+  > need notifications for task assignments, comments, and due dates. Managers should be able to see reports
+  > about completed work and team performance.
+  >
+  > We also need user roles such as admin, manager, and member. Admins can manage workspace settings and billing.
+  > It should work well on desktop and mobile, be secure, and support email login and password reset.

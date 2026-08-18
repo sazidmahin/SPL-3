@@ -14,6 +14,7 @@ from app.services.ai_settings_service import (
     AiSettingsError,
     delete_ai_credential,
     list_ai_provider_settings,
+    list_models_for_credential,
     save_ai_credential,
     test_ai_credential,
     update_ai_credential,
@@ -31,6 +32,18 @@ def _raise_settings_error(exc: Exception) -> HTTPException:
 @router.get("/providers", response_model=list[AiProviderSettingRead])
 def get_providers(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> list[dict]:
     return list_ai_provider_settings(db, user_id=user.id)
+
+
+@router.get("/credentials/{provider}/models", response_model=list[str])
+def get_credential_models(
+    provider: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[str]:
+    try:
+        return list_models_for_credential(db, user_id=user.id, provider=provider)
+    except AiSettingsError as exc:
+        raise _raise_settings_error(exc) from exc
 
 
 @router.put("/credentials/{provider}", response_model=AiCredentialSafeRead)
@@ -82,4 +95,3 @@ def remove_credential(
     except AiSettingsError as exc:
         raise _raise_settings_error(exc) from exc
     return Response(status_code=status.HTTP_204_NO_CONTENT)
-

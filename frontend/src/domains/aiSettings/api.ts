@@ -7,6 +7,10 @@ export async function fetchAiProviders(accessToken: string) {
   return parseApiResponse<AiProviderSetting[]>(await fetch(`${baseUrl}/providers`, { headers: authHeaders(accessToken) }))
 }
 
+export async function fetchCredentialModels(accessToken: string, provider: AiProviderId) {
+  return parseApiResponse<string[]>(await fetch(`${baseUrl}/credentials/${provider}/models`, { headers: authHeaders(accessToken) }))
+}
+
 export async function saveAiCredential(accessToken: string, provider: AiProviderId, payload: { api_key: string; selected_model: string; is_default: boolean }) {
   return parseApiResponse<AiCredential>(await fetch(`${baseUrl}/credentials/${provider}`, {
     method: 'PUT', headers: jsonAuthHeaders(accessToken), body: JSON.stringify(payload),

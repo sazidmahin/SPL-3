@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { fetchCurrentUser } from '../domains/auth/api'
-import { deleteAiCredential, fetchAiProviders, patchAiCredential, saveAiCredential, testAiCredential } from '../domains/aiSettings/api'
+import { deleteAiCredential, fetchAiProviders, fetchCredentialModels, patchAiCredential, saveAiCredential, testAiCredential } from '../domains/aiSettings/api'
 import type { AiProviderId, AiProviderSetting } from '../domains/aiSettings/types'
 import { clearStoredSession, readStoredSession, writeStoredSession } from '../domains/auth/sessionStorage'
 import type { AuthSession } from '../domains/auth/types'
@@ -944,6 +944,7 @@ export function useAppController() {
   }
 
   async function refreshAiProviders() { if (session) await loadAiProviderSettings(session) }
+  async function loadProviderModels(provider: AiProviderId) { if (!session) throw new Error('Sign in to load provider models'); return fetchCredentialModels(session.access_token, provider) }
   async function saveProviderCredential(provider: AiProviderId, payload: { api_key: string; selected_model: string; is_default: boolean }) { if (!session) throw new Error('Sign in to save an API key'); await saveAiCredential(session.access_token, provider, payload); await refreshAiProviders() }
   async function patchProviderCredential(provider: AiProviderId, payload: { selected_model?: string; is_default?: boolean }) { if (!session) throw new Error('Sign in to update an API key'); await patchAiCredential(session.access_token, provider, payload); await refreshAiProviders() }
   async function testProviderCredential(provider: AiProviderId) { if (!session) throw new Error('Sign in to test an API key'); await testAiCredential(session.access_token, provider); await refreshAiProviders() }
@@ -1068,6 +1069,7 @@ export function useAppController() {
       onPatchAiCredential: patchProviderCredential,
       onTestAiCredential: testProviderCredential,
       onDeleteAiCredential: removeProviderCredential,
+      onLoadProviderModels: loadProviderModels,
     },
     diagramsPanel: {
       activeWorkspace,

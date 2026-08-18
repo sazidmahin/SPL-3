@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from copy import deepcopy
 from datetime import UTC, datetime
@@ -42,6 +43,7 @@ PIPELINE_STAGES = ["input", "clarifications", "final-story", "requirements", "cl
 GENERATION_MODES = {"rule_based", "srsgen", "byok"}
 PIPELINE_MUTATION_ROLES = {"owner", "admin", "member"}
 JSON_OBJECT_PATTERN = re.compile(r"\{.*\}", re.DOTALL)
+logger = logging.getLogger(__name__)
 
 
 class GenerationPipelineError(Exception):
@@ -576,7 +578,51 @@ def approve_stage(
         raise GenerationPipelineStateError("Approve the exact current stage version")
     if revision.status not in {"ready_for_review", "approved"}:
         raise GenerationPipelineStateError("Stage is not ready for approval")
-    _validate_stage_payload(stage_name, revision.payload, approval=True)
+    try:
+        _validate_stage_payload(stage_name, revision.payload, approval=True)
+    except GenerationPipelineStateError as exc:
+        if stage_name == "clarifications":
+            questions = revision.payload.get("clarificationQuestions", [])
+            answers = revision.payload.get("answers", [])
+            open_question_ids = [
+                str(question.get("id"))
+                for question in questions
+                if isinstance(question, dict) and question.get("status", "open") == "open"
+            ]
+            answered_question_ids = [
+                str(answer.get("questionStableId") or answer.get("question_id") or answer.get("questionId"))
+                for answer in answers
+                if isinstance(answer, dict)
+                and (answer.get("answerText") or answer.get("answer") or answer.get("status") in {"skipped", "not_applicable"})
+            ]
+            unanswered_question_ids = sorted(set(open_question_ids) - set(answered_question_ids))
+            logger.warning(
+                "Pipeline clarification approval rejected: run_id=%s project_id=%s requested_version=%s "
+                "revision_version=%s revision_status=%s open_question_ids=%s answered_question_ids=%s "
+                "unanswered_question_ids=%s reason=%s",
+                run_id,
+                project_id,
+                version_number,
+                revision.version_number,
+                revision.status,
+                open_question_ids,
+                answered_question_ids,
+                unanswered_question_ids,
+                exc,
+            )
+        else:
+            logger.warning(
+                "Pipeline stage approval rejected: run_id=%s project_id=%s stage=%s requested_version=%s "
+                "revision_version=%s revision_status=%s reason=%s",
+                run_id,
+                project_id,
+                stage_name,
+                version_number,
+                revision.version_number,
+                revision.status,
+                exc,
+            )
+        raise
     revision.status = "approved"
     revision.approved_by_user_id = membership.user_id
     revision.approved_at = datetime.now(UTC)
