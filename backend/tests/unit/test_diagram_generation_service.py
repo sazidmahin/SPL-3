@@ -62,6 +62,76 @@ def test_method_normalization_and_model_merge() -> None:
     assert len(merged.classes) == len(first.classes)
 
 
+def test_rule_based_generator_extracts_explicit_attributes_and_types() -> None:
+    context = ClassDiagramContext(
+        title="Claims Class Diagram",
+        requirements=[
+            "A claim has claim number, amount, submission date and status.",
+            "A user has name, email and password.",
+        ],
+        source_id=uuid4(),
+        source_type="srs_document",
+    )
+
+    model = RuleBasedClassDiagramGenerator().generate(
+        None, workspace_id=uuid4(), project_id=uuid4(), context=context
+    )
+    classes = {diagram_class.name: diagram_class for diagram_class in model.classes}
+
+    assert classes["Claim"].attributes == [
+        "claimNumber: String",
+        "amount: Decimal",
+        "submissionDate: Date",
+        "status: String",
+    ]
+    assert classes["User"].attributes == [
+        "name: String",
+        "email: String",
+        "password: String",
+    ]
+
+
+def test_rule_based_attribute_extraction_keeps_domain_nouns_as_relationships() -> None:
+    context = ClassDiagramContext(
+        title="Accounts Class Diagram",
+        requirements=["A user has an account."],
+        source_id=uuid4(),
+        source_type="srs_document",
+    )
+
+    model = RuleBasedClassDiagramGenerator().generate(
+        None, workspace_id=uuid4(), project_id=uuid4(), context=context
+    )
+    classes = {diagram_class.name: diagram_class for diagram_class in model.classes}
+
+    assert classes["User"].attributes == ["id", "status"]
+    assert "Account" in classes
+
+
+def test_rule_based_generator_uses_multi_word_attribute_dictionary() -> None:
+    context = ClassDiagramContext(
+        title="Customer Class Diagram",
+        requirements=[
+            "A customer has the following fields: date of birth, phone number, postal code and is active.",
+        ],
+        source_id=uuid4(),
+        source_type="srs_document",
+    )
+
+    model = RuleBasedClassDiagramGenerator().generate(
+        None, workspace_id=uuid4(), project_id=uuid4(), context=context
+    )
+    classes = {diagram_class.name: diagram_class for diagram_class in model.classes}
+
+    assert set(classes) == {"Customer"}
+    assert classes["Customer"].attributes == [
+        "dateOfBirth: Date",
+        "phoneNumber: String",
+        "postalCode: String",
+        "isActive: Boolean",
+    ]
+
+
 def test_legacy_drawio_builder_uses_canonical_relationship_renderer() -> None:
     model = ClassDiagramModel(
         classes=[

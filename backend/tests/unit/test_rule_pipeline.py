@@ -95,6 +95,47 @@ def test_unknown_entities_are_detected_positionally() -> None:
     assert fact["object"] == "Manuscript"
 
 
+def test_extended_dictionary_recognizes_additional_action_and_relationship_phrases() -> None:
+    enrollment = analyze_text("A customer enrolls an event.")["facts"][0]
+    managed = analyze_text("A report is managed by a manager.")["facts"][0]
+
+    assert enrollment["action"] == "register"
+    assert managed["actor"] == "Report"
+    assert managed["object"] == "Manager"
+    assert managed["relationshipType"] == "association"
+
+
+def test_business_narrative_is_normalized_to_customer_and_administrator_user_stories() -> None:
+    raw_text = """
+    I have a small online clothing business and I want people to be able to see the clothes I sell.
+    If someone likes a dress or a shirt, they should be able to put it in their basket and buy more than one item together.
+    When a person buys something, I need to know their name, phone number, email and where the parcel should be sent.
+    After payment, they should get some kind of order number so they can ask us about their order later.
+    I also need to see all the orders that customers make. My staff should be able to check an order, accept it, pack the items and send it to the customer.
+    When we send the parcel, we should be able to keep a tracking number. I need to change the stock and price when needed.
+    I also want to know which customers buy often, because later I may give them special discounts or offers.
+    """
+    analysis = analyze_text(raw_text)
+
+    final_story = generate_final_story(raw_text, analysis["sentences"], analysis["facts"], [])
+    stories = [section["normalizedSentence"] for section in final_story["atomicStorySections"]]
+    requirements = generate_requirements(final_story, analysis["facts"])["requirements"]
+    class_model = generate_class_model(requirements, analysis["facts"])
+
+    assert any(story.startswith("As a customer, I want to create an account") for story in stories)
+    assert any("browse available products" in story for story in stories)
+    assert any("add products to my shopping cart" in story for story in stories)
+    assert any("check and approve an order" in story for story in stories)
+    assert any("update product stock and prices" in story for story in stories)
+    assert {item["id"] for item in class_model["classes"]} >= {
+        "class_customer",
+        "class_order",
+        "class_product",
+        "class_shopping_cart",
+        "class_administrator",
+    }
+
+
 def test_xml_generation_is_byte_deterministic() -> None:
     _, _, _, class_model = _flow("A customer can create an order.")
 

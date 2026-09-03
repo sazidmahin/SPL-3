@@ -1,0 +1,19 @@
+{
+  "account number": {"name": "accountNumber", "type": "String"},
+  "claim number": {"name": "claimNumber", "type": "String"},
+  "created at": {"name": "createdAt", "type": "DateTime"},
+  "date of birth": {"name": "dateOfBirth", "type": "Date"},
+  "due date": {"name": "dueDate", "type": "Date"},
+  "first name": {"name": "firstName", "type": "String"},
+  "full name": {"name": "fullName", "type": "String"},
+  "is active": {"name": "isActive", "type": "Boolean"},
+  "last name": {"name": "lastName", "type": "String"},
+  "order number": {"name": "orderNumber", "type": "String"},
+  "phone number": {"name": "phoneNumber", "type": "String"},
+  "postal code": {"name": "postalCode", "type": "String"},
+  "reference number": {"name": "referenceNumber", "type": "String"},
+  "shipping address": {"name": "shippingAddress", "type": "String"},
+  "submission date": {"name": "submissionDate", "type": "Date"},
+  "total amount": {"name": "totalAmount", "type": "Decimal"},
+  "updated at": {"name": "updatedAt", "type": "DateTime"}
+}

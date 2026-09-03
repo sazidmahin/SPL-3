@@ -8,4 +8,4 @@
   > about completed work and team performance.
   >
   > We also need user roles such as admin, manager, and member. Admins can manage workspace settings and billing.
-  > It should work well on desktop and mobile, be secure, and support email login and password reset.
+  > It should work well on desktop and mobile, be secure, and support email login and password reset
