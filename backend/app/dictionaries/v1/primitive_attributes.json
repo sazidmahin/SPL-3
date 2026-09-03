@@ -1,1 +1,1 @@
-﻿["id","name","email","password","address","phone","status","type","date","time","amount","total","quantity","price","description","title","code","number"]
+["id","name","email","password","address","phone","status","type","role","date","time","timestamp","amount","total","subtotal","tax","discount","rate","percentage","quantity","count","price","age","description","title","code","number","url","uri","currency","country","language","enabled","active","verified","approved"]

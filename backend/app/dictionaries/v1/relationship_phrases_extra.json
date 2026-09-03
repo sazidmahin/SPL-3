@@ -1,0 +1,12 @@
+{
+  "assigned to": "association",
+  "created by": "association",
+  "generated from": "dependency",
+  "imports": "dependency",
+  "is managed by": "association",
+  "managed by": "association",
+  "owned by": "association",
+  "part of": "composition",
+  "reports to": "association",
+  "sent to": "dependency"
+}

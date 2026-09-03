@@ -1,0 +1,21 @@
+{
+  "assigns": "assign",
+  "authorizes": "approve",
+  "books": "book",
+  "confirms": "confirm",
+  "creates": "create",
+  "enrol": "register",
+  "enrols": "register",
+  "enroll": "register",
+  "enrolls": "register",
+  "files": "create",
+  "issues": "create",
+  "modifies": "update",
+  "orders": "create",
+  "publishes": "publish",
+  "reschedules": "reschedule",
+  "reviews": "review",
+  "sends": "send",
+  "tracks": "track",
+  "verifies": "verify"
+}

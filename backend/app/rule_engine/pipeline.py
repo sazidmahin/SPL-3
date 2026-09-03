@@ -181,11 +181,23 @@ def tokenize(text: str) -> list[dict[str, Any]]:
 
 
 def _action_aliases() -> dict[str, str]:
-    return {key.lower(): value for key, value in load_dictionaries().get("action_aliases", {}).items()}
+    dictionaries = load_dictionaries()
+    aliases = {
+        key.lower(): value
+        for dictionary_name in ("action_aliases", "action_aliases_extra")
+        for key, value in dictionaries.get(dictionary_name, {}).items()
+    }
+    return aliases
 
 
 def _relationship_phrases() -> dict[str, str]:
-    return {key.lower(): value for key, value in load_dictionaries().get("relationship_phrases", {}).items()}
+    dictionaries = load_dictionaries()
+    phrases = {
+        key.lower(): value
+        for dictionary_name in ("relationship_phrases", "relationship_phrases_extra")
+        for key, value in dictionaries.get(dictionary_name, {}).items()
+    }
+    return phrases
 
 
 def _nfr_keywords() -> dict[str, Any]:
@@ -700,7 +712,74 @@ def condition_to_text(condition: dict[str, Any] | None) -> str | None:
     return " ".join(str(part) for part in [condition.get("subject"), condition.get("value")] if part)
 
 
+def _business_narrative_story_sections(sentences: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Turn familiar business-language intents into reviewable user stories.
+
+    These rules are intentionally dictionary-driven: product teams can extend the
+    supported phrases without changing the parser or the downstream UML pipeline.
+    """
+    patterns = load_dictionaries().get("business_narrative_patterns", [])
+    sections: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str]] = set()
+    for sentence in sentences:
+        source_sentence = str(sentence.get("text") or sentence.get("normalizedText") or "")
+        for pattern in patterns:
+            if not isinstance(pattern, dict):
+                continue
+            expression = pattern.get("pattern")
+            actor = pattern.get("actor")
+            action = pattern.get("action")
+            object_name = pattern.get("object")
+            want = pattern.get("want")
+            goal = pattern.get("goal")
+            if not all(isinstance(item, str) and item for item in [expression, actor, action, object_name, want, goal]):
+                continue
+            if not re.search(expression, source_sentence, flags=re.IGNORECASE):
+                continue
+            key = (actor, action, object_name)
+            if key in seen:
+                continue
+            seen.add(key)
+            index = len(sections) + 1
+            sections.append(
+                {
+                    "id": f"US-001-S{index}",
+                    "actor": actor,
+                    "action": action,
+                    "object": object_name,
+                    "condition": None,
+                    "trigger": None,
+                    "quantity": None,
+                    "modality": "should",
+                    "negation": False,
+                    "temporalConstraint": None,
+                    "normalizedSentence": f"As a {actor.lower()}, I want to {want}, so that {goal}.",
+                    "sourceFactId": f"NAR-{index:03d}",
+                    "sourceSentence": source_sentence,
+                    "warnings": [],
+                    "matchedRuleId": str(pattern.get("id") or "NAR_BUSINESS_INTENT_001"),
+                }
+            )
+    return sections
+
+
 def generate_final_story(original_text: str, sentences: list[dict[str, Any]], facts: list[dict[str, Any]], answers: list[dict[str, Any]]) -> dict[str, Any]:
+    narrative_sections = _business_narrative_story_sections(sentences)
+    if narrative_sections:
+        return {
+            "originalText": original_text,
+            "normalizedSentences": sentences,
+            "atomicStorySections": narrative_sections,
+            "appliedClarificationAnswers": answers,
+            "unresolvedFields": [],
+            "warnings": [],
+            "extractionMetadata": {
+                "dictionaryVersionId": DICTIONARY_VERSION,
+                "ruleVersionId": RULE_VERSION,
+                "narrativeRuleCount": len(narrative_sections),
+            },
+        }
+
     sections = []
     for index, fact in enumerate(facts, start=1):
         actor = fact.get("actor") or "UnknownActor"

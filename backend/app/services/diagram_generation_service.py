@@ -24,6 +24,7 @@ from app.services.llm_service import (
 )
 from app.services.project_service import ProjectNotFoundError, get_active_project
 from app.services.workspace_service import require_workspace_role
+from app.rule_engine.dictionaries import load_dictionaries
 from app.rule_engine.pipeline import analyze_text, generate_drawio_xml, normalize_relationship_type
 
 DIAGRAM_GENERATION_ROLES = {"owner", "admin", "member"}
@@ -119,6 +120,13 @@ IRREGULAR_NOUNS = {
     "people": "Person",
     "children": "Child",
 }
+ATTRIBUTE_OWNERSHIP_PATTERN = re.compile(
+    r"^(?:(?:a|an|the)\s+)?(?P<owner>[A-Za-z][A-Za-z0-9_-]*)\s+"
+    r"(?:has|have|includes?|stores?|records?)\s+(?P<attributes>.+?)[.!?]*$",
+    flags=re.IGNORECASE,
+)
+ATTRIBUTE_LIST_PREFIX = re.compile(r"^(?:the\s+)?(?:following\s+)?(?:attributes?|fields?|details?)\s*(?:are|:)?\s*", re.IGNORECASE)
+ATTRIBUTE_RELATIONSHIP_ACTIONS = {"has", "have", "include", "includes", "store", "stores", "record", "records"}
 
 class DiagramGenerationError(Exception):
     """Base class for expected diagram generation failures."""
@@ -188,7 +196,8 @@ def normalize_methods(methods: list[str]) -> list[str]:
 
 def _class_name_from_token(token: str) -> str | None:
     normalized = token.strip("_-.,;:").lower()
-    if len(normalized) < 3 or normalized in ENTITY_STOPWORDS or _normalize_action(normalized):
+    generic_nouns = {item.lower() for item in load_dictionaries().get("generic_nouns", [])}
+    if len(normalized) < 3 or normalized in ENTITY_STOPWORDS or normalized in generic_nouns or _normalize_action(normalized):
         return None
     if normalized in IRREGULAR_NOUNS:
         return IRREGULAR_NOUNS[normalized]
@@ -227,10 +236,85 @@ def _candidate_entities(text: str) -> list[str]:
             break
     return entities
 
+
+def _attribute_name_from_phrase(phrase: str) -> str | None:
+    words = re.findall(r"[A-Za-z][A-Za-z0-9_-]*", phrase)
+    if not words:
+        return None
+    first, *rest = words
+    return first.lower() + "".join(word[:1].upper() + word[1:].lower() for word in rest)
+
+
+def _normalize_attribute_phrase(phrase: str) -> str:
+    normalized = re.sub(r"\s+", " ", phrase.strip().lower())
+    return re.sub(r"^(?:a|an|the|unique|required|optional)\s+", "", normalized)
+
+
+def _attribute_definition(attribute_phrase: str) -> tuple[str | None, str]:
+    phrase_key = _normalize_attribute_phrase(attribute_phrase)
+    definition = load_dictionaries().get("attribute_phrases", {}).get(phrase_key)
+    if isinstance(definition, dict):
+        name = definition.get("name")
+        attribute_type = definition.get("type")
+        if isinstance(name, str) and isinstance(attribute_type, str):
+            return name, attribute_type
+
+    hints = {key.lower(): value for key, value in load_dictionaries().get("data_type_hints", {}).items()}
+    words = [word.lower() for word in re.findall(r"[A-Za-z][A-Za-z0-9_-]*", attribute_phrase)]
+    for word in reversed(words):
+        if word in hints:
+            return _attribute_name_from_phrase(attribute_phrase), str(hints[word])
+    attribute_name = _attribute_name_from_phrase(attribute_phrase) or ""
+    if attribute_name.startswith(("is", "has", "can", "should")):
+        return attribute_name, "Boolean"
+    return attribute_name or None, "String"
+
+
+def _extract_rule_based_attributes(requirements: list[str]) -> tuple[dict[str, list[str]], set[str]]:
+    """Extract explicit primitive fields, leaving domain-object relations as relationships."""
+    primitive_attributes = {
+        item.lower() for item in load_dictionaries().get("primitive_attributes", [])
+    }
+    attributes_by_class: dict[str, list[str]] = {}
+    attribute_only_requirements: set[str] = set()
+    for requirement in requirements:
+        match = ATTRIBUTE_OWNERSHIP_PATTERN.match(requirement.strip())
+        if not match:
+            continue
+        owner = _class_name_from_token(match.group("owner"))
+        if owner is None:
+            continue
+        raw_attributes = ATTRIBUTE_LIST_PREFIX.sub("", match.group("attributes").strip())
+        phrases = [
+            phrase.strip(" .")
+            for phrase in re.split(r"\s*,\s*|\s+and\s+", raw_attributes, flags=re.IGNORECASE)
+            if phrase.strip(" .")
+        ]
+        accepted_count = 0
+        is_field_list = bool(re.search(r"\b(?:attributes?|fields?|details?)\b", match.group("attributes"), re.IGNORECASE))
+        for phrase in phrases:
+            words = [word.lower() for word in re.findall(r"[A-Za-z][A-Za-z0-9_-]*", phrase)]
+            # A bare domain noun (for example, "User has Account") remains a relationship.
+            # A field is accepted if it explicitly names a known primitive/type hint, or is in a field list.
+            if not is_field_list and not any(word in primitive_attributes for word in words):
+                continue
+            attribute_name, attribute_type = _attribute_definition(phrase)
+            if attribute_name is None:
+                continue
+            accepted_count += 1
+            attribute = f"{attribute_name}: {attribute_type}"
+            attributes_by_class.setdefault(owner, [])
+            if attribute not in attributes_by_class[owner]:
+                attributes_by_class[owner].append(attribute)
+        if phrases and accepted_count == len(phrases):
+            attribute_only_requirements.add(requirement.strip().lower())
+    return attributes_by_class, attribute_only_requirements
+
 def _extract_rule_based_model(requirements: list[str]) -> ClassDiagramModel:
     class_names: list[str] = []
     methods_by_class: dict[str, list[str]] = {}
     relationships: list[DiagramRelationship] = []
+    attributes_by_class, attribute_only_requirements = _extract_rule_based_attributes(requirements)
 
     for requirement in requirements:
         typed_facts = [
@@ -244,6 +328,12 @@ def _extract_rule_based_model(requirements: list[str]) -> ClassDiagramModel:
                 target = fact.get("object")
                 relationship_type = normalize_relationship_type(fact.get("relationshipType"))
                 if not source or not target or not relationship_type or source == target:
+                    continue
+                raw_action = str(fact.get("rawAction") or fact.get("action") or "").lower()
+                if requirement.strip().lower() in attribute_only_requirements and raw_action in ATTRIBUTE_RELATIONSHIP_ACTIONS:
+                    if source not in class_names:
+                        class_names.append(source)
+                    methods_by_class.setdefault(source, [])
                     continue
                 for class_name in (source, target):
                     if class_name not in class_names:
@@ -314,7 +404,7 @@ def _extract_rule_based_model(requirements: list[str]) -> ClassDiagramModel:
     classes = [
         DiagramClass(
             name=class_name,
-            attributes=["id", "status"] if methods_by_class.get(class_name) else ["id"],
+            attributes=attributes_by_class.get(class_name) or (["id", "status"] if methods_by_class.get(class_name) else ["id"]),
             methods=methods_by_class.get(class_name) or ["validate()"],
         )
         for class_name in class_names[:8]
