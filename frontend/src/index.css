@@ -1,71 +1,96 @@
 @import 'tailwindcss';
 
 @theme {
+  /* ── brand green — the auth flow depends on these, do not change ── */
   --color-brand-50: #f0fdfa;
   --color-brand-100: #ccfbf1;
   --color-brand-600: #0f766e;
   --color-brand-700: #115e59;
-  --color-surface: #ffffff;
-  --color-canvas: #f8fafc;
   --color-ink: #0f172a;
   --color-muted: #64748b;
-  --font-sans: Inter, ui-sans-serif, system-ui, 'Segoe UI', Roboto, sans-serif;
-  --font-mono: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+  --color-canvas: #f8fafc;
+
+  /* ── design system — surfaces ── */
+  --color-bg: #f0f4fa;
+  --color-surface: #ffffff;
+  --color-surface-2: #f7f9fd;
+  --color-surface-3: #edf0f7;
+  --color-border: rgba(13, 17, 23, 0.08);
+  --color-border-strong: rgba(13, 17, 23, 0.14);
+
+  /* ── design system — text ── */
+  --color-fg: #0d1117;
+  --color-fg-2: #4a5568;
+  --color-fg-3: #8896aa;
+  --color-fg-invert: #ffffff;
+
+  /* ── design system — accents ── */
+  --color-accent: #00d4aa;
+  --color-accent-dim: #009e7e;
+  --color-accent2: #818cf8;
+  --color-accent2-dim: #6366f1;
+  --color-danger: #f87171;
+  --color-warning: #fbbf24;
+  --color-success: #34d399;
+  --color-sky: #38bdf8;
+
+  /* ── design system — sidebar ── */
+  --color-sidebar: #0c1220;
+  --color-sidebar-fg: #6b7f98;
+  --color-sidebar-fg-active: #e8edf5;
+  --color-sidebar-border: #16213a;
+
+  /* ── typography ── */
+  --font-sans: 'Poppins', ui-sans-serif, system-ui, 'Segoe UI', sans-serif;
+  --font-display: 'Sohne', 'Poppins', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'Fira Code', 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+
+  /* ── radii ── */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
 }
 
-:root {
-  --text: #334155;
-  --text-muted: #64748b;
-  --text-strong: #0f172a;
-  --bg: #eef2f7;
-  --canvas: #f8fafc;
-  --surface: #ffffff;
-  --surface-muted: #f1f5f9;
-  --surface-strong: #e2e8f0;
-  --border: #d9e2ec;
-  --border-strong: #cbd5e1;
-  --accent: #0f766e;
-  --accent-strong: #115e59;
-  --accent-soft: #ccfbf1;
-  --info: #2563eb;
-  --info-soft: #dbeafe;
-  --warning: #b45309;
-  --warning-soft: #fef3c7;
-  --danger-bg: #fef2f2;
-  --danger-border: #fecaca;
-  --danger-text: #991b1b;
-  --success-bg: #dcfce7;
-  --success-text: #166534;
-  --sidebar: #071120;
-  --sidebar-muted: #94a3b8;
-  --sidebar-border: rgba(148, 163, 184, 0.18);
-  --focus: rgba(15, 118, 110, 0.26);
-  --shadow: rgba(15, 23, 42, 0.08) 0 16px 40px;
-  --shadow-soft: rgba(15, 23, 42, 0.05) 0 8px 20px;
+@layer base {
+  :root {
+    color-scheme: light;
+  }
 
-  --sans: Inter, ui-sans-serif, system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+  * {
+    box-sizing: border-box;
+  }
 
-  font: 15px/145% var(--sans);
-  letter-spacing: 0;
-  color: var(--text);
-  background: var(--bg);
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
+  html {
+    scroll-behavior: smooth;
+  }
 
-* {
-  box-sizing: border-box;
-}
+  body {
+    margin: 0;
+    min-width: 320px;
+    min-height: 100svh;
+    background: var(--color-bg);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.5;
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
 
-html {
-  scroll-behavior: smooth;
-}
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
 
-body {
-  margin: 0;
-  min-width: 320px;
-  min-height: 100svh;
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-border-strong);
+    border-radius: 9999px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
 }

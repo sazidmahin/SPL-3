@@ -1,13 +1,9 @@
 import { useEffect, useState } from 'react'
-import '../shared/ui.css'
 import {
   Activity,
   BarChart3,
   Bell,
   Bot,
-  ChevronLeft,
-  ChevronRight,
-  BriefcaseBusiness,
   Building2,
   CircleDollarSign,
   CreditCard,
@@ -16,28 +12,25 @@ import {
   Flag,
   Headphones,
   HeartPulse,
+  LayoutDashboard,
   LockKeyhole,
-  Plug,
-  ReceiptText,
-  ShieldAlert,
-  Users,
-  Folder,
-  Home,
-  LogOut,
   MessageSquare,
   Network,
+  Plug,
+  ReceiptText,
   RefreshCcw,
   Settings,
+  ShieldAlert,
   UserCircle,
+  Users,
+  Folder,
   WandSparkles,
 } from 'lucide-react'
-import type { LucideIcon } from 'lucide-react'
 import { AiGenerationJobs } from '../features/aiJobs/AiGenerationJobs'
 import { AuthView } from '../features/auth/AuthView'
 import { BillingPanel } from '../features/billing/BillingPanel'
 import { CreateDiagramPanel, DiagramsPanel } from '../features/diagram/DiagramPanels'
 import { MemberDashboard } from '../features/dashboard/MemberDashboard'
-import { DiagramEditorMock } from '../features/diagramEditor/DiagramEditor'
 import { ProjectDirectory } from '../features/project/ProjectDirectory'
 import { PromptTemplatesPage } from '../features/promptTemplates/PromptTemplatesPage'
 import { OrganizationBillingSettings } from '../features/organizationAdmin/OrganizationBillingSettings'
@@ -52,8 +45,11 @@ import { FooterSection } from '../features/footer/FooterSection'
 import { AiSettingsPanel, SettingsProfile } from '../features/settings/SettingsProfile'
 import { SrsGenerationFlow } from '../features/srs/SrsGenerationFlow'
 import { SrsPanel } from '../features/srs/SrsPanel'
-import { UpgradeFlow } from '../features/upgrade/UpgradeFlow'
 import { CreateWorkspacePanel, WorkspacePanel } from '../features/workspace/WorkspacePanels'
+import { Card, TooltipProvider } from '../shared/ui'
+import { Sidebar } from './Sidebar'
+import type { NavGroup, NavItem } from './Sidebar'
+import { Topbar } from './Topbar'
 import { useAppController } from './useAppController'
 
 type SectionId =
@@ -127,6 +123,42 @@ const validSections = new Set<SectionId>([
   'admin',
 ])
 
+const sectionLabels: Partial<Record<SectionId, string>> = {
+  overview: 'Dashboard',
+  users: 'Users',
+  workspaces: 'Workspaces',
+  projects: 'Projects',
+  'generate-srs': 'Generate SRS',
+  srs: 'SRS Documents',
+  'diagram-editor': 'Diagrams',
+  'ai-jobs': 'AI Generation Jobs',
+  requirements: 'Requirements',
+  exports: 'Exports',
+  members: 'Members',
+  'prompt-templates': 'Prompt Templates',
+  plans: 'Plans',
+  billing: 'Billing',
+  subscription: 'Subscription',
+  subscriptions: 'Subscriptions',
+  usage: 'Usage',
+  'llm-calls': 'LLM Calls',
+  invoices: 'Invoices',
+  profile: 'Profile',
+  settings: 'Settings',
+  'ai-settings': 'AI Settings',
+  'platform-settings': 'Platform Settings',
+  'audit-logs': 'Audit Logs',
+  'feature-flags': 'Feature Flags',
+  integrations: 'Integrations',
+  'security-events': 'Security Events',
+  'roles-permissions': 'Roles & Permissions',
+  'system-health': 'System Health',
+  notifications: 'Notifications',
+  'activity-logs': 'Activity Logs',
+  'support-tickets': 'Support Tickets',
+  admin: 'Admin',
+}
+
 function sectionFromHash(): SectionId {
   const hash = window.location.hash.replace('#', '')
   return validSections.has(hash as SectionId) ? (hash as SectionId) : 'overview'
@@ -146,7 +178,6 @@ export function App() {
   const controller = useAppController()
   const { session, error, signOut } = controller.shell
   const [activeSection, setActiveSection] = useState<SectionId>(() => sectionFromHash())
-  const [isAdminSidebarCollapsed, setIsAdminSidebarCollapsed] = useState(false)
 
   useEffect(() => {
     const handleHashChange = () => setActiveSection(sectionFromHash())
@@ -170,29 +201,26 @@ export function App() {
     (activeWorkspace?.workspace.type === 'organization' && ['owner', 'admin'].includes(roleLabel))
   const isOrganizationMember = activeWorkspace?.workspace.type === 'organization' && !isOrganizationAdmin && !isSuperAdmin
   const isPlatformAdminShell = canAccessAdmin
-  const memberNavItems: Array<{ id: SectionId; label: string; icon: LucideIcon }> = [
-    { id: 'overview', label: 'Dashboard', icon: Home },
+
+  const memberNavItems: NavItem[] = [
+    { id: 'overview', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'projects', label: 'Projects', icon: Folder },
     { id: 'srs', label: 'SRS Documents', icon: FileText },
     { id: 'diagram-editor', label: 'Diagrams', icon: Network },
     { id: 'ai-jobs', label: 'AI Generation Jobs', icon: WandSparkles },
-    { id: 'requirements', label: 'Requirements', icon: BriefcaseBusiness },
-    { id: 'exports', label: 'Exports', icon: FileText },
   ]
-  const organizationMemberNavItems: Array<{ id: SectionId; label: string; icon: LucideIcon }> = [
-    { id: 'overview', label: 'Dashboard', icon: Home },
+  const organizationMemberNavItems: NavItem[] = [
+    { id: 'overview', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'projects', label: 'My Projects', icon: Folder },
     { id: 'srs', label: 'SRS Documents', icon: FileText },
     { id: 'diagram-editor', label: 'Diagrams', icon: Network },
     { id: 'ai-jobs', label: 'AI Generation Jobs', icon: WandSparkles },
-    { id: 'requirements', label: 'Requirements', icon: BriefcaseBusiness },
-    { id: 'exports', label: 'Exports', icon: FileText },
   ]
-  const superAdminNavGroups: Array<{ title: string; items: Array<{ id: SectionId; label: string; icon: LucideIcon }> }> = [
+  const superAdminNavGroups: NavGroup[] = [
     {
       title: 'Management',
       items: [
-        { id: 'overview', label: 'Dashboard', icon: Home },
+        { id: 'overview', label: 'Dashboard', icon: LayoutDashboard },
         { id: 'generate-srs', label: 'Generate SRS', icon: WandSparkles },
         { id: 'users', label: 'Users', icon: Users },
         { id: 'workspaces', label: 'Workspaces', icon: Building2 },
@@ -237,19 +265,19 @@ export function App() {
       ],
     },
   ]
-  const adminNavItems: Array<{ id: SectionId; label: string; icon: LucideIcon }> = [
-    { id: 'overview', label: 'Dashboard', icon: Home },
+  const adminNavItems: NavItem[] = [
+    { id: 'overview', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'projects', label: 'Projects', icon: Folder },
     { id: 'srs', label: 'SRS Documents', icon: FileText },
     { id: 'diagram-editor', label: 'Diagrams', icon: Network },
     { id: 'ai-jobs', label: 'AI Generation Jobs', icon: WandSparkles },
     { id: 'ai-settings', label: 'AI Settings', icon: Bot },
     { id: 'members', label: 'Members', icon: UserCircle },
-    { id: 'prompt-templates', label: 'Prompt Templates', icon: BriefcaseBusiness },
     { id: 'billing', label: 'Billing', icon: CircleDollarSign },
   ]
+
   const primaryNavItems = isOrganizationAdmin ? adminNavItems : isOrganizationMember ? organizationMemberNavItems : memberNavItems
-  const billingNavItems: Array<{ id: SectionId; label: string; icon: LucideIcon }> = isSuperAdmin
+  const billingNavItems: NavItem[] = isSuperAdmin
     ? []
     : isOrganizationAdmin
     ? [
@@ -257,26 +285,37 @@ export function App() {
         { id: 'usage', label: 'Usage', icon: BarChart3 },
       ]
     : isOrganizationMember
-      ? []
-      : [
-          { id: 'subscription', label: 'Subscription', icon: CircleDollarSign },
-          { id: 'usage', label: 'Usage', icon: BarChart3 },
-          { id: 'invoices', label: 'Invoices', icon: FileText },
-        ]
-  const accountNavItems: Array<{ id: SectionId; label: string; icon: LucideIcon }> = isSuperAdmin ? [] : [
-    { id: 'profile', label: 'Profile', icon: UserCircle },
-    { id: 'settings', label: 'Settings', icon: Settings },
-    { id: 'ai-settings', label: 'AI Settings', icon: Bot },
-  ]
+    ? []
+    : [
+        { id: 'subscription', label: 'Subscription', icon: CircleDollarSign },
+        { id: 'usage', label: 'Usage', icon: BarChart3 },
+        { id: 'invoices', label: 'Invoices', icon: FileText },
+      ]
+  const accountNavItems: NavItem[] = isSuperAdmin
+    ? []
+    : [
+        { id: 'profile', label: 'Profile', icon: UserCircle },
+        { id: 'settings', label: 'Settings', icon: Settings },
+        { id: 'ai-settings', label: 'AI Settings', icon: Bot },
+      ]
+
+  const navGroups: NavGroup[] = isPlatformAdminShell
+    ? superAdminNavGroups
+    : [
+        { items: primaryNavItems },
+        ...(billingNavItems.length ? [{ items: billingNavItems }] : []),
+        ...(accountNavItems.length ? [{ items: accountNavItems }] : []),
+        ...(canAccessAdmin ? [{ items: [{ id: 'admin', label: 'Admin', icon: Settings } as NavItem] }] : []),
+      ]
 
   const workspaceTools = (
-    <aside className="grid min-w-0 gap-4 lg:sticky lg:top-5">
+    <aside className="grid min-w-0 gap-4 lg:sticky lg:top-20">
       <div className="grid gap-4" id="workspace">
-        <article className="panel identity-panel">
-          <span className="panel-label">Signed in</span>
-          <h2>{currentUser.full_name}</h2>
-          <p>{currentUser.email}</p>
-        </article>
+        <Card className="p-5">
+          <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-accent">Signed in</span>
+          <h2 className="mt-1 font-display text-lg font-bold text-fg">{currentUser.full_name}</h2>
+          <p className="text-[13px] text-fg-2">{currentUser.email}</p>
+        </Card>
         <WorkspacePanel {...controller.workspacePanel} />
         <CreateWorkspacePanel {...controller.createWorkspacePanel} />
       </div>
@@ -312,7 +351,9 @@ export function App() {
     if (activeSection === 'ai-settings') {
       return (
         <section className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_23.75rem]">
-          <div className="min-w-0"><AiSettingsPanel {...controller.aiSettingsPanel} /></div>
+          <div className="min-w-0">
+            <AiSettingsPanel {...controller.aiSettingsPanel} />
+          </div>
           {workspaceTools}
         </section>
       )
@@ -408,14 +449,21 @@ export function App() {
     if (activeSection === 'diagram-editor') {
       return (
         <section className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_23.75rem]">
-          <div className="min-w-0"><DiagramEditorMock /></div>
+          <div className="min-w-0">
+            <DiagramsPanel {...controller.diagramsPanel} />
+          </div>
           {workspaceTools}
         </section>
       )
     }
 
     if (activeSection === 'ai-jobs') {
-      return <AiGenerationJobs />
+      return (
+        <AiGenerationJobs
+          generationJobs={controller.srsPanel.generationJobs}
+          projects={controller.projectsPanel.projects}
+        />
+      )
     }
 
     if (['srs', 'requirements', 'exports'].includes(activeSection)) {
@@ -440,39 +488,28 @@ export function App() {
 
       return (
         <section className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_23.75rem]">
-          <div className="min-w-0"><BillingPanel {...controller.billingPanel} /></div>
+          <div className="min-w-0">
+            <BillingPanel {...controller.billingPanel} />
+          </div>
           {workspaceTools}
         </section>
       )
     }
 
     if (activeSection === 'members' && isOrganizationAdmin) {
-      return (
-        <OrganizationMembersRoles
-          user={currentUser}
-          activeWorkspace={activeWorkspace}
-          subscription={subscription}
-        />
-      )
+      return <OrganizationMembersRoles user={currentUser} activeWorkspace={activeWorkspace} subscription={subscription} />
     }
 
     if (activeSection === 'prompt-templates' && isOrganizationAdmin) {
       return <PromptTemplatesPage />
     }
 
-    if (activeSection === 'settings' && isOrganizationAdmin) {
-      return (
-        <section className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_23.75rem]">
-          <div className="min-w-0"><SettingsProfile user={currentUser} {...controller.aiSettingsPanel} /></div>
-          {workspaceTools}
-        </section>
-      )
-    }
-
     if (['profile', 'settings', 'ai-settings', 'admin', 'members'].includes(activeSection)) {
       return (
         <section className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_23.75rem]">
-          <div className="min-w-0"><SettingsProfile user={currentUser} {...controller.aiSettingsPanel} /></div>
+          <div className="min-w-0">
+            <SettingsProfile user={currentUser} {...controller.aiSettingsPanel} />
+          </div>
           {workspaceTools}
         </section>
       )
@@ -507,139 +544,49 @@ export function App() {
     }
 
     return (
-      <>
-        <MemberDashboard
-          user={currentUser}
-          activeWorkspace={activeWorkspace}
-          activeProject={activeProject}
-          projects={controller.projectsPanel.projects}
-          srsDocuments={controller.srsPanel.srsDocuments}
-          diagrams={controller.diagramsPanel.diagrams}
-          generationJobs={controller.srsPanel.generationJobs}
-          subscription={subscription}
-          usage={controller.billingPanel.usage}
-        />
-        <UpgradeFlow />
-      </>
+      <MemberDashboard
+        user={currentUser}
+        activeWorkspace={activeWorkspace}
+        activeProject={activeProject}
+        projects={controller.projectsPanel.projects}
+        srsDocuments={controller.srsPanel.srsDocuments}
+        diagrams={controller.diagramsPanel.diagrams}
+        generationJobs={controller.srsPanel.generationJobs}
+        subscription={subscription}
+        usage={controller.billingPanel.usage}
+      />
     )
-  }
-
-  function navLinkClass(id: SectionId) {
-    const active = activeSection === id
-    const collapsed = isPlatformAdminShell && isAdminSidebarCollapsed
-    return `flex min-h-11 items-center gap-3.5 rounded-lg px-3.5 text-[15px] font-bold transition ${collapsed ? 'justify-center px-0' : ''} ${active ? 'bg-linear-to-r from-violet-700 to-violet-900 text-white shadow-lg shadow-violet-950/20' : 'text-slate-200 hover:bg-slate-800 hover:text-white'}`
-  }
-
-  function renderNavItem(item: { id: SectionId; label: string; icon: LucideIcon }) {
-    const Icon = item.icon
-    return (
-      <a className={navLinkClass(item.id)} href={`#${item.id}`} key={item.id}>
-        <Icon size={20} />
-        <span className={isPlatformAdminShell && isAdminSidebarCollapsed ? 'hidden' : undefined}>{item.label}</span>
-      </a>
-    )
-  }
-
-  function renderSuperAdminNav() {
-    return superAdminNavGroups.map((group) => (
-      <section className={`grid gap-2 border-b border-slate-700/50 px-2.5 py-4 ${isAdminSidebarCollapsed ? 'justify-items-center px-0' : ''}`} key={group.title}>
-        <h2 className={`text-xs font-extrabold uppercase tracking-wide text-slate-400 ${isAdminSidebarCollapsed ? 'hidden' : ''}`}>{group.title}</h2>
-        <div className={`grid gap-1 ${isAdminSidebarCollapsed ? 'justify-items-center' : ''}`}>
-          {group.items.map(renderNavItem)}
-        </div>
-      </section>
-    ))
   }
 
   return (
-    <main className={`grid min-h-svh bg-slate-50 xl:grid-cols-[15.25rem_minmax(0,1fr)] ${isPlatformAdminShell ? 'xl:grid-cols-[16.25rem_minmax(0,1fr)]' : ''} ${isPlatformAdminShell && isAdminSidebarCollapsed ? 'xl:grid-cols-[4.5rem_minmax(0,1fr)]' : ''}`}>
-      <aside className={`grid min-h-0 grid-rows-[auto_1fr_auto] gap-5 overflow-y-auto bg-linear-to-b from-slate-950 via-slate-950 to-slate-950 px-4 py-6 text-slate-100 shadow-xl xl:sticky xl:top-0 xl:h-svh ${isAdminSidebarCollapsed ? 'px-2' : ''}`} aria-label="Primary">
-        {isPlatformAdminShell ? (
-          <button
-            className="absolute right-2.5 top-3 grid size-7 place-items-center rounded-full border border-slate-600 bg-slate-900 text-slate-100 shadow-lg transition hover:bg-violet-700"
-            type="button"
-            aria-label={isAdminSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            onClick={() => setIsAdminSidebarCollapsed((collapsed) => !collapsed)}
-          >
-            {isAdminSidebarCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
-          </button>
-        ) : null}
-        <div className={`flex min-h-15 items-center gap-3 border-b border-slate-700/50 pb-4 ${isAdminSidebarCollapsed ? 'justify-center' : ''}`}>
-          <span className="grid size-11 place-items-center rounded-xl border border-violet-500/70 bg-violet-700/15 text-violet-300"><Network size={22} /></span>
-          <div className={isAdminSidebarCollapsed ? 'hidden' : undefined}>
-            <strong className="block text-xl font-extrabold text-white">SRS Platform</strong>
-            {isPlatformAdminShell ? <small className="mt-1 block text-sm font-bold text-violet-400">Platform Admin</small> : null}
-          </div>
+    <TooltipProvider delayDuration={200}>
+      <div className="flex min-h-svh bg-bg">
+        <Sidebar
+          user={currentUser}
+          roleLabel={roleLabel}
+          groups={navGroups}
+          activeSection={activeSection}
+          workspaces={controller.workspacePanel.workspaces}
+          activeWorkspace={activeWorkspace}
+          onSelectWorkspace={controller.workspacePanel.onSelectWorkspace}
+          onSignOut={signOut}
+        />
+        <div className="flex min-w-0 flex-1 flex-col">
+          <Topbar
+            workspaceName={activeWorkspace?.workspace.name ?? 'Personal Workspace'}
+            sectionLabel={sectionLabels[activeSection] ?? 'Dashboard'}
+            user={currentUser}
+            onSignOut={signOut}
+          />
+          <main className="mx-auto w-full max-w-[1440px] flex-1 px-4 py-6 sm:px-8 sm:py-7">
+            {error ? (
+              <p className="mb-4 rounded-md border border-danger/25 bg-danger/10 px-3 py-2 text-sm text-danger">{error}</p>
+            ) : null}
+            {renderActiveSection()}
+            <FooterSection />
+          </main>
         </div>
-
-        <nav className="grid content-start gap-1" aria-label="Dashboard sections">
-          {isPlatformAdminShell ? (
-            renderSuperAdminNav()
-          ) : (
-            <>
-              {primaryNavItems.map(renderNavItem)}
-              <span className="my-3 h-px bg-slate-700/50" />
-              {billingNavItems.map(renderNavItem)}
-              {billingNavItems.length > 0 ? <span className="my-3 h-px bg-slate-700/50" /> : null}
-              {accountNavItems.map(renderNavItem)}
-              {canAccessAdmin ? renderNavItem({ id: 'admin', label: 'Admin', icon: Settings }) : null}
-              <button className={`flex min-h-11 items-center gap-3.5 rounded-lg px-3.5 text-[15px] font-bold text-red-200 transition hover:bg-red-950/60 hover:text-white ${isAdminSidebarCollapsed ? 'justify-center px-0' : ''}`} type="button" onClick={signOut}>
-                <LogOut size={20} />
-                <span className={isAdminSidebarCollapsed ? 'hidden' : undefined}>Logout</span>
-              </button>
-            </>
-          )}
-        </nav>
-
-        <div className={`grid gap-2 rounded-xl bg-slate-900 p-3 ${isAdminSidebarCollapsed ? 'bg-transparent p-0' : ''}`}>
-          {isPlatformAdminShell ? (
-            <div className={`grid gap-2.5 ${isAdminSidebarCollapsed ? 'justify-items-center' : ''}`}>
-              <div className={`grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 ${isAdminSidebarCollapsed ? 'flex justify-center' : ''}`}>
-                <span className="grid size-11 place-items-center rounded-full bg-linear-to-br from-violet-500 to-violet-800 text-sm font-extrabold text-white">{isSuperAdmin ? 'SA' : 'PA'}</span>
-                <div className={isAdminSidebarCollapsed ? 'hidden' : undefined}>
-                  <strong className="block text-sm font-extrabold text-white">{isSuperAdmin ? 'Super Admin' : 'Platform Admin'}</strong>
-                  <p className="mt-1 truncate text-xs text-slate-400">{currentUser.email || 'superadmin@srs.com'}</p>
-                </div>
-              </div>
-              <button className={`flex min-h-10 items-center gap-2.5 rounded-lg border border-red-400/20 bg-red-950/30 px-3 text-sm font-bold text-red-200 transition hover:bg-red-900/50 hover:text-white ${isAdminSidebarCollapsed ? 'grid size-10 place-items-center p-0' : ''}`} type="button" onClick={signOut}>
-                <LogOut size={18} />
-                <span className={isAdminSidebarCollapsed ? 'hidden' : undefined}>Logout</span>
-              </button>
-            </div>
-          ) : (
-            <>
-              <span className="text-base font-extrabold text-white">Pro Plan</span>
-              <p className="text-sm text-slate-400">Renews on Jun 18, 2025</p>
-              <button className="min-h-10 rounded-lg bg-linear-to-b from-violet-600 to-violet-700 px-3 text-sm font-extrabold text-white transition hover:from-violet-500 hover:to-violet-600" type="button">Manage Subscription</button>
-            </>
-          )}
-        </div>
-      </aside>
-
-      <div className="min-w-0 bg-slate-50 p-4 sm:p-7">
-        {error ? <p className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</p> : null}
-        {renderActiveSection()}
-        <FooterSection />
       </div>
-    </main>
+    </TooltipProvider>
   )
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

@@ -1,4 +1,4 @@
-export type GenerationMode = 'rule_based' | 'srsgen' | 'byok'
+export type GenerationMode = 'rule_based' | 'srsgen' | 'byok' | 'ollama'
 export type PipelineStage = 'input' | 'clarifications' | 'final-story' | 'requirements' | 'class-model' | 'xml'
 
 export type PipelineStageRevision = {

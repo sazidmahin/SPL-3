@@ -1,65 +1,313 @@
 import { useState } from 'react'
-import { Bell, Camera, Check, ChevronDown, FileOutput, KeyRound, Mail, Settings, Shield, SlidersHorizontal, User } from 'lucide-react'
+import { KeyRound, User } from 'lucide-react'
 import type { AuthUser } from '../../domains/auth/types'
 import type { AiProviderId, AiProviderSetting } from '../../domains/aiSettings/types'
+import { Button, Card, Chip, Field, PageHeader, Select, Input, cn } from '../../shared/ui'
 
 type SettingsProfileProps = {
   user: AuthUser
   aiProviders?: AiProviderSetting[]
   aiSettingsLoading?: boolean
-  onSaveAiCredential?: (provider: AiProviderId, payload: { api_key: string; selected_model: string; is_default: boolean }) => Promise<void>
+  onSaveAiCredential?: (
+    provider: AiProviderId,
+    payload: { api_key: string; selected_model: string; is_default: boolean },
+  ) => Promise<void>
   onTestAiCredential?: (provider: AiProviderId) => Promise<void>
   onPatchAiCredential?: (provider: AiProviderId, payload: { selected_model?: string; is_default?: boolean }) => Promise<void>
   onDeleteAiCredential?: (provider: AiProviderId) => Promise<void>
   onLoadProviderModels?: (provider: AiProviderId) => Promise<string[]>
 }
-type SettingsSection = { id: string; label: string; icon: typeof User }
-const settingsSections: SettingsSection[] = [{ id: 'profile', label: 'Profile', icon: User }, { id: 'account', label: 'Account Settings', icon: Settings }, { id: 'notifications', label: 'Notifications', icon: Bell }, { id: 'preferences', label: 'Preferences', icon: SlidersHorizontal }, { id: 'security', label: 'Security', icon: Shield }, { id: 'ai-providers', label: 'AI Providers', icon: KeyRound }, { id: 'export', label: 'Export Preferences', icon: FileOutput }]
-const notificationRows = [{ label: 'Email Notifications', description: 'Receive email updates about your activity', enabled: true, icon: Mail }, { label: 'In-App Notifications', description: 'Receive notifications within the platform', enabled: true, icon: Bell }, { label: 'Project Updates', description: 'Get notified about project changes', enabled: true, icon: FileOutput }, { label: 'AI Generation Jobs', description: 'Get notified when AI tasks are complete', enabled: false, icon: SlidersHorizontal }]
-const passwordRules = ['At least 8 characters', 'One uppercase letter', 'One lowercase letter', 'One number or symbol']
-const primaryButton = 'inline-flex min-h-9 items-center justify-center rounded-lg bg-brand-600 px-3.5 text-sm font-extrabold text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-55'
-const secondaryButton = 'inline-flex min-h-9 items-center justify-center rounded-lg border border-slate-200 bg-white px-3.5 text-sm font-extrabold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-55'
-const formControl = 'w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-brand-600 focus:ring-4 focus:ring-brand-100'
 
-export function SettingsProfile({ user, aiProviders = [], aiSettingsLoading = false, onSaveAiCredential, onTestAiCredential, onPatchAiCredential, onDeleteAiCredential, onLoadProviderModels }: SettingsProfileProps) {
-  const fullName = user.full_name || 'John Doe'; const email = user.email || 'john.doe@example.com'
-  return <section className="grid gap-6 rounded-xl border border-slate-200 bg-white p-6 shadow-sm" id="settings"><header><h1 className="text-2xl font-bold tracking-tight text-ink">Settings</h1><p className="mt-1 text-sm text-muted">Manage your account preferences and security settings.</p></header>
-    <div className="grid items-start gap-6 lg:grid-cols-[12rem_minmax(0,1fr)]"><SettingsNav active="profile" /><div className="grid gap-4"><ProfileSummaryCard fullName={fullName} email={email} /><AccountSettingsCard email={email} /><NotificationsCard /><PreferencesCard /><ExportPreferencesCard /><AiProvidersCard providers={aiProviders} loading={aiSettingsLoading} onSave={onSaveAiCredential} onTest={onTestAiCredential} onPatch={onPatchAiCredential} onDelete={onDeleteAiCredential} onLoadModels={onLoadProviderModels} /></div></div>
-    <div className="grid items-start gap-6 border-t border-slate-100 pt-6 lg:grid-cols-[12rem_minmax(0,1fr)]" id="profile"><SettingsNav active="profile" compact /><ProfileEditCard fullName={fullName} /></div>
-    <div className="grid items-start gap-6 border-t border-slate-100 pt-6 lg:grid-cols-[12rem_minmax(0,1fr)]" id="security"><SettingsNav active="security" compact /><div className="grid gap-4"><SecurityCard /><TwoFactorCard /></div></div>
-  </section>
+const navSections = [
+  { id: 'profile', label: 'Profile', icon: User },
+  { id: 'ai-providers', label: 'AI Providers', icon: KeyRound },
+]
+
+export function SettingsProfile({
+  user,
+  aiProviders = [],
+  aiSettingsLoading = false,
+  onSaveAiCredential,
+  onTestAiCredential,
+  onPatchAiCredential,
+  onDeleteAiCredential,
+  onLoadProviderModels,
+}: SettingsProfileProps) {
+  return (
+    <section className="grid gap-5" id="settings">
+      <PageHeader title="Settings" description="Manage your profile and AI provider credentials." />
+      <div className="grid items-start gap-6 lg:grid-cols-[12rem_minmax(0,1fr)]">
+        <SettingsNav active="profile" />
+        <div className="grid gap-5">
+          <Card className="grid gap-5 p-6" id="profile">
+            <PageHeader size="section" title="Profile" description="How you appear across the platform." />
+            <div className="flex items-center gap-4">
+              <span className="grid size-16 shrink-0 place-items-center rounded-full bg-gradient-to-br from-accent2 to-accent text-xl font-bold text-white">
+                {initials(user.full_name)}
+              </span>
+              <div>
+                <div className="font-display text-base font-bold text-fg">{user.full_name}</div>
+                <div className="text-[13px] text-fg-2">{user.email}</div>
+                <div className="mt-1 text-[11px] uppercase tracking-wide text-fg-3">
+                  Member since {new Date(user.created_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}
+                </div>
+              </div>
+            </div>
+          </Card>
+          <AiProvidersCard
+            providers={aiProviders}
+            loading={aiSettingsLoading}
+            onSave={onSaveAiCredential}
+            onTest={onTestAiCredential}
+            onPatch={onPatchAiCredential}
+            onDelete={onDeleteAiCredential}
+            onLoadModels={onLoadProviderModels}
+          />
+        </div>
+      </div>
+    </section>
+  )
 }
 
-export function AiSettingsPanel({ aiProviders = [], aiSettingsLoading = false, onSaveAiCredential, onTestAiCredential, onPatchAiCredential, onDeleteAiCredential, onLoadProviderModels }: Omit<SettingsProfileProps, 'user'>) {
-  return <section className="grid gap-6 rounded-xl border border-slate-200 bg-white p-6 shadow-sm" id="ai-settings"><header><h1 className="text-2xl font-bold tracking-tight text-ink">AI Settings</h1><p className="mt-1 text-sm text-muted">Add provider API keys, choose a model, test the connection, and select the provider used by AI-Gen.</p></header><AiProvidersCard providers={aiProviders} loading={aiSettingsLoading} onSave={onSaveAiCredential} onTest={onTestAiCredential} onPatch={onPatchAiCredential} onDelete={onDeleteAiCredential} onLoadModels={onLoadProviderModels} /></section>
+export function AiSettingsPanel({
+  aiProviders = [],
+  aiSettingsLoading = false,
+  onSaveAiCredential,
+  onTestAiCredential,
+  onPatchAiCredential,
+  onDeleteAiCredential,
+  onLoadProviderModels,
+}: Omit<SettingsProfileProps, 'user'>) {
+  return (
+    <section className="grid gap-5" id="ai-settings">
+      <PageHeader
+        title="AI Settings"
+        description="Add provider API keys, choose a model, test the connection, and select the provider used by AI-Gen."
+      />
+      <AiProvidersCard
+        providers={aiProviders}
+        loading={aiSettingsLoading}
+        onSave={onSaveAiCredential}
+        onTest={onTestAiCredential}
+        onPatch={onPatchAiCredential}
+        onDelete={onDeleteAiCredential}
+        onLoadModels={onLoadProviderModels}
+      />
+    </section>
+  )
 }
 
-function AiProvidersCard({ providers, loading, onSave, onTest, onPatch, onDelete, onLoadModels }: { providers: AiProviderSetting[]; loading: boolean; onSave?: SettingsProfileProps['onSaveAiCredential']; onTest?: SettingsProfileProps['onTestAiCredential']; onPatch?: SettingsProfileProps['onPatchAiCredential']; onDelete?: SettingsProfileProps['onDeleteAiCredential']; onLoadModels?: SettingsProfileProps['onLoadProviderModels'] }) {
-  return <SettingsCard id="ai-providers" title="AI Providers" description="Configure your personal API credentials for AI-Gen. Keys are encrypted and never shown again.">{loading ? <p className="text-sm text-muted">Loading providers…</p> : providers.map((provider) => <ProviderCard key={provider.provider} provider={provider} onSave={onSave} onTest={onTest} onPatch={onPatch} onDelete={onDelete} onLoadModels={onLoadModels} />)}{!loading && providers.length === 0 ? <p className="text-sm text-muted">Provider settings are unavailable right now.</p> : null}</SettingsCard>
+function AiProvidersCard({
+  providers,
+  loading,
+  onSave,
+  onTest,
+  onPatch,
+  onDelete,
+  onLoadModels,
+}: {
+  providers: AiProviderSetting[]
+  loading: boolean
+  onSave?: SettingsProfileProps['onSaveAiCredential']
+  onTest?: SettingsProfileProps['onTestAiCredential']
+  onPatch?: SettingsProfileProps['onPatchAiCredential']
+  onDelete?: SettingsProfileProps['onDeleteAiCredential']
+  onLoadModels?: SettingsProfileProps['onLoadProviderModels']
+}) {
+  return (
+    <Card className="grid gap-4 p-6" id="ai-providers">
+      <PageHeader
+        size="section"
+        title="AI Providers"
+        description="Keys are encrypted at rest and used only for your generation requests."
+      />
+      {loading ? <p className="text-[13px] text-fg-3">Loading providers…</p> : null}
+      {!loading && providers.length === 0 ? (
+        <p className="text-[13px] text-fg-3">Provider settings are unavailable right now.</p>
+      ) : null}
+      {providers.map((provider) => (
+        <ProviderCard
+          key={provider.provider}
+          provider={provider}
+          onSave={onSave}
+          onTest={onTest}
+          onPatch={onPatch}
+          onDelete={onDelete}
+          onLoadModels={onLoadModels}
+        />
+      ))}
+    </Card>
+  )
 }
 
-function ProviderCard({ provider, onSave, onTest, onPatch, onDelete, onLoadModels }: { provider: AiProviderSetting; onSave?: SettingsProfileProps['onSaveAiCredential']; onTest?: SettingsProfileProps['onTestAiCredential']; onPatch?: SettingsProfileProps['onPatchAiCredential']; onDelete?: SettingsProfileProps['onDeleteAiCredential']; onLoadModels?: SettingsProfileProps['onLoadProviderModels'] }) {
-  const [apiKey, setApiKey] = useState(''); const [model, setModel] = useState(provider.credential?.selected_model ?? provider.default_model); const [availableModels, setAvailableModels] = useState(provider.models); const [busy, setBusy] = useState(false); const credential = provider.credential; const modelOptions = Array.from(new Set([model, ...availableModels]))
-  async function execute(action: () => Promise<void>) { setBusy(true); try { await action() } finally { setBusy(false) } }
-  return <article className="grid gap-3 rounded-lg border border-slate-200 p-4"><header className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center"><div><h3 className="font-bold text-ink">{provider.label}</h3><p className="mt-1 text-sm text-muted">{credential?.configured ? `Configured •••• ${credential.key_last_four}${credential.is_default ? ' · Active for AI-Gen' : ''}` : 'No API key configured'}</p></div><span className={`w-max rounded-full px-2.5 py-1 text-xs font-extrabold capitalize ${credential?.status === 'valid' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-500'}`}>{credential?.status ?? 'unconfigured'}</span></header>
-    <label className="grid gap-1.5 text-sm font-bold text-slate-700">Model<select className={formControl} value={model} onChange={(event) => setModel(event.target.value)}>{modelOptions.map((item) => <option key={item} value={item}>{item}</option>)}</select><small className="font-medium text-muted">After saving the key, select Load models to refresh this dropdown from the provider account.</small></label><label className="grid gap-1.5 text-sm font-bold text-slate-700">API key<input className={formControl} type="password" autoComplete="off" value={apiKey} placeholder={credential ? 'Enter a new key to replace the saved key' : 'Paste your API key'} onChange={(event) => setApiKey(event.target.value)} /></label>
-    <footer className="flex flex-wrap gap-2"><button className={primaryButton} type="button" disabled={busy || !apiKey.trim()} onClick={() => void execute(async () => { await onSave?.(provider.provider, { api_key: apiKey.trim(), selected_model: model, is_default: credential?.is_default ?? false }); setApiKey('') })}>Save key</button>{credential ? <><button className={secondaryButton} type="button" disabled={busy} onClick={() => void execute(async () => setAvailableModels(await onLoadModels?.(provider.provider) ?? availableModels))}>Load models</button><button className={secondaryButton} type="button" disabled={busy} onClick={() => void execute(() => onPatch?.(provider.provider, { selected_model: model }) ?? Promise.resolve())}>Save model</button><button className={secondaryButton} type="button" disabled={busy} onClick={() => void execute(() => onTest?.(provider.provider) ?? Promise.resolve())}>Test connection</button><button className={secondaryButton} type="button" disabled={busy || credential.is_default} onClick={() => void execute(() => onPatch?.(provider.provider, { is_default: true }) ?? Promise.resolve())}>Use for AI-Gen</button><button className="inline-flex min-h-9 items-center justify-center rounded-lg border border-red-200 bg-white px-3.5 text-sm font-extrabold text-red-700 hover:bg-red-50 disabled:opacity-55" type="button" disabled={busy} onClick={() => { if (window.confirm(`Remove the ${provider.label} credential?`)) void execute(() => onDelete?.(provider.provider) ?? Promise.resolve()) }}>Remove</button></> : null}</footer>
-  </article>
+function ProviderCard({
+  provider,
+  onSave,
+  onTest,
+  onPatch,
+  onDelete,
+  onLoadModels,
+}: {
+  provider: AiProviderSetting
+  onSave?: SettingsProfileProps['onSaveAiCredential']
+  onTest?: SettingsProfileProps['onTestAiCredential']
+  onPatch?: SettingsProfileProps['onPatchAiCredential']
+  onDelete?: SettingsProfileProps['onDeleteAiCredential']
+  onLoadModels?: SettingsProfileProps['onLoadProviderModels']
+}) {
+  const [apiKey, setApiKey] = useState('')
+  const [model, setModel] = useState(provider.credential?.selected_model ?? provider.default_model)
+  const [availableModels, setAvailableModels] = useState(provider.models)
+  const [busy, setBusy] = useState(false)
+  const credential = provider.credential
+  const modelOptions = Array.from(new Set([model, ...availableModels]))
+
+  async function execute(action: () => Promise<void>) {
+    setBusy(true)
+    try {
+      await action()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const status = credential?.status ?? 'unconfigured'
+
+  return (
+    <div className="grid gap-3 rounded-lg border border-border p-4">
+      <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
+        <div>
+          <h3 className="text-sm font-semibold text-fg">{provider.label}</h3>
+          <p className="mt-0.5 text-[12.5px] text-fg-2">
+            {credential?.configured
+              ? `Configured •••• ${credential.key_last_four}${credential.is_default ? ' · Active for AI-Gen' : ''}`
+              : 'No API key configured'}
+          </p>
+        </div>
+        <Chip tone={status === 'valid' ? 'active' : status === 'invalid' ? 'danger' : 'muted'} className="w-max capitalize">
+          {status}
+        </Chip>
+      </div>
+
+      <Field label="Model" hint="After saving the key, use Load models to refresh this list from the provider.">
+        <Select value={model} onChange={(event) => setModel(event.target.value)}>
+          {modelOptions.map((item) => (
+            <option key={item} value={item}>
+              {item}
+            </option>
+          ))}
+        </Select>
+      </Field>
+
+      <Field label="API key">
+        <Input
+          type="password"
+          autoComplete="off"
+          value={apiKey}
+          placeholder={credential ? 'Enter a new key to replace the saved key' : 'Paste your API key'}
+          onChange={(event) => setApiKey(event.target.value)}
+        />
+      </Field>
+
+      <div className="flex flex-wrap gap-2">
+        <Button
+          size="sm"
+          disabled={busy || !apiKey.trim()}
+          onClick={() =>
+            void execute(async () => {
+              await onSave?.(provider.provider, {
+                api_key: apiKey.trim(),
+                selected_model: model,
+                is_default: credential?.is_default ?? false,
+              })
+              setApiKey('')
+            })
+          }
+        >
+          Save key
+        </Button>
+        {credential ? (
+          <>
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={busy}
+              onClick={() =>
+                void execute(async () => setAvailableModels((await onLoadModels?.(provider.provider)) ?? availableModels))
+              }
+            >
+              Load models
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={busy}
+              onClick={() => void execute(() => onPatch?.(provider.provider, { selected_model: model }) ?? Promise.resolve())}
+            >
+              Save model
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={busy}
+              onClick={() => void execute(() => onTest?.(provider.provider) ?? Promise.resolve())}
+            >
+              Test connection
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={busy || credential.is_default}
+              onClick={() => void execute(() => onPatch?.(provider.provider, { is_default: true }) ?? Promise.resolve())}
+            >
+              Use for AI-Gen
+            </Button>
+            <Button
+              size="sm"
+              variant="danger"
+              disabled={busy}
+              onClick={() => {
+                if (window.confirm(`Remove the ${provider.label} credential?`)) {
+                  void execute(() => onDelete?.(provider.provider) ?? Promise.resolve())
+                }
+              }}
+            >
+              Remove
+            </Button>
+          </>
+        ) : null}
+      </div>
+    </div>
+  )
 }
 
-function SettingsNav({ active, compact = false }: { active: string; compact?: boolean }) { return <nav className={`grid gap-1 rounded-xl border border-slate-200 bg-white p-3 ${compact ? '' : 'lg:sticky lg:top-5'}`} aria-label="Settings sections">{settingsSections.map((section) => { const Icon = section.icon; return <a className={`flex min-h-9 items-center gap-2 rounded-lg px-3 text-sm font-bold transition ${section.id === active ? 'bg-brand-100 text-brand-800' : 'text-slate-700 hover:bg-slate-50'}`} href={`#${section.id}`} key={section.id}><Icon size={17} />{section.label}</a> })}</nav> }
-function ProfileSummaryCard({ fullName, email }: { fullName: string; email: string }) { return <SettingsCard title="Profile Information" description="Update your personal information and profile picture." action="Edit Profile"><div className="grid gap-6 md:grid-cols-[9rem_minmax(0,1fr)] md:items-center"><AvatarBlock name={fullName} /><InfoGrid items={[["Full Name", fullName], ["Email", email], ["Job Title", "Product Manager"], ["Location", "San Francisco, CA"], ["Member Since", "May 12, 2024"], ["Timezone", "(GMT-07:00) Pacific Time (US & Canada)"]]} /></div></SettingsCard> }
-function AccountSettingsCard({ email }: { email: string }) { return <SettingsCard id="account" title="Account Settings" description="Manage your account credentials and preferences." action="Edit"><div className="grid"><InfoRow label="Email Address" value={email} badge="Verified" /><InfoRow label="Password" value="••••••••••••" action="Change Password" /><InfoRow label="Language" value="English (US)" trailing={<ChevronDown size={16} />} /></div></SettingsCard> }
-function NotificationsCard() { return <SettingsCard id="notifications" title="Notifications" description="Manage how you receive notifications." action="Edit"><div className="grid">{notificationRows.map((row) => { const Icon = row.icon; return <div className="grid grid-cols-[1.5rem_minmax(0,1fr)_auto] items-center gap-3 border-t border-slate-100 py-3 first:border-0" key={row.label}><Icon className="text-brand-700" size={18} /><div><strong className="text-sm text-slate-700">{row.label}</strong><span className="mt-0.5 block text-xs text-muted">{row.description}</span></div><Toggle enabled={row.enabled} /></div> })}</div></SettingsCard> }
-function PreferencesCard() { return <SettingsCard id="preferences" title="Preferences" description="Manage your experience." action="Edit"><div className="grid"><InfoRow label="Theme" value="Light" trailing={<ChevronDown size={16} />} /><InfoRow label="Date Format" value="May 31, 2025 (MMM DD, YYYY)" trailing={<ChevronDown size={16} />} /><InfoRow label="Time Format" value="12 Hour (1:30 PM)" trailing={<ChevronDown size={16} />} /><InfoRow label="Default Dashboard" value="Projects Overview" trailing={<ChevronDown size={16} />} /></div></SettingsCard> }
-function ExportPreferencesCard() { return <SettingsCard id="export" title="Export Preferences" description="Configure your default export settings." action="Edit"><div className="grid"><InfoRow label="Default Format" value="PDF" /><InfoRow label="Include Diagrams" value="Yes" /><InfoRow label="Include Comments" value="Yes" /><InfoRow label="Page Size" value="A4" /></div></SettingsCard> }
-function ProfileEditCard({ fullName }: { fullName: string }) { return <SettingsCard title="Profile Information" description="Change your personal information and how others see you."><form className="grid gap-4"><div className="grid gap-4 md:grid-cols-[8rem_5rem_minmax(0,1fr)] md:items-center"><span className="text-sm font-bold text-slate-700">Profile Photo</span><AvatarBlock name={fullName} small /><div><button className={secondaryButton} type="button">Change Photo</button><small className="mt-2 block text-xs text-muted">JPG, PNG or GIF. Max size 2MB.</small></div></div><LabeledInput label="Full Name" defaultValue={fullName} /><LabeledInput label="Job Title" defaultValue="Product Manager" /><LabeledInput label="Location" defaultValue="San Francisco, CA" /><LabeledInput label="Timezone" defaultValue="(GMT-07:00) Pacific Time (US & Canada)" withChevron /><LabeledInput label="Bio" defaultValue="Product manager with a passion for building intuitive SaaS platforms and driving user-centric solutions." textarea /><footer className="flex justify-end gap-3 border-t border-slate-100 pt-4"><button className={secondaryButton} type="button">Cancel</button><button className={primaryButton} type="button">Save Changes</button></footer></form></SettingsCard> }
-function SecurityCard() { return <SettingsCard title="Change Password" description="Update your password to keep your account secure."><form className="grid gap-4"><LabeledInput label="Current Password" placeholder="Enter current password" password /><LabeledInput label="New Password" placeholder="Enter new password" password /><div className="grid gap-2 md:grid-cols-[8rem_minmax(0,1fr)]"><span className="text-sm font-bold text-slate-700">Password must contain:</span><ul className="grid gap-1.5">{passwordRules.map((rule) => <li className="flex items-center gap-2 text-xs text-emerald-700" key={rule}><Check size={13} />{rule}</li>)}</ul></div><LabeledInput label="Confirm New Password" placeholder="Confirm new password" password /><footer className="flex justify-end border-t border-slate-100 pt-4"><button className={primaryButton} type="button">Update Password</button></footer></form></SettingsCard> }
-function TwoFactorCard() { return <SettingsCard title="Two-Factor Authentication" description="Add an extra layer of security to your account."><div className="flex items-center justify-between gap-4 rounded-lg border border-slate-100 p-4"><div><strong className="text-sm text-slate-700">Enable Two-Factor Authentication</strong><p className="mt-1 text-sm text-muted">Use an authenticator app to verify your identity</p></div><Toggle enabled={false} /></div></SettingsCard> }
-function SettingsCard({ id, title, description, action, children }: { id?: string; title: string; description: string; action?: string; children: React.ReactNode }) { return <article className="grid gap-5 rounded-xl border border-slate-200 bg-white p-5 shadow-sm" id={id}><header className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center"><div><h2 className="text-lg font-bold text-ink">{title}</h2><p className="mt-1 text-sm text-muted">{description}</p></div>{action ? <button className={primaryButton} type="button">{action}</button> : null}</header>{children}</article> }
-function AvatarBlock({ name, small = false }: { name: string; small?: boolean }) { return <div className={`relative grid place-items-center rounded-full bg-gradient-to-br from-blue-200 to-violet-300 font-bold text-slate-800 ${small ? 'size-19 text-xl' : 'size-29 text-3xl'}`}><span>{initials(name)}</span>{!small ? <button className="absolute bottom-1 right-0 grid size-10 place-items-center rounded-full border-3 border-white bg-brand-600 text-white" type="button" aria-label="Change photo"><Camera size={18} /></button> : null}</div> }
-function InfoGrid({ items }: { items: Array<[string, string]> }) { return <dl className="grid gap-x-12 gap-y-4 sm:grid-cols-2">{items.map(([label, value]) => <div key={label}><dt className="text-sm font-bold text-slate-700">{label}</dt><dd className="mt-1 text-sm font-medium text-slate-900">{value}</dd></div>)}</dl> }
-function InfoRow({ label, value, badge, action, trailing }: { label: string; value: string; badge?: string; action?: string; trailing?: React.ReactNode }) { return <div className="flex min-h-11 flex-wrap items-center gap-3 border-t border-slate-100 py-2.5 first:border-0"><strong className="w-42 text-sm text-slate-700">{label}</strong><span className="text-sm text-slate-700">{value}</span>{badge ? <b className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs text-emerald-800">{badge}</b> : null}{action ? <button className={`${secondaryButton} ml-auto`} type="button">{action}</button> : null}{trailing ? <i className="ml-auto text-slate-500">{trailing}</i> : null}</div> }
-function LabeledInput({ label, defaultValue, placeholder, textarea = false, password = false, withChevron = false }: { label: string; defaultValue?: string; placeholder?: string; textarea?: boolean; password?: boolean; withChevron?: boolean }) { return <label className="grid gap-2 md:grid-cols-[8rem_minmax(0,1fr)] md:items-start"><span className="pt-2 text-sm font-bold text-slate-700">{label}</span><div className="relative">{textarea ? <textarea className={`${formControl} min-h-25 resize-y`} defaultValue={defaultValue} maxLength={200} rows={4} /> : <input className={formControl} defaultValue={defaultValue} placeholder={placeholder} type={password ? 'password' : 'text'} />}{password ? <KeyRound className="absolute right-3 top-3 text-slate-400" size={16} /> : null}{withChevron ? <ChevronDown className="absolute right-3 top-3 text-slate-400" size={16} /> : null}</div></label> }
-function Toggle({ enabled }: { enabled: boolean }) { return <span className={`flex h-6 w-11 items-center rounded-full p-1 ${enabled ? 'justify-end bg-brand-600' : 'justify-start bg-slate-300'}`}><i className="size-4 rounded-full bg-white shadow" /></span> }
-function initials(name: string) { return name.trim().split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('') || 'U' }
+function SettingsNav({ active }: { active: string }) {
+  return (
+    <nav className="grid gap-1 lg:sticky lg:top-20" aria-label="Settings sections">
+      {navSections.map((section) => (
+        <a
+          key={section.id}
+          href={`#${section.id}`}
+          className={cn(
+            'flex items-center gap-2 rounded-md px-3 py-2 text-[13px] font-medium transition',
+            section.id === active ? 'bg-accent/15 font-semibold text-accent' : 'text-fg-3 hover:bg-surface-3 hover:text-fg',
+          )}
+        >
+          <section.icon className="size-4" />
+          {section.label}
+        </a>
+      ))}
+    </nav>
+  )
+}
+
+function initials(name: string) {
+  return (
+    name
+      .trim()
+      .split(/\s+/)
+      .slice(0, 2)
+      .map((part) => part[0]?.toUpperCase())
+      .join('') || 'U'
+  )
+}

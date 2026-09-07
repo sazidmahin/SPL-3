@@ -34,13 +34,14 @@ from app.services.ai_settings_service import (
     mark_credential_used,
 )
 from app.services.llm_service import LlmClient, execute_llm_call, get_or_create_prompt_template
+from app.services.ollama_service import OllamaClient
 from app.services.project_service import get_active_project
 from app.services.srsgen_service import SrsGenClient
 from app.services.workspace_service import require_workspace_role
 
 
 PIPELINE_STAGES = ["input", "clarifications", "final-story", "requirements", "class-model", "xml"]
-GENERATION_MODES = {"rule_based", "srsgen", "byok"}
+GENERATION_MODES = {"rule_based", "srsgen", "byok", "ollama"}
 PIPELINE_MUTATION_ROLES = {"owner", "admin", "member"}
 JSON_OBJECT_PATTERN = re.compile(r"\{.*\}", re.DOTALL)
 logger = logging.getLogger(__name__)
@@ -251,7 +252,7 @@ def create_pipeline_run(
     get_active_project(db, workspace_id=membership.workspace_id, project_id=project_id)
     mode = generation_mode.strip().lower()
     if mode not in GENERATION_MODES:
-        raise GenerationPipelineStateError("Generation mode must be rule_based, srsgen, or byok")
+        raise GenerationPipelineStateError("Generation mode must be rule_based, srsgen, byok, or ollama")
     provider = model_name = None
     credential_id = None
     if mode == "byok":
@@ -264,6 +265,11 @@ def create_pipeline_run(
         client.validate_configuration()
         provider = client.provider
         model_name = client.model_name
+    elif mode == "ollama":
+        ollama_client = OllamaClient()
+        ollama_client.validate_configuration()
+        provider = ollama_client.provider
+        model_name = ollama_client.model_name
     cleaned_title = _clean(title, "Pipeline title is required")
     cleaned_text = _clean(raw_text, "Requirement input is required")
     run = GenerationPipelineRun(
@@ -362,7 +368,13 @@ def _parse_json_response(content: str) -> dict[str, Any]:
 
 def _stage_contract(stage_name: str) -> str:
     contracts = {
-        "clarifications": "Return keys normalization(object), sentences(array), clauses(array), facts(array), clarificationQuestions(array), answers(array).",
+        "clarifications": (
+            "Return keys normalization(object), sentences(array), clauses(array), facts(array), "
+            "clarificationQuestions(array), answers(array). Each clarificationQuestion needs id, text, "
+            "category (one of Missing Actor, Missing Object, Missing Action, Unknown Action, Vague Metric, "
+            "Vague Timing, Ambiguous Quantity, Pronoun Reference, Conflicting Rule), reason, and "
+            "sourceSentence quoting verbatim the input sentence that triggered the question."
+        ),
         "final-story": "Return keys originalText, normalizedSentences(array), atomicStorySections(array), appliedClarificationAnswers(array), unresolvedFields(array), warnings(array), extractionMetadata(object).",
         "requirements": "Return keys requirements(array), dictionaryVersionId, ruleVersionId. Each requirement needs requirementId, requirementType, statement, actor, action, object, enabled.",
         "class-model": (
@@ -382,6 +394,8 @@ def _stage_contract(stage_name: str) -> str:
 def _client_for_run(db: Session, run: GenerationPipelineRun) -> tuple[LlmClient, UserAiProviderCredential | None]:
     if run.generation_mode == "srsgen":
         return SrsGenClient(), None
+    if run.generation_mode == "ollama":
+        return OllamaClient(model_name=run.model_name), None
     if run.generation_mode != "byok" or run.provider_credential_id is None:
         raise GenerationPipelineStateError("This pipeline run has no AI generation client")
     credential = db.scalar(

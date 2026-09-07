@@ -99,14 +99,123 @@ def singularize(value: str) -> str:
     return cleaned
 
 
+_ENTITY_CUT_WORDS = (
+    "that",
+    "which",
+    "who",
+    "whom",
+    "whose",
+    "when",
+    "where",
+    "before",
+    "after",
+    "while",
+    "with",
+    "within",
+    "without",
+    "into",
+    "onto",
+    "from",
+    "for",
+    "per",
+    "via",
+    "using",
+    "based",
+    "so",
+    "because",
+    "unless",
+    "until",
+    "at",
+    "on",
+    "in",
+    "by",
+    "as",
+    "and",
+    "or",
+    "but",
+)
+_ENTITY_LEADING_NOISE = (
+    "at least one",
+    "at most one",
+    "exactly one",
+    "zero or one",
+    "one or more",
+    "zero or more",
+    "a specific number of",
+    "a number of",
+    "up to",
+    "a",
+    "an",
+    "the",
+    "one",
+    "each",
+    "every",
+    "any",
+    "some",
+    "all",
+    "many",
+    "multiple",
+    "several",
+    "single",
+    "optional",
+    "new",
+    "existing",
+    "valid",
+    "invalid",
+    "their",
+    "his",
+    "her",
+    "its",
+    "our",
+    "your",
+    "this",
+    "that",
+    "these",
+    "those",
+)
+
+
 def normalize_entity(value: str | None) -> str | None:
     if value is None:
         return None
-    cleaned = re.sub(r"^(at least one|at most one|exactly one|zero or one|one or more|zero or more|a specific number|a|an|the|one|many|multiple|several|single|optional)\s+", "", value.strip(), flags=re.IGNORECASE)
-    cleaned = re.sub(r"\s+", " ", cleaned)
+    cleaned = re.sub(r"\s+", " ", value.strip().lower())
     if not cleaned:
         return None
-    return pascal_case(singularize(cleaned))
+    # Drop everything from the first relative pronoun / preposition / conjunction onward.
+    tokens = cleaned.split(" ")
+    trimmed: list[str] = []
+    for token in tokens:
+        if re.sub(r"[^a-z]", "", token) in _ENTITY_CUT_WORDS and trimmed:
+            break
+        trimmed.append(token)
+    phrase = " ".join(trimmed).strip(" ,.;:-")
+    # Strip leading determiners / quantifiers / weak adjectives, repeatedly.
+    changed = True
+    while changed and phrase:
+        changed = False
+        phrase = re.sub(
+            r"^(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|first|second|third)\s+",
+            "",
+            phrase,
+        )
+        for noise in sorted(_ENTITY_LEADING_NOISE, key=len, reverse=True):
+            if phrase == noise:
+                phrase = ""
+                changed = True
+                break
+            if phrase.startswith(noise + " "):
+                phrase = phrase[len(noise) + 1 :]
+                changed = True
+                break
+    if not phrase:
+        return None
+    # A phrase that still starts with a preposition has no head noun of its own.
+    if re.match(r"^(?:with|to|for|of|on|at|in|by|from|about|into|as)\b", phrase):
+        return None
+    # Keep at most the trailing three words as the noun phrase (head + up to two modifiers).
+    words = phrase.split(" ")[-3:]
+    words[-1] = singularize(words[-1])
+    return pascal_case(" ".join(words))
 
 
 def normalize_text(raw_text: str) -> dict[str, Any]:
@@ -121,30 +230,120 @@ def normalize_text(raw_text: str) -> dict[str, Any]:
     }
 
 
+_SENTENCE_ABBREVIATIONS = (
+    "e.g.",
+    "i.e.",
+    "etc.",
+    "vs.",
+    "no.",
+    "approx.",
+    "mr.",
+    "mrs.",
+    "ms.",
+    "dr.",
+    "fig.",
+)
+
+
+def _protect_abbreviations(text: str) -> str:
+    protected = text
+    for abbreviation in _SENTENCE_ABBREVIATIONS:
+        protected = re.sub(
+            re.escape(abbreviation),
+            abbreviation.replace(".", "․"),
+            protected,
+            flags=re.IGNORECASE,
+        )
+    # Keep decimals such as "99.9%" or "1.5 seconds" on one sentence.
+    protected = re.sub(r"(?<=\d)\.(?=\d)", "․", protected)
+    return protected
+
+
 def split_sentences(normalized_text: str) -> list[dict[str, Any]]:
     parts: list[dict[str, Any]] = []
-    for index, match in enumerate(re.finditer(r"[^.!?\n]+(?:[.!?]|$)", normalized_text), start=1):
-        text = match.group(0).strip()
-        if not text:
+    protected = _protect_abbreviations(normalized_text)
+    index = 0
+    for raw_line in protected.split("\n"):
+        line = raw_line.strip()
+        if not line:
             continue
-        parts.append(
-            {
-                "id": f"sentence_{index:03d}",
-                "text": text,
-                "normalizedText": text.rstrip(".!?").strip(),
-                "sentenceIndex": index,
-                "startOffset": match.start(),
-                "endOffset": match.end(),
-                "matchedRuleId": "SPL_SENTENCE_TERMINATOR_001",
-            }
-        )
+        # Strip common list bullets/numbering so "- Users can..." parses cleanly.
+        line = re.sub(r"^\s*(?:[-*•‣◦]|\d+[.)]|[a-z][.)])\s+", "", line)
+        if not line:
+            continue
+        for match in re.finditer(r"[^.!?]+(?:[.!?]+|$)", line):
+            fragment = match.group(0).strip()
+            if not fragment:
+                continue
+            index += 1
+            restored = fragment.replace("․", ".")
+            parts.append(
+                {
+                    "id": f"sentence_{index:03d}",
+                    "text": restored,
+                    "normalizedText": restored.rstrip(".!?").strip(),
+                    "sentenceIndex": index,
+                    "startOffset": match.start(),
+                    "endOffset": match.end(),
+                    "matchedRuleId": "SPL_SENTENCE_TERMINATOR_001",
+                }
+            )
     return parts
+
+
+def _split_clause_text(text: str) -> list[str]:
+    """Split a sentence into clauses without shredding noun lists.
+
+    Splits on semicolons and on coordinating conjunctions, but only when the
+    following fragment looks like a new predicate (starts with a modal or a known
+    action verb). This keeps "name, email, and phone number" together while still
+    separating "the user can log in and the admin can approve".
+    """
+    action_vocab = set(_action_aliases())
+    modal_words = {
+        word
+        for phrase in (
+            load_dictionaries().get("permission_modals", [])
+            + load_dictionaries().get("obligation_modals", [])
+            + load_dictionaries().get("negative_modals", [])
+        )
+        for word in phrase.lower().split()
+    }
+
+    def looks_like_predicate(fragment: str) -> bool:
+        head = re.findall(r"[a-zA-Z']+", fragment.lower())[:4]
+        return any(
+            word in modal_words
+            or word in action_vocab
+            or singularize(word) in action_vocab
+            for word in head
+        )
+
+    # Hard breaks first.
+    segments = [segment.strip() for segment in re.split(r"\s*;\s*|\s+\bthen\b\s+", text) if segment.strip()]
+    result: list[str] = []
+    for segment in segments:
+        pieces = re.split(r"\s*,?\s+\b(?:and|or)\b\s+|\s*,\s+", segment)
+        buffer = pieces[0].strip() if pieces else segment
+        for piece in pieces[1:]:
+            piece = piece.strip()
+            if not piece:
+                continue
+            if looks_like_predicate(piece):
+                if buffer:
+                    result.append(buffer)
+                buffer = piece
+            else:
+                buffer = f"{buffer}, {piece}" if buffer else piece
+        if buffer:
+            result.append(buffer)
+    return result or [text]
 
 
 def split_clauses(sentences: list[dict[str, Any]]) -> list[dict[str, Any]]:
     clauses: list[dict[str, Any]] = []
     for sentence in sentences:
-        raw_parts = [part.strip() for part in re.split(r"\s*;\s*|\s*,\s*|\s+\band\b\s+|\s+\bthen\b\s+", sentence["normalizedText"]) if part.strip()]
+        raw_parts = [part for part in _split_clause_text(sentence["normalizedText"]) if part.strip()]
         if not raw_parts:
             raw_parts = [sentence["normalizedText"]]
         for clause_index, text in enumerate(raw_parts, start=1):
@@ -227,6 +426,30 @@ def _canonical_action(raw_action: str | None) -> tuple[str | None, str, list[str
     if canonical:
         return canonical, "EXT_ACTION_ALIAS_001", []
     return lowered, "EXT_UNKNOWN_ACTION_001", [f'Unknown action "{raw_action}".']
+
+
+def _split_coordinated(phrase: str) -> list[str]:
+    parts = [
+        re.sub(r"^(?:a|an|the)\s+", "", part.strip(), flags=re.IGNORECASE)
+        for part in re.split(r"\s*,\s*|\s+\band\b\s+|\s+\bor\b\s+", phrase or "")
+        if part.strip()
+    ]
+    return parts or ([phrase.strip()] if phrase and phrase.strip() else [])
+
+
+def _expand_action_object(raw_action: str | None, raw_object: str | None) -> list[tuple[str, str]]:
+    """Turn "create and update the order" / "view the order and the invoice" into pairs."""
+    actions = _split_coordinated(raw_action or "") or [(raw_action or "").strip()]
+    objects = _split_coordinated(raw_object or "") or [(raw_object or "").strip()]
+    actions = [item for item in actions if item][:4] or [""]
+    objects = [item for item in objects if item][:6] or [""]
+    if len(actions) > 1 and len(objects) == 1:
+        return [(action, objects[0]) for action in actions]
+    if len(objects) > 1 and len(actions) == 1:
+        return [(actions[0], obj) for obj in objects]
+    if len(actions) == len(objects) and len(actions) > 1:
+        return list(zip(actions, objects))
+    return [(actions[0], objects[0])]
 
 
 def _condition_from_text(text: str) -> dict[str, Any] | None:
@@ -339,6 +562,7 @@ def _fact_template(
         "id": f"fact_{fact_index:03d}",
         "sourceText": clause["text"],
         "sourceSentenceId": sentence["id"],
+        "sourceSentenceText": sentence.get("text") or sentence.get("normalizedText") or clause["text"],
         "sourceClauseId": clause["id"],
         "sentenceIndex": sentence["sentenceIndex"],
         "clauseIndex": clause["clauseIndex"],
@@ -473,6 +697,35 @@ def extract_facts(sentences: list[dict[str, Any]], clauses: list[dict[str, Any]]
             known_entities.extend([item for item in [actor, object_name] if item])
             continue
 
+        # "The system shall allow/enable/permit/let <actor> to <action> <object>"
+        grant_match = re.match(
+            rf"^(?:{article})?[a-zA-Z][\w -]*?\s+(?:{modal_pattern}\s+)?(?:allow|allows|enable|enables|permit|permits|let|lets|give|gives|grant|grants)\s+(?:{article})?(?P<actor>[a-zA-Z][\w -]*?)\s+(?:to\s+|the\s+ability\s+to\s+|permission\s+to\s+)(?P<action>[a-zA-Z][\w ]*?)\s+(?:{article})?(?P<object>[a-zA-Z][\w -]*)$",
+            text,
+            flags=re.IGNORECASE,
+        )
+        if grant_match:
+            for action_name, object_name in _expand_action_object(grant_match.group("action"), grant_match.group("object")):
+                canonical_action, action_rule_id, action_warnings = _canonical_action(action_name)
+                actor = normalize_entity(grant_match.group("actor"))
+                normalized_object = normalize_entity(object_name)
+                facts.append(
+                    _fact_template(
+                        fact_index=len(facts) + 1,
+                        sentence=sentence,
+                        clause=clause,
+                        actor=actor,
+                        action=canonical_action,
+                        object_name=normalized_object,
+                        raw_action=action_name,
+                        matched_rule_id="EXT_SYSTEM_GRANTS_ACTOR_ACTION_OBJECT_001",
+                        extraction_type="EXACT_PATTERN" if action_rule_id != "EXT_UNKNOWN_ACTION_001" else "POSITIONAL_GUESS",
+                        condition=condition,
+                        warnings=action_warnings,
+                    )
+                )
+                known_entities.extend([item for item in [actor, normalized_object] if item])
+            continue
+
         only_match = re.match(
             rf"^only\s+(?:{article})?(?P<actor>[a-zA-Z][\w -]*?)\s+{modal_pattern}\s+(?P<action>[a-zA-Z][\w ]*?)\s+(?:{article})?(?P<object>[a-zA-Z][\w -]*)$",
             text,
@@ -483,37 +736,55 @@ def extract_facts(sentences: list[dict[str, Any]], clauses: list[dict[str, Any]]
             text,
             flags=re.IGNORECASE,
         )
-        passive_match = None
+        # Declarative present tense without a modal: "The system sends a confirmation email".
+        present_match = None
+        if not (only_match or active_match):
+            candidate = re.match(
+                rf"^(?:{article})?(?P<actor>[a-zA-Z][\w -]*?)\s+(?P<action>[a-zA-Z]+(?:e?s)?)\s+(?:{article})?(?P<object>[a-zA-Z][\w -]*)$",
+                text,
+                flags=re.IGNORECASE,
+            )
+            if candidate:
+                head_action = candidate.group("action").strip().lower()
+                if head_action in _action_aliases() or singularize(head_action) in _action_aliases():
+                    present_match = candidate
 
-        match = only_match or active_match
+        match = only_match or active_match or present_match
         if match:
             raw_action = match.group("action").strip()
-            action, action_rule_id, warnings = _canonical_action(raw_action)
             actor = normalize_entity(match.group("actor"))
-            object_name = normalize_entity(match.group("object"))
-            if object_name and object_name.lower() in load_dictionaries().get("pronouns", {}).get("objectPronouns", []):
-                if len(set(known_entities)) == 1:
-                    object_name = known_entities[-1]
-                elif condition and condition.get("subject"):
-                    object_name = condition["subject"]
-                else:
-                    warnings.append(f'Pronoun "{match.group("object")}" has multiple possible references.')
-            facts.append(
-                _fact_template(
-                    fact_index=fact_index,
-                    sentence=sentence,
-                    clause=clause,
-                    actor=actor,
-                    action=action,
-                    object_name=object_name,
-                    raw_action=raw_action,
-                    matched_rule_id="EXT_ONLY_ACTOR_CAN_ACTION_OBJECT_001" if only_match else action_rule_id,
-                    extraction_type="EXACT_PATTERN" if action_rule_id != "EXT_UNKNOWN_ACTION_001" else "POSITIONAL_GUESS",
-                    condition=condition,
-                    warnings=warnings,
+            for action_name, object_name in _expand_action_object(raw_action, match.group("object")):
+                action, action_rule_id, warnings = _canonical_action(action_name)
+                normalized_object = normalize_entity(object_name)
+                if normalized_object and normalized_object.lower() in load_dictionaries().get("pronouns", {}).get("objectPronouns", []):
+                    if len(set(known_entities)) == 1:
+                        normalized_object = known_entities[-1]
+                    elif condition and condition.get("subject"):
+                        normalized_object = condition["subject"]
+                    else:
+                        warnings = warnings + [f'Pronoun "{object_name}" has multiple possible references.']
+                facts.append(
+                    _fact_template(
+                        fact_index=len(facts) + 1,
+                        sentence=sentence,
+                        clause=clause,
+                        actor=actor,
+                        action=action,
+                        object_name=normalized_object,
+                        raw_action=action_name,
+                        matched_rule_id="EXT_ONLY_ACTOR_CAN_ACTION_OBJECT_001"
+                        if only_match
+                        else "EXT_PRESENT_TENSE_ACTION_001"
+                        if present_match
+                        else action_rule_id,
+                        extraction_type="EXACT_PATTERN" if action_rule_id != "EXT_UNKNOWN_ACTION_001" else "POSITIONAL_GUESS",
+                        condition=condition,
+                        warnings=warnings,
+                    )
                 )
-            )
-            known_entities.extend([item for item in [actor, object_name] if item and item not in {"It", "This", "That"}])
+                known_entities.extend(
+                    [item for item in [actor, normalized_object] if item and item not in {"It", "This", "That"}]
+                )
             continue
 
         if passive_match:
@@ -541,8 +812,18 @@ def extract_facts(sentences: list[dict[str, Any]], clauses: list[dict[str, Any]]
             continue
 
         tokens = tokenize(text)
-        action_token = next((token for token in tokens if token["normalized"] in _action_aliases()), None)
-        if action_token:
+        # A bare noun list ("name, email, and phone number") is attributes, not a fact.
+        primitive_nouns = {item.lower() for item in load_dictionaries().get("primitive_attributes", [])}
+        action_token = next(
+            (
+                token
+                for token in tokens
+                if token["normalized"] in _action_aliases() and token["normalized"] not in primitive_nouns
+            ),
+            None,
+        )
+        has_modal = re.search(rf"\b{modal_pattern}\b", text, flags=re.IGNORECASE) is not None
+        if action_token and (has_modal or len(tokens) <= 6):
             before = " ".join(token["text"] for token in tokens[: action_token["index"] - 1])
             after = " ".join(token["text"] for token in tokens[action_token["index"] :])
             action, _, warnings = _canonical_action(action_token["text"])
@@ -566,96 +847,209 @@ def extract_facts(sentences: list[dict[str, Any]], clauses: list[dict[str, Any]]
     return facts
 
 
+_VAGUE_QUANTITY_TERMS = (
+    "some",
+    "several",
+    "a few",
+    "a number of",
+    "multiple",
+    "many",
+    "various",
+    "a lot of",
+    "lots of",
+    "certain",
+)
+_VAGUE_TIME_TERMS = (
+    "quickly",
+    "fast",
+    "soon",
+    "regularly",
+    "periodically",
+    "frequently",
+    "in real time",
+    "real-time",
+    "immediately",
+    "as soon as possible",
+    "from time to time",
+)
+
+
+def _clarification(
+    *,
+    sequence: int,
+    text: str,
+    fact: dict[str, Any],
+    category: str,
+    reason: str,
+    rule_id: str,
+    answer_mapping: str,
+    suggested_options: list[str] | None = None,
+) -> dict[str, Any]:
+    return {
+        "id": f"CLR-{sequence:03d}",
+        "text": text,
+        "category": category,
+        "sourceSentence": fact.get("sourceSentenceText") or fact.get("sourceText"),
+        "sourceClause": fact.get("sourceText"),
+        "sourceSentenceId": fact.get("sourceSentenceId"),
+        "sentenceIndex": fact.get("sentenceIndex"),
+        "reason": reason,
+        "triggeredRuleId": rule_id,
+        "relatedActor": fact.get("actor"),
+        "relatedAction": fact.get("action"),
+        "relatedObject": fact.get("object"),
+        "suggestedOptions": suggested_options or [],
+        "sourceFactId": fact["id"],
+        "answerMapping": answer_mapping,
+    }
+
+
 def generate_clarifications(facts: list[dict[str, Any]]) -> list[dict[str, Any]]:
     questions: list[dict[str, Any]] = []
+
+    # Cross-fact: the same actor/action/object asserted both positively and negatively.
+    polarity: dict[tuple[str, str, str], set[str]] = {}
     for fact in facts:
-        sequence = len(questions) + 1
+        key = (
+            str(fact.get("actor") or ""),
+            str(fact.get("action") or ""),
+            str(fact.get("object") or ""),
+        )
+        if all(key):
+            polarity.setdefault(key, set()).add("negative" if fact.get("negated") else "positive")
+    conflicting_keys = {key for key, signs in polarity.items() if len(signs) > 1}
+    seen_conflicts: set[tuple[str, str, str]] = set()
+
+    for fact in facts:
         actor = fact.get("actor")
         action = fact.get("action")
         object_name = fact.get("object")
-        source = fact.get("sourceText")
+        source_clause = str(fact.get("sourceText") or "")
+        lowered = source_clause.lower()
+
         if action and object_name and not actor:
             questions.append(
-                {
-                    "id": f"CLR-{sequence:03d}",
-                    "text": f"Who can {action} the {object_name}?",
-                    "sourceSentence": source,
-                    "reason": "Action and object were found, but actor was missing.",
-                    "triggeredRuleId": "CLR_MISSING_ACTOR_001",
-                    "relatedActor": actor,
-                    "relatedAction": action,
-                    "relatedObject": object_name,
-                    "suggestedOptions": [],
-                    "sourceFactId": fact["id"],
-                    "answerMapping": "actor",
-                }
+                _clarification(
+                    sequence=len(questions) + 1,
+                    text=f"Who can {action} the {object_name}?",
+                    fact=fact,
+                    category="Missing Actor",
+                    reason="Action and object were found, but the actor was missing.",
+                    rule_id="CLR_MISSING_ACTOR_001",
+                    answer_mapping="actor",
+                )
             )
         elif actor and action and not object_name:
             questions.append(
-                {
-                    "id": f"CLR-{sequence:03d}",
-                    "text": f"What can the {actor} {action}?",
-                    "sourceSentence": source,
-                    "reason": "Actor and action were found, but object was missing.",
-                    "triggeredRuleId": "CLR_MISSING_OBJECT_001",
-                    "relatedActor": actor,
-                    "relatedAction": action,
-                    "relatedObject": object_name,
-                    "suggestedOptions": [],
-                    "sourceFactId": fact["id"],
-                    "answerMapping": "object",
-                }
+                _clarification(
+                    sequence=len(questions) + 1,
+                    text=f"What can the {actor} {action}?",
+                    fact=fact,
+                    category="Missing Object",
+                    reason="Actor and action were found, but the object was missing.",
+                    rule_id="CLR_MISSING_OBJECT_001",
+                    answer_mapping="object",
+                )
             )
         elif actor and object_name and not action:
             questions.append(
-                {
-                    "id": f"CLR-{sequence:03d}",
-                    "text": f"What does the {actor} do with the {object_name}?",
-                    "sourceSentence": source,
-                    "reason": "Actor and object were found, but action was missing.",
-                    "triggeredRuleId": "CLR_MISSING_ACTION_001",
-                    "relatedActor": actor,
-                    "relatedAction": action,
-                    "relatedObject": object_name,
-                    "suggestedOptions": [],
-                    "sourceFactId": fact["id"],
-                    "answerMapping": "action",
-                }
+                _clarification(
+                    sequence=len(questions) + 1,
+                    text=f"What does the {actor} do with the {object_name}?",
+                    fact=fact,
+                    category="Missing Action",
+                    reason="Actor and object were found, but the action was missing.",
+                    rule_id="CLR_MISSING_ACTION_001",
+                    answer_mapping="action",
+                )
             )
         elif any("Unknown action" in warning for warning in fact.get("warnings", [])):
             questions.append(
-                {
-                    "id": f"CLR-{sequence:03d}",
-                    "text": f'What does "{fact.get("rawAction")}" mean in this story?',
-                    "sourceSentence": source,
-                    "reason": "Probable action is not present in the action dictionary.",
-                    "triggeredRuleId": "CLR_UNKNOWN_ACTION_001",
-                    "relatedActor": actor,
-                    "relatedAction": action,
-                    "relatedObject": object_name,
-                    "suggestedOptions": [],
-                    "sourceFactId": fact["id"],
-                    "answerMapping": "canonicalAction",
-                }
+                _clarification(
+                    sequence=len(questions) + 1,
+                    text=f'What does "{fact.get("rawAction")}" mean in this story?',
+                    fact=fact,
+                    category="Unknown Action",
+                    reason="The probable action is not in the action dictionary.",
+                    rule_id="CLR_UNKNOWN_ACTION_001",
+                    answer_mapping="canonicalAction",
+                )
+            )
+
+        if any("multiple possible references" in warning for warning in fact.get("warnings", [])):
+            questions.append(
+                _clarification(
+                    sequence=len(questions) + 1,
+                    text=f"Which entity does the pronoun in “{source_clause}” refer to?",
+                    fact=fact,
+                    category="Pronoun Reference",
+                    reason="A pronoun in this clause could point to more than one entity.",
+                    rule_id="CLR_AMBIGUOUS_PRONOUN_001",
+                    answer_mapping="object",
+                )
             )
 
         nfr = fact.get("nfr")
-        if nfr and not nfr.get("measurable") and nfr.get("category") == "Performance":
+        if nfr and not nfr.get("measurable"):
+            category = str(nfr.get("category") or "quality")
             questions.append(
-                {
-                    "id": f"CLR-{len(questions) + 1:03d}",
-                    "text": "What measurable performance target should be used?",
-                    "sourceSentence": source,
-                    "reason": "Performance keyword exists but numeric target is missing.",
-                    "triggeredRuleId": "CLR_VAGUE_PERFORMANCE_001",
-                    "relatedActor": actor,
-                    "relatedAction": action,
-                    "relatedObject": object_name,
-                    "suggestedOptions": [],
-                    "sourceFactId": fact["id"],
-                    "answerMapping": "nfrTarget",
-                }
+                _clarification(
+                    sequence=len(questions) + 1,
+                    text=f"What measurable {category.lower()} target should be used?",
+                    fact=fact,
+                    category="Vague Metric",
+                    reason=f"A {category.lower()} keyword was found but no numeric target was given.",
+                    rule_id="CLR_VAGUE_NFR_TARGET_001",
+                    answer_mapping="nfrTarget",
+                )
             )
+
+        if (
+            action
+            and object_name
+            and not re.search(r"\b\d", lowered)
+            and any(re.search(rf"\b{re.escape(term)}\b", lowered) for term in _VAGUE_QUANTITY_TERMS)
+        ):
+            questions.append(
+                _clarification(
+                    sequence=len(questions) + 1,
+                    text=f"How many {object_name} are expected (give a number or range)?",
+                    fact=fact,
+                    category="Ambiguous Quantity",
+                    reason="A vague quantifier was used instead of a concrete number.",
+                    rule_id="CLR_VAGUE_QUANTIFIER_001",
+                    answer_mapping="quantity",
+                )
+            )
+
+        if not nfr and any(re.search(rf"\b{re.escape(term)}\b", lowered) for term in _VAGUE_TIME_TERMS):
+            questions.append(
+                _clarification(
+                    sequence=len(questions) + 1,
+                    text="What is the exact timing or frequency this requires?",
+                    fact=fact,
+                    category="Vague Timing",
+                    reason="A vague time or frequency word was used without a concrete value.",
+                    rule_id="CLR_VAGUE_TIMING_001",
+                    answer_mapping="temporalConstraint",
+                )
+            )
+
+        key = (str(actor or ""), str(action or ""), str(object_name or ""))
+        if all(key) and key in conflicting_keys and key not in seen_conflicts:
+            seen_conflicts.add(key)
+            questions.append(
+                _clarification(
+                    sequence=len(questions) + 1,
+                    text=f"Can the {actor} {action} the {object_name} or not? The text says both.",
+                    fact=fact,
+                    category="Conflicting Rule",
+                    reason="This actor/action/object is stated as both allowed and not allowed.",
+                    rule_id="CLR_CONFLICTING_MODALITY_001",
+                    answer_mapping="note",
+                )
+            )
+
     return questions
 
 
@@ -934,16 +1328,40 @@ def _requirement_source_ids(requirements: list[dict[str, Any]], actor: str, obje
     )
 
 
+def _attributes_for_sentences(sentences: list[str]) -> list[dict[str, Any]]:
+    """Pull known attribute phrases (e.g. "phone number", "due date") out of prose."""
+    blob = " ".join(sentences).lower()
+    attribute_phrases: dict[str, dict[str, str]] = load_dictionaries().get("attribute_phrases", {})
+    found: dict[str, dict[str, Any]] = {}
+    for phrase, spec in attribute_phrases.items():
+        if re.search(rf"\b{re.escape(phrase)}\b", blob):
+            found[spec["name"]] = {
+                "id": f"attr_{snake_case(spec['name'])}",
+                "name": spec["name"],
+                "type": spec.get("type", "String"),
+                "visibility": "private",
+                "sourceRuleId": "ATTR_PHRASE_DICTIONARY_001",
+            }
+    return sorted(found.values(), key=lambda item: item["name"].lower())
+
+
 def generate_class_model(requirements: list[dict[str, Any]], facts: list[dict[str, Any]], threshold: int = 4) -> dict[str, Any]:
     scores: Counter[str] = Counter()
     source_fact_ids: dict[str, set[str]] = {}
     source_requirement_ids: dict[str, set[str]] = {}
+    entity_sentences: dict[str, set[str]] = {}
+
+    def _remember_sentence(name: str, text: str | None) -> None:
+        if name and text:
+            entity_sentences.setdefault(name, set()).add(text)
+
     for fact in facts:
         for field, score in [("actor", 5), ("object", 4)]:
             value = fact.get(field)
             if value and not value.startswith("Unknown"):
                 scores[value] += score
                 source_fact_ids.setdefault(value, set()).add(fact["id"])
+                _remember_sentence(value, fact.get("sourceSentenceText") or fact.get("sourceText"))
         if fact.get("relationshipType"):
             for field in ["actor", "object"]:
                 value = fact.get(field)
@@ -957,13 +1375,23 @@ def generate_class_model(requirements: list[dict[str, Any]], facts: list[dict[st
             if value and not value.startswith("Unknown"):
                 scores[value] += score
                 source_requirement_ids.setdefault(value, set()).add(requirement["requirementId"])
+                _remember_sentence(value, requirement.get("sourceSentence"))
     primitive = {item.lower() for item in load_dictionaries().get("primitive_attributes", [])}
     generic = {item.lower() for item in load_dictionaries().get("generic_nouns", [])}
+    pronoun_words = {
+        word.lower()
+        for group in load_dictionaries().get("pronouns", {}).values()
+        for word in group
+    }
+    state_words = {item.lower() for item in load_dictionaries().get("state_words", [])}
     for name in list(scores):
-        if name.lower() in primitive:
+        lowered = name.lower()
+        if lowered in primitive:
             scores[name] -= 5
-        if name.lower() in generic:
+        if lowered in generic:
             scores[name] -= 4
+        if lowered in pronoun_words or lowered in state_words:
+            scores[name] -= 6
     class_names = sorted(name for name, score in scores.items() if score >= threshold)
 
     classes: dict[str, dict[str, Any]] = {}
@@ -974,7 +1402,7 @@ def generate_class_model(requirements: list[dict[str, Any]], facts: list[dict[st
             "id": class_id,
             "name": name,
             "stereotype": "entity" if name != "System" else "service",
-            "attributes": [],
+            "attributes": _attributes_for_sentences(sorted(entity_sentences.get(name, set()))),
             "methods": [],
             "sourceFactIds": sorted(source_fact_ids.get(name, set())),
             "sourceRequirementIds": source_ids,
@@ -982,6 +1410,7 @@ def generate_class_model(requirements: list[dict[str, Any]], facts: list[dict[st
             "enabled": True,
         }
 
+    fact_by_clause = {fact.get("sourceText"): fact for fact in facts}
     method_signatures: set[tuple[str, str]] = set()
     relationships = []
     for requirement in requirements:
@@ -996,14 +1425,15 @@ def generate_class_model(requirements: list[dict[str, Any]], facts: list[dict[st
         target_id = f"class_{snake_case(object_name)}"
         if source_id not in classes or target_id not in classes:
             continue
-        method_name = camel_case(f"{action} {object_name}")
-        method_key = (source_id, method_name)
-        if method_key not in method_signatures:
-            method_signatures.add(method_key)
+
+        # Behaviour on the acting class: "customer.createOrder()".
+        actor_method = camel_case(f"{action} {object_name}")
+        if (source_id, actor_method) not in method_signatures:
+            method_signatures.add((source_id, actor_method))
             classes[source_id]["methods"].append(
                 {
-                    "id": f"method_{snake_case(actor)}_{snake_case(method_name)}",
-                    "name": method_name,
+                    "id": f"method_{snake_case(actor)}_{snake_case(actor_method)}",
+                    "name": actor_method,
                     "parameters": [],
                     "returnType": object_name,
                     "visibility": "public",
@@ -1011,9 +1441,23 @@ def generate_class_model(requirements: list[dict[str, Any]], facts: list[dict[st
                     "sourceRequirementIds": [requirement["requirementId"]],
                 }
             )
+        # Lifecycle behaviour on the acted-upon class so entities are not empty shells.
+        target_method = camel_case(action or "handle")
+        if (target_id, target_method) not in method_signatures:
+            method_signatures.add((target_id, target_method))
+            classes[target_id]["methods"].append(
+                {
+                    "id": f"method_{snake_case(object_name)}_{snake_case(target_method)}",
+                    "name": target_method,
+                    "parameters": [],
+                    "returnType": "Boolean",
+                    "visibility": "public",
+                    "static": False,
+                    "sourceRequirementIds": [requirement["requirementId"]],
+                }
+            )
 
-        fact = next((item for item in facts if item.get("id") == next((s.get("sourceFactId") for s in []), None)), None)
-        fact = next((item for item in facts if item.get("sourceText") == requirement.get("sourceSentence")), {}) or {}
+        fact = fact_by_clause.get(requirement.get("sourceSentence")) or {}
         rel_type = normalize_relationship_type(fact.get("relationshipType") or "association") or "association"
         if rel_type in CARDINALITY_RELATIONSHIP_TYPES:
             source_multiplicity = fact.get("sourceMultiplicity") or "1"
@@ -1039,7 +1483,17 @@ def generate_class_model(requirements: list[dict[str, Any]], facts: list[dict[st
             }
         )
 
-    return {
+    # Rule: a class with no methods is an inert noun — drop it and any dangling edges.
+    kept_ids = {class_id for class_id, cls in classes.items() if cls["methods"]}
+    dropped = sorted(classes[class_id]["name"] for class_id in classes if class_id not in kept_ids)
+    classes = {class_id: cls for class_id, cls in classes.items() if class_id in kept_ids}
+    relationships = [
+        rel
+        for rel in relationships
+        if rel["sourceClassId"] in kept_ids and rel["targetClassId"] in kept_ids
+    ]
+
+    model: dict[str, Any] = {
         "classes": sorted(classes.values(), key=lambda item: item["name"].lower()),
         "relationships": _dedupe_relationships(relationships),
         "enums": [],
@@ -1047,6 +1501,9 @@ def generate_class_model(requirements: list[dict[str, Any]], facts: list[dict[st
         "dictionaryVersionId": DICTIONARY_VERSION,
         "ruleVersionId": RULE_VERSION,
     }
+    if dropped:
+        model["eliminatedClasses"] = dropped
+    return model
 
 
 def _dedupe_relationships(relationships: list[dict[str, Any]]) -> list[dict[str, Any]]:

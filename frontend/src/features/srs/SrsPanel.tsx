@@ -1,8 +1,11 @@
 import type { FormEvent } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import type { ClassDiagramMethod, DiagramDetail } from '../../domains/diagram/types'
 import type { GenerationJob, SrsDocument } from '../../domains/srs/types'
 import type { Project } from '../../domains/project/types'
 import type { WorkspaceMembership } from '../../domains/workspace/types'
+import { Button, Card, Chip, Field, Input, PageHeader, Textarea, cn } from '../../shared/ui'
 
 const SRS_RAW_TEXT_LIMIT = 200000
 const formatCount = new Intl.NumberFormat('en-US')
@@ -63,99 +66,105 @@ export function SrsPanel({
   onOpenGeneratedDiagram,
 }: SrsPanelProps) {
   const latestGenerationJob = generationJobs[0]
-  const rawTextCount = formatCount.format(srsRawText.length)
-  const rawTextLimit = formatCount.format(SRS_RAW_TEXT_LIMIT)
 
   return (
-    <article className="grid gap-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="flex items-center justify-between gap-3">
-        <span className="text-xs font-bold uppercase tracking-[0.12em] text-brand-600">SRS generation</span>
-        <button
-          className="text-sm font-semibold text-brand-600 transition hover:text-brand-700 disabled:cursor-not-allowed disabled:opacity-50"
-          type="button"
-          onClick={onReload}
-          disabled={!activeWorkspace || !activeProject || isLoadingGenerationJobs || isLoadingSrsDocuments}
-        >
-          {isLoadingGenerationJobs || isLoadingSrsDocuments ? 'Loading' : 'Reload'}
-        </button>
-      </div>
+    <Card className="grid gap-5 p-5">
+      <PageHeader
+        size="section"
+        eyebrow="SRS generation"
+        title="Generate a document"
+        actions={
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onReload}
+            disabled={!activeWorkspace || !activeProject || isLoadingGenerationJobs || isLoadingSrsDocuments}
+          >
+            {isLoadingGenerationJobs || isLoadingSrsDocuments ? 'Loading…' : 'Reload'}
+          </Button>
+        }
+      />
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1.5fr)_minmax(16rem,1fr)]">
         <form className="grid gap-4" onSubmit={onStartGeneration}>
-          <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
-            Title
-            <input className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none transition focus:border-brand-500 focus:ring-3 focus:ring-brand-100" value={srsTitle} onChange={(event) => onSrsTitleChange(event.target.value)} required />
-          </label>
-          <label className="grid gap-1.5 text-sm font-semibold text-slate-700">
-            Requirements
-            <textarea
-              className="min-h-52 resize-y rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none transition focus:border-brand-500 focus:ring-3 focus:ring-brand-100"
+          <Field label="Title" htmlFor="srs-title">
+            <Input id="srs-title" value={srsTitle} onChange={(event) => onSrsTitleChange(event.target.value)} required />
+          </Field>
+          <Field
+            label="Requirements"
+            htmlFor="srs-raw"
+            hint={`${formatCount.format(srsRawText.length)} / ${formatCount.format(SRS_RAW_TEXT_LIMIT)} characters`}
+          >
+            <Textarea
+              id="srs-raw"
+              className="min-h-52"
               value={srsRawText}
               maxLength={SRS_RAW_TEXT_LIMIT}
               onChange={(event) => onSrsRawTextChange(event.target.value)}
               rows={10}
               required
             />
-            <small className="text-right text-xs font-medium text-slate-500">
-              {rawTextCount} / {rawTextLimit} characters
-            </small>
-          </label>
-          <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+          </Field>
+          <label className="flex items-center gap-2 text-sm font-semibold text-fg-2">
             <input
               checked={generateClassDiagram}
               type="checkbox"
+              className="size-4 accent-accent"
               disabled={!canGenerateAiDiagrams}
               onChange={(event) => onGenerateClassDiagramChange(event.target.checked)}
             />
-            Class diagram
+            Also generate a class diagram
           </label>
-          {!canGenerateSrs ? <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">Upgrade to generate SRS documents.</p> : null}
-          <button
-            className="rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50"
-            type="submit"
-            disabled={!activeProject || isStartingGeneration || !canGenerateSrs}
-          >
-            {isStartingGeneration ? 'Starting' : generateClassDiagram ? 'Generate SRS + diagram' : 'Start generation'}
-          </button>
+          {!canGenerateSrs ? <UpgradeNote>Upgrade to generate SRS documents.</UpgradeNote> : null}
+          <Button type="submit" className="w-max" disabled={!activeProject || isStartingGeneration || !canGenerateSrs}>
+            {isStartingGeneration ? 'Starting…' : generateClassDiagram ? 'Generate SRS + diagram' : 'Start generation'}
+          </Button>
         </form>
 
-        <div className="grid content-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
-          <span className="text-xs font-bold uppercase tracking-[0.12em] text-brand-600">Latest status</span>
-          <h2 className="text-xl font-bold text-slate-900">{latestGenerationJob?.status ?? 'No jobs yet'}</h2>
+        <div className="grid content-start gap-3 rounded-lg border border-border bg-surface-2 p-4">
+          <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-accent">Latest status</span>
+          <h3 className="font-display text-lg font-bold capitalize text-fg">
+            {latestGenerationJob?.status.replaceAll('_', ' ') ?? 'No jobs yet'}
+          </h3>
           {latestGenerationJob ? (
-            <p className="text-sm text-slate-600">
-              {latestGenerationJob.job_type} / {latestGenerationJob.progress_percent}% /{' '}
+            <p className="text-[13px] text-fg-2">
+              {latestGenerationJob.job_type} · {latestGenerationJob.progress_percent}% ·{' '}
               {new Date(latestGenerationJob.created_at).toLocaleString()}
             </p>
           ) : (
-            <p className="text-sm text-slate-600">Submit requirements to create a generation job.</p>
+            <p className="text-[13px] text-fg-2">Submit requirements to create a generation job.</p>
           )}
           <div className="grid gap-2" aria-label="Generation jobs">
             {generationJobs.map((job) => (
-              <button className="grid gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-sm font-semibold text-slate-800 transition hover:border-brand-300 hover:bg-brand-50" key={job.id} type="button">
-                <span>{job.status}</span>
-                <small className="text-xs font-medium text-slate-500">
-                  {job.job_type} / {new Date(job.created_at).toLocaleDateString()}
+              <div key={job.id} className="grid gap-1 rounded-md border border-border bg-surface px-3 py-2 text-sm">
+                <span className="font-semibold capitalize text-fg">{job.status.replaceAll('_', ' ')}</span>
+                <small className="text-xs text-fg-3">
+                  {job.job_type} · {new Date(job.created_at).toLocaleDateString()}
                 </small>
-              </button>
+              </div>
             ))}
           </div>
         </div>
       </div>
 
       {activeSrsDocument ? (
-        <div className="grid gap-4 border-t border-slate-200 pt-5">
+        <div className="grid gap-4 border-t border-border pt-5">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="text-xs font-bold uppercase tracking-[0.12em] text-brand-600">Generated SRS</span>
-            <span className="text-sm text-slate-500">{new Date(activeSrsDocument.created_at).toLocaleString()}</span>
+            <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-accent">Generated SRS</span>
+            <span className="text-[13px] text-fg-3">{new Date(activeSrsDocument.created_at).toLocaleString()}</span>
           </div>
           <div className="flex flex-wrap gap-2" aria-label="SRS documents">
             {srsDocuments.map((document) => (
               <button
-                className={document.id === activeSrsDocument.id ? 'grid gap-0.5 rounded-lg border border-brand-500 bg-brand-50 px-3 py-2 text-left text-sm font-semibold text-brand-800' : 'grid gap-0.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-sm font-semibold text-slate-700 transition hover:border-brand-300'}
                 key={document.id}
                 type="button"
                 onClick={() => onSelectSrsDocument(document.id)}
+                className={cn(
+                  'grid gap-0.5 rounded-md border px-3 py-2 text-left text-sm font-semibold transition',
+                  document.id === activeSrsDocument.id
+                    ? 'border-accent bg-accent/10 text-accent'
+                    : 'border-border text-fg-2 hover:border-border-strong',
+                )}
               >
                 <span>{document.title}</span>
                 <small className="text-xs font-medium opacity-75">{document.status}</small>
@@ -163,68 +172,81 @@ export function SrsPanel({
             ))}
           </div>
           <div className="flex flex-wrap gap-2">
-            <button className="rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm font-bold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50" type="button" onClick={onExportSrs} disabled={!canExportSrs}>
+            <Button variant="secondary" size="sm" onClick={onExportSrs} disabled={!canExportSrs}>
               Export SRS
-            </button>
-            <button
-              className="rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-sm font-bold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-              type="button"
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
               onClick={() => onGenerateClassDiagram(['rule_based'])}
               disabled={isGeneratingClassDiagram || !canGenerateAiDiagrams}
             >
-              {isGeneratingClassDiagram ? 'Generating' : 'Rule-based diagram'}
-            </button>
-            <button
-              className="rounded-lg bg-brand-600 px-3.5 py-2 text-sm font-bold text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50"
-              type="button"
+              {isGeneratingClassDiagram ? 'Generating…' : 'Rule-based diagram'}
+            </Button>
+            <Button
+              size="sm"
               onClick={() => onGenerateClassDiagram(['llm'])}
               disabled={isGeneratingClassDiagram || !canGenerateAiDiagrams}
             >
-              {isGeneratingClassDiagram ? 'Generating' : 'LLM diagram'}
-            </button>
+              {isGeneratingClassDiagram ? 'Generating…' : 'LLM diagram'}
+            </Button>
           </div>
-          {!canExportSrs ? <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">Upgrade to export SRS documents.</p> : null}
-          {!canGenerateAiDiagrams ? <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">Upgrade to generate AI diagrams.</p> : null}
+          {!canExportSrs ? <UpgradeNote>Upgrade to export SRS documents.</UpgradeNote> : null}
+          {!canGenerateAiDiagrams ? <UpgradeNote>Upgrade to generate AI diagrams.</UpgradeNote> : null}
 
           {generatedDiagrams.length > 0 ? (
             <div className="grid gap-3" aria-label="Generated diagram artifacts">
               {generatedDiagrams.map((diagram) => (
-                <article className="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-[1fr_auto]" key={diagram.id}>
+                <div
+                  key={diagram.id}
+                  className="grid gap-3 rounded-lg border border-border bg-surface-2 p-4 sm:grid-cols-[1fr_auto]"
+                >
                   <div className="grid gap-1">
-                    <strong>{diagram.title}</strong>
-                    <small className="text-xs text-slate-500">
-                      {diagram.diagram_type} / v{diagram.current.version_number}
+                    <strong className="text-fg">{diagram.title}</strong>
+                    <small className="text-xs text-fg-3">
+                      {diagram.diagram_type} · v{diagram.current.version_number}
                     </small>
                   </div>
-                  <button className="h-fit rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-700 transition hover:bg-slate-50" type="button" onClick={() => onOpenGeneratedDiagram(diagram)}>
+                  <Button variant="secondary" size="sm" className="h-fit" onClick={() => onOpenGeneratedDiagram(diagram)}>
                     Open diagram
-                  </button>
-                  <div className="flex flex-wrap gap-1.5 text-xs font-medium text-slate-600 sm:col-span-2" aria-label="Traceability links">
+                  </Button>
+                  <div className="flex flex-wrap gap-1.5 sm:col-span-2" aria-label="Traceability links">
                     {diagram.requirement_links.map((link) => (
-                      <span className="rounded bg-white px-2 py-1" key={link.id}>
-                        {link.requirement_code} {'->'} {link.diagram_element_label}
-                      </span>
+                      <Chip key={link.id} tone="muted">
+                        {link.requirement_code} → {link.diagram_element_label}
+                      </Chip>
                     ))}
-                    {diagram.requirement_links.length === 0 ? <span className="rounded bg-white px-2 py-1">No traceability links.</span> : null}
+                    {diagram.requirement_links.length === 0 ? <Chip tone="muted">No traceability links.</Chip> : null}
                   </div>
-                </article>
+                </div>
               ))}
             </div>
           ) : null}
 
-          <pre className="max-h-140 overflow-auto rounded-xl bg-slate-950 p-4 text-sm leading-6 text-slate-100 whitespace-pre-wrap">{activeSrsDocument.content_markdown}</pre>
+          <div className="prose-srs max-h-[35rem] overflow-auto rounded-lg border border-border bg-surface-2 p-5 text-[13px] leading-6 text-fg-2 [&_code]:font-mono [&_h1]:mb-2 [&_h1]:mt-4 [&_h1]:font-display [&_h1]:text-lg [&_h1]:font-bold [&_h1]:text-fg [&_h2]:mb-2 [&_h2]:mt-4 [&_h2]:font-display [&_h2]:text-[15px] [&_h2]:font-bold [&_h2]:text-fg [&_h3]:mt-3 [&_h3]:font-semibold [&_h3]:text-fg [&_li]:ml-4 [&_li]:list-disc [&_strong]:text-fg [&_table]:w-full [&_td]:border [&_td]:border-border [&_td]:px-2 [&_td]:py-1 [&_th]:border [&_th]:border-border [&_th]:px-2 [&_th]:py-1">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{activeSrsDocument.content_markdown}</ReactMarkdown>
+          </div>
+
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3" aria-label="Extracted requirements">
             {activeSrsDocument.extracted_requirements?.map((requirement) => (
-              <article className="grid gap-1 rounded-xl border border-slate-200 bg-white p-3" key={requirement.id}>
-                <strong className="text-sm text-brand-700">{requirement.requirement_code}</strong>
-                <span className="text-xs font-bold uppercase tracking-wide text-slate-500">{requirement.requirement_type}</span>
-                {requirement.nfr_subtype ? <small className="text-xs text-slate-500">{requirement.nfr_subtype}</small> : null}
-                <p className="text-sm leading-6 text-slate-700">{requirement.requirement_text}</p>
-              </article>
+              <div key={requirement.id} className="grid gap-1 rounded-lg border border-border bg-surface p-3">
+                <strong className="font-mono text-[13px] text-accent">{requirement.requirement_code}</strong>
+                <span className="text-[11px] font-bold uppercase tracking-wide text-fg-3">
+                  {requirement.requirement_type.replaceAll('_', ' ')}
+                </span>
+                {requirement.nfr_subtype ? <small className="text-xs text-fg-3">{requirement.nfr_subtype}</small> : null}
+                <p className="text-[13px] leading-6 text-fg-2">{requirement.requirement_text}</p>
+              </div>
             ))}
           </div>
         </div>
       ) : null}
-    </article>
+    </Card>
+  )
+}
+
+function UpgradeNote({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="rounded-md border border-warning/25 bg-warning/10 px-3 py-2 text-[13px] text-warning">{children}</p>
   )
 }
