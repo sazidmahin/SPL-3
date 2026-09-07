@@ -27,5 +27,22 @@ export function DrawioEmbed({ xml, title, className = 'h-96' }: Props) {
     return () => window.removeEventListener('message', receiveMessage)
   }, [xml])
 
-  return <div className="grid gap-2"><iframe ref={frame} className={`${className} w-full rounded-xl border border-slate-200 bg-slate-50`} src={drawioUrl} title={title} onLoad={() => setStatus('loading')} /><p className={`text-xs ${status === 'error' ? 'text-red-700' : 'text-muted'}`} aria-live="polite">{status === 'loading' ? 'Loading diagram preview…' : status === 'error' ? 'The diagram preview could not be loaded.' : 'Diagram preview ready.'}</p></div>
+  return (
+    <div className="grid gap-2">
+      <iframe
+        ref={frame}
+        className={`${className} w-full rounded-lg border border-border bg-surface-2`}
+        src={drawioUrl}
+        title={title}
+        onLoad={() => setStatus('loading')}
+      />
+      <p className={`text-xs ${status === 'error' ? 'text-danger' : 'text-fg-3'}`} aria-live="polite">
+        {status === 'loading'
+          ? 'Loading diagram preview…'
+          : status === 'error'
+          ? 'The diagram preview could not be loaded.'
+          : 'Diagram preview ready.'}
+      </p>
+    </div>
+  )
 }

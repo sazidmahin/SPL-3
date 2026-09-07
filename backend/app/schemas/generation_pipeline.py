@@ -5,7 +5,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 
-GenerationMode = Literal["rule_based", "srsgen", "byok"]
+GenerationMode = Literal["rule_based", "srsgen", "byok", "ollama"]
 PipelineStage = Literal["input", "clarifications", "final-story", "requirements", "class-model", "xml"]
 
 

@@ -1,39 +1,338 @@
 import type { ReactNode } from 'react'
-import { BarChart3, Bell, BriefcaseBusiness, CheckCircle2, ChevronDown, CircleHelp, Crown, Cuboid, FileText, Folder, GraduationCap, Landmark, MoreVertical, Network, Plus, Search, ShoppingCart, Sparkles, Zap } from 'lucide-react'
-import { Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { Check, FileText, Folder, Network, Plus, WandSparkles } from 'lucide-react'
+import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts'
 import type { Subscription, Usage } from '../../domains/billing/types'
 import type { Diagram } from '../../domains/diagram/types'
 import type { Project } from '../../domains/project/types'
 import type { GenerationJob, SrsDocument } from '../../domains/srs/types'
 import type { AuthUser } from '../../domains/auth/types'
 import type { WorkspaceMembership } from '../../domains/workspace/types'
+import { Card, Chip, EmptyState, LinkButton, PageHeader, ProgressBar, StatTile } from '../../shared/ui'
 
-type MemberDashboardProps = { user: AuthUser; activeWorkspace: WorkspaceMembership | undefined; activeProject: Project | undefined; projects: Project[]; srsDocuments: SrsDocument[]; diagrams: Diagram[]; generationJobs: GenerationJob[]; subscription: Subscription | null; usage: Usage | null }
-type Tone = 'purple' | 'blue' | 'green' | 'orange' | 'neutral'
-const fallbackProjects = [{ id: 'project-1', name: 'E-Commerce Platform', updated: 'Updated 2 hours ago', status: 'In Progress', tone: 'green' as const, icon: ShoppingCart }, { id: 'project-2', name: 'Healthcare Appointment System', updated: 'Updated yesterday', status: 'Planning', tone: 'blue' as const, icon: BriefcaseBusiness }, { id: 'project-3', name: 'Inventory Management System', updated: 'Updated 2 days ago', status: 'In Progress', tone: 'green' as const, icon: Folder }, { id: 'project-4', name: 'Learning Management System', updated: 'Updated 3 days ago', status: 'Review', tone: 'purple' as const, icon: GraduationCap }, { id: 'project-5', name: 'Mobile Banking App', updated: 'Updated 5 days ago', status: 'On Hold', tone: 'neutral' as const, icon: Landmark }]
-const fallbackDocuments = [{ id: 'doc-1', title: 'E-Commerce Platform - SRS', meta: 'v1.2 · Updated 2 hours ago', type: 'DOCX', tone: 'blue' as const }, { id: 'doc-2', title: 'Healthcare Appointment System - SRS', meta: 'v1.0 · Updated yesterday', type: 'PDF', tone: 'orange' as const }, { id: 'doc-3', title: 'Inventory Management System - SRS', meta: 'v1.1 · Updated 2 days ago', type: 'DOCX', tone: 'blue' as const }, { id: 'doc-4', title: 'Learning Management System - SRS', meta: 'v1.0 · Updated 3 days ago', type: 'PDF', tone: 'orange' as const }, { id: 'doc-5', title: 'Mobile Banking App - SRS', meta: 'v1.0 · Updated 5 days ago', type: 'DOCX', tone: 'blue' as const }]
-const activities = [{ id: 'activity-1', title: 'AI job completed: Generate Use Case Diagram', meta: 'E-Commerce Platform', time: '10 min ago', tone: 'green' as const, icon: CheckCircle2 }, { id: 'activity-2', title: 'SRS document updated', meta: 'E-Commerce Platform - SRS', time: '2 hours ago', tone: 'blue' as const, icon: FileText }, { id: 'activity-3', title: 'New project created', meta: 'Inventory Management System', time: '2 days ago', tone: 'purple' as const, icon: Folder }, { id: 'activity-4', title: 'Diagram exported', meta: 'Class Diagram - LMS', time: '3 days ago', tone: 'orange' as const, icon: Network }, { id: 'activity-5', title: 'AI job completed: Generate SRS', meta: 'Healthcare Appointment System', time: '5 days ago', tone: 'green' as const, icon: CheckCircle2 }]
-const trendData = [{ day: 'May 1', credits: 620 }, { day: 'May 4', credits: 1300 }, { day: 'May 7', credits: 1900 }, { day: 'May 10', credits: 2700 }, { day: 'May 13', credits: 3600 }, { day: 'May 16', credits: 4500 }, { day: 'May 19', credits: 5800 }, { day: 'May 22', credits: 7000 }, { day: 'May 25', credits: 7700 }, { day: 'May 28', credits: 8500 }, { day: 'May 31', credits: 9200 }]
-const panel = 'min-w-0 rounded-xl border border-slate-200 bg-white shadow-sm'
-const tones: Record<Tone, string> = { purple: 'bg-violet-100 text-violet-700', blue: 'bg-blue-100 text-blue-700', green: 'bg-emerald-100 text-emerald-700', orange: 'bg-orange-100 text-orange-700', neutral: 'bg-slate-100 text-slate-600' }
-
-export function MemberDashboard({ user, activeWorkspace, projects, srsDocuments, diagrams, generationJobs, subscription, usage }: MemberDashboardProps) {
-  const workspaceName = activeWorkspace?.workspace.name ?? 'Personal Workspace'; const creditLimit = 10000; const creditsUsed = Math.max(usage?.srs_generations ?? 6200, usage ? usage.srs_generations : 6200); const creditPercent = Math.min(100, Math.round((creditsUsed / creditLimit) * 100)); const projectRows = projects.length ? projects.slice(0, 5).map(projectToRow) : fallbackProjects; const srsRows = srsDocuments.length ? srsDocuments.slice(0, 5).map(documentToRow) : fallbackDocuments
-  return <section className="grid min-w-0 gap-5" id="overview"><DashboardTopbar workspaceName={workspaceName} user={user} /><div className="flex flex-col justify-between gap-4 sm:flex-row"><div><h1 className="text-3xl font-bold tracking-tight text-ink">Dashboard</h1><p className="mt-1 text-muted">Welcome back! Here’s what’s happening in your workspace.</p></div><button className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-linear-to-b from-violet-600 to-violet-700 px-4 font-extrabold text-white shadow-lg shadow-violet-700/20 transition hover:from-violet-500 hover:to-violet-600"><Plus size={18} />New Project<span className="h-6 w-px bg-white/30" /><ChevronDown size={16} /></button></div><div className="grid gap-4 sm:grid-cols-2 2xl:grid-cols-5"><MetricCard icon={Folder} label="Projects" value={projects.length || 12} delta="2 from last month" /><MetricCard icon={FileText} label="SRS Documents" value={srsDocuments.length || 28} delta="6 from last month" /><MetricCard icon={Network} label="Diagrams" value={diagrams.length || 17} delta="3 from last month" /><MetricCard icon={Sparkles} label="AI Jobs This Month" value={generationJobs.length || 46} delta="18% from last month" /><CreditMetric value={creditPercent} used={creditsUsed} limit={creditLimit} /></div><div className="grid gap-4 2xl:grid-cols-3"><DashboardPanel icon={Folder} title="Recent Projects"><EntityList rows={projectRows} /></DashboardPanel><DashboardPanel icon={FileText} title="Recent SRS Documents"><DocumentList rows={srsRows} /></DashboardPanel><DashboardPanel icon={Zap} title="Recent Activity"><ActivityList /></DashboardPanel><SubscriptionCard planName={subscription?.plan.name ?? 'Pro Plan'} /><UsageDonut used={creditsUsed} limit={creditLimit} percent={creditPercent} /><UsageTrend /></div></section>
+type MemberDashboardProps = {
+  user: AuthUser
+  activeWorkspace: WorkspaceMembership | undefined
+  activeProject: Project | undefined
+  projects: Project[]
+  srsDocuments: SrsDocument[]
+  diagrams: Diagram[]
+  generationJobs: GenerationJob[]
+  subscription: Subscription | null
+  usage: Usage | null
 }
 
-function DashboardTopbar({ workspaceName, user }: { workspaceName: string; user: AuthUser }) { return <header className="grid gap-3 border-b border-slate-200 bg-white p-3 lg:grid-cols-[17.5rem_minmax(18rem,1fr)_auto] lg:items-center"><button className="flex min-h-10 items-center justify-between gap-3 rounded-lg border border-slate-200 px-3 text-sm font-bold text-slate-800"><span className="grid size-7 place-items-center text-violet-700"><Cuboid size={21} /></span>{workspaceName}<ChevronDown size={16} /></button><label className="flex min-h-10 items-center gap-3 rounded-lg border border-slate-200 px-3 text-slate-400"><Search size={20} /><input className="w-full border-0 text-sm text-slate-800 outline-none" placeholder="Search projects, documents, diagrams..." /><kbd className="text-xs font-bold text-slate-400">⌘ K</kbd></label><div className="flex items-center gap-3"><button className="relative grid size-10 place-items-center rounded-full text-slate-600 hover:bg-slate-100" type="button" aria-label="Notifications"><Bell size={20} /><span className="absolute -right-1 -top-1 grid size-5 place-items-center rounded-full border-2 border-white bg-violet-700 text-[11px] font-bold text-white">3</span></button><button className="grid size-10 place-items-center rounded-full text-slate-600 hover:bg-slate-100" type="button" aria-label="Help"><CircleHelp size={20} /></button><button className="relative flex items-center gap-2" type="button" aria-label={user.full_name}><span className="grid size-10 place-items-center rounded-full bg-linear-to-br from-blue-200 to-violet-300 text-xs font-extrabold text-slate-800">{initials(user.full_name)}</span><i className="absolute bottom-0 left-7 size-2.5 rounded-full border-2 border-white bg-emerald-600" /><ChevronDown size={15} /></button></div></header> }
-function MetricCard({ icon: Icon, label, value, delta }: { icon: typeof Folder; label: string; value: number; delta: string }) { return <article className="grid min-h-32 grid-cols-[3.625rem_minmax(0,1fr)] items-center gap-3 rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><span className="grid size-14 place-items-center rounded-xl bg-violet-100 text-violet-700"><Icon size={30} /></span><div><span className="text-sm font-semibold text-muted">{label}</span><strong className="mt-1 block text-3xl font-bold leading-none text-ink">{value}</strong></div><small className="col-start-2 text-xs font-bold text-emerald-700">↑ {delta}</small></article> }
-function CreditMetric({ value, used, limit }: { value: number; used: number; limit: number }) { return <article className="grid min-h-32 grid-cols-[3.625rem_minmax(0,1fr)] gap-3 rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><span className="grid size-14 place-items-center rounded-xl bg-violet-100 text-violet-700"><BarChart3 size={30} /></span><div><span className="text-sm font-semibold text-muted">Credit Usage</span><strong className="mt-1 block text-3xl font-bold leading-none text-ink">{value}%</strong></div><p className="col-span-full -mt-2 text-xs font-semibold text-muted">{formatNumber(used)} / {formatNumber(limit)} credits used</p><div className="col-span-full h-2 overflow-hidden rounded-full bg-violet-100"><span className="block h-full rounded-full bg-violet-700" style={{ width: `${value}%` }} /></div></article> }
-function DashboardPanel({ icon: Icon, title, children }: { icon: typeof Folder; title: string; children: ReactNode }) { return <section className={panel}><header className="flex min-h-14 items-center justify-between gap-3 px-5"><div className="flex items-center gap-2 text-violet-700"><Icon size={19} /><h2 className="font-bold text-ink">{title}</h2></div><button className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-bold text-violet-700 hover:bg-violet-50" type="button">View all</button></header>{children}</section> }
-function EntityList({ rows }: { rows: Array<{ id: string; name: string; updated: string; status: string; tone: Tone; icon: typeof Folder }> }) { return <div className="grid px-5 pb-4">{rows.map((row) => { const Icon = row.icon; return <article className="grid min-h-14 grid-cols-[2.5rem_minmax(0,1fr)_auto_1.5rem] items-center gap-3 border-t border-slate-100 first:border-0" key={row.id}><span className={`grid size-9 place-items-center rounded-lg ${tones[row.tone]}`}><Icon size={21} /></span><div><strong className="block text-sm font-bold text-slate-900">{row.name}</strong><small className="mt-0.5 block text-xs text-muted">{row.updated}</small></div><StatusTag tone={row.tone}>{row.status}</StatusTag><MoreVertical className="text-slate-400" size={18} /></article> })}</div> }
-function DocumentList({ rows }: { rows: Array<{ id: string; title: string; meta: string; type: string; tone: Tone }> }) { return <div className="grid px-5 pb-4">{rows.map((row) => <article className="grid min-h-14 grid-cols-[2.5rem_minmax(0,1fr)_1.5rem] items-center gap-3 border-t border-slate-100 first:border-0" key={row.id}><span className={`grid size-9 place-items-center rounded-lg text-[10px] font-extrabold ${tones[row.tone]}`}>{row.type}</span><div><strong className="block text-sm font-bold text-slate-900">{row.title}</strong><small className="mt-0.5 block text-xs text-muted">{row.meta}</small></div><MoreVertical className="text-slate-400" size={18} /></article>)}</div> }
-function ActivityList() { return <div className="grid gap-1 px-5 pb-4">{activities.map((activity) => { const Icon = activity.icon; return <article className="grid min-h-15 grid-cols-[2.5rem_minmax(0,1fr)_auto] items-start gap-3" key={activity.id}><span className={`grid size-9 place-items-center rounded-full ${tones[activity.tone]}`}><Icon size={18} /></span><div><strong className="block text-sm font-bold text-slate-900">{activity.title}</strong><small className="mt-0.5 block text-xs text-muted">{activity.meta}</small></div><time className="text-xs text-muted">{activity.time}</time></article> })}</div> }
-function SubscriptionCard({ planName }: { planName: string }) { return <section className={panel}><header className="flex min-h-14 items-center gap-2 px-5 text-violet-700"><Crown size={20} /><h2 className="font-bold text-ink">Subscription</h2></header><div className="mx-4 mb-4 grid gap-4 rounded-xl border border-violet-200 bg-linear-to-br from-violet-50 via-white to-violet-100 p-5 lg:grid-cols-[minmax(0,1fr)_9rem] lg:items-center"><div><h3 className="text-2xl font-bold text-violet-700">{planName}</h3><p className="mt-1 text-sm text-slate-600">Renews on Jun 18, 2025</p><ul className="mt-3 grid gap-1.5 text-sm text-slate-700">{['10,000 credits / month', 'Unlimited projects', 'Advanced AI generation', 'Priority support'].map((item) => <li className="before:mr-2 before:font-extrabold before:text-violet-700 before:content-['✓']" key={item}>{item}</li>)}</ul><div className="mt-4 flex flex-wrap gap-2"><button className="rounded-lg bg-violet-700 px-3 py-2 text-sm font-bold text-white hover:bg-violet-800" type="button">Manage Subscription</button><button className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-800 hover:bg-slate-50" type="button">View Plans</button></div></div><span className="hidden size-36 place-items-center rounded-full bg-radial from-white from-0% via-white via-35% to-violet-200 to-36% text-violet-500 drop-shadow-lg lg:grid"><Crown size={82} /></span></div></section> }
-function UsageDonut({ used, limit, percent }: { used: number; limit: number; percent: number }) { const chartData = [{ name: 'Credits used', value: used, color: '#6d28d9' }, { name: 'Credits remaining', value: Math.max(0, limit - used), color: '#e9ddff' }]; return <section className={panel}><header className="flex min-h-14 items-center justify-between px-5"><h2 className="font-bold text-ink">Usage Overview</h2><button className="flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-bold text-slate-700" type="button">This Month <ChevronDown size={14} /></button></header><div className="grid items-center gap-2 px-5 pb-4 sm:grid-cols-[10.5rem_minmax(0,1fr)]"><div className="grid gap-2"><span className="text-sm text-slate-600">Credits Used</span><strong className="text-xl text-ink">{formatNumber(used)} / {formatNumber(limit)}</strong><b className="text-2xl text-violet-700">{percent}%</b><div className="mt-3 grid gap-2 text-xs text-slate-700"><span className="flex items-center gap-2"><i className="size-3 rounded bg-violet-700" />Credits used</span><span className="flex items-center gap-2"><i className="size-3 rounded bg-violet-100" />Credits remaining</span></div></div><div className="relative min-w-0"><ResponsiveContainer width="100%" height={210}><PieChart><Pie data={chartData} dataKey="value" innerRadius={58} outerRadius={88} paddingAngle={1} stroke="none">{chartData.map((entry) => <Cell fill={entry.color} key={entry.name} />)}</Pie><Tooltip formatter={(value) => formatNumber(Number(value ?? 0))} /></PieChart></ResponsiveContainer><div className="pointer-events-none absolute inset-0 grid place-content-center text-center"><strong className="text-xl text-slate-900">{formatNumber(used)}</strong><span className="text-xs text-muted">Used</span></div></div></div></section> }
-function UsageTrend() { return <section className={panel}><header className="flex min-h-14 items-center justify-between px-5"><h2 className="font-bold text-ink">Usage Trend</h2><button className="flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-bold text-slate-700" type="button">This Month <ChevronDown size={14} /></button></header><ResponsiveContainer width="100%" height={236}><LineChart data={trendData} margin={{ top: 12, right: 18, left: -14, bottom: 0 }}><XAxis dataKey="day" axisLine={false} tickLine={false} interval={1} tick={{ fill: '#64748b', fontSize: 12 }} /><YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} tickFormatter={(value) => `${Number(value) / 1000}K`} /><Tooltip formatter={(value) => `${formatNumber(Number(value ?? 0))} credits`} /><Line type="monotone" dataKey="credits" stroke="#6d28d9" strokeWidth={4} dot={{ r: 4, fill: '#6d28d9' }} activeDot={{ r: 6 }} /></LineChart></ResponsiveContainer><div className="flex items-center justify-center gap-2 pb-4 text-xs font-bold text-slate-700"><span className="size-3 rounded bg-violet-700" /> Credits Used</div></section> }
-function StatusTag({ tone, children }: { tone: Tone; children: string }) { return <span className={`inline-flex min-h-6 items-center rounded-md px-2.5 text-xs font-bold whitespace-nowrap ${tones[tone]}`}>{children}</span> }
-function projectToRow(project: Project) { return { id: project.id, name: project.name, updated: `Updated ${new Date(project.updated_at).toLocaleDateString()}`, status: project.status || 'Active', tone: project.status === 'archived' ? 'neutral' as const : 'green' as const, icon: Folder } }
-function documentToRow(document: SrsDocument) { return { id: document.id, title: document.title, meta: `${document.status} · Updated ${new Date(document.updated_at).toLocaleDateString()}`, type: 'DOCX', tone: 'blue' as const } }
-function initials(name: string) { return name.trim().split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('') || 'U' }
-function formatNumber(value: number) { return new Intl.NumberFormat('en-US').format(value) }
+const JOB_STATUS_COLORS: Record<string, string> = {
+  completed: '#00d4aa',
+  running: '#38bdf8',
+  pending: '#818cf8',
+  partially_completed: '#fbbf24',
+  failed: '#f87171',
+}
+
+export function MemberDashboard({
+  user,
+  projects,
+  srsDocuments,
+  diagrams,
+  generationJobs,
+  subscription,
+  usage,
+}: MemberDashboardProps) {
+  const firstName = user.full_name.trim().split(/\s+/)[0] || 'there'
+  const creditLimit = subscription?.plan.monthly_srs_generations ?? 100
+  const creditsUsed = usage?.srs_generations ?? 0
+  const creditPercent = creditLimit > 0 ? Math.min(100, Math.round((creditsUsed / creditLimit) * 100)) : 0
+
+  const jobsByStatus = groupBy(generationJobs, (job) => job.status)
+  const donutData = Object.entries(jobsByStatus).map(([status, items]) => ({
+    name: status.replaceAll('_', ' '),
+    value: items.length,
+    color: JOB_STATUS_COLORS[status] ?? '#94a3b8',
+  }))
+
+  const recentProjects = [...projects]
+    .sort((a, b) => b.updated_at.localeCompare(a.updated_at))
+    .slice(0, 5)
+  const recentDocs = [...srsDocuments]
+    .sort((a, b) => b.created_at.localeCompare(a.created_at))
+    .slice(0, 4)
+  const activity = buildActivity(srsDocuments, diagrams, generationJobs)
+
+  return (
+    <section className="grid min-w-0 gap-6" id="overview">
+      <PageHeader
+        title="Dashboard"
+        description={`Good to see you, ${firstName} — here's your workspace at a glance.`}
+        actions={
+          <LinkButton href="#srs">
+            <Plus /> New SRS
+          </LinkButton>
+        }
+      />
+
+      <div className="grid gap-3.5 sm:grid-cols-2 xl:grid-cols-5">
+        <StatTile label="Projects" value={projects.length} icon={Folder} />
+        <StatTile label="SRS Documents" value={srsDocuments.length} icon={FileText} />
+        <StatTile label="Diagrams" value={diagrams.length} icon={Network} />
+        <StatTile label="AI Jobs" value={generationJobs.length} icon={WandSparkles} />
+        <StatTile label="SRS credits" value={`${creditPercent}%`}>
+          <ProgressBar className="mt-2" value={creditPercent} />
+          <div className="mt-1 font-mono text-[11px] text-fg-3">
+            {creditsUsed.toLocaleString()} / {creditLimit.toLocaleString()}
+          </div>
+        </StatTile>
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
+        <Card className="p-5">
+          <PageHeader
+            size="section"
+            title="Recent Projects"
+            actions={
+              <a href="#projects" className="text-xs font-semibold text-fg-2 hover:text-fg">
+                View all →
+              </a>
+            }
+          />
+          {recentProjects.length === 0 ? (
+            <EmptyState
+              className="mt-4"
+              icon={Folder}
+              title="No projects yet"
+              description="Create a project to start generating SRS documents and diagrams."
+              action={
+                <LinkButton href="#projects" size="sm">
+                  <Plus /> New Project
+                </LinkButton>
+              }
+            />
+          ) : (
+            <div className="mt-4 grid gap-px">
+              {recentProjects.map((project) => (
+                <div
+                  key={project.id}
+                  className="flex items-center gap-3 rounded-md px-2 py-2.5 transition hover:bg-surface-2"
+                >
+                  <span className="grid size-8 shrink-0 place-items-center rounded-md bg-accent/15 text-accent">
+                    <Folder className="size-3.5" />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-[13px] font-semibold text-fg">{project.name}</div>
+                    <div className="truncate text-[11px] text-fg-3">{project.description || 'No description'}</div>
+                  </div>
+                  <Chip tone={project.status === 'archived' ? 'muted' : 'active'}>{formatStatus(project.status)}</Chip>
+                  <span className="whitespace-nowrap text-[11px] text-fg-3">{relativeTime(project.updated_at)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+
+        <Card className="p-5">
+          <PageHeader size="section" title="AI Jobs by Status" />
+          {donutData.length === 0 ? (
+            <EmptyState className="mt-4" icon={WandSparkles} title="No AI jobs yet" />
+          ) : (
+            <>
+              <div className="mx-auto mt-2 h-[150px] w-[150px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={donutData} dataKey="value" innerRadius={45} outerRadius={68} paddingAngle={2} stroke="none">
+                      {donutData.map((entry) => (
+                        <Cell key={entry.name} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="mt-3 grid gap-2">
+                {donutData.map((entry) => (
+                  <div key={entry.name} className="flex items-center justify-between text-[12.5px]">
+                    <span className="flex items-center gap-2 capitalize text-fg-2">
+                      <span className="size-2 rounded-full" style={{ background: entry.color }} />
+                      {entry.name}
+                    </span>
+                    <span className="font-semibold text-fg">{entry.value}</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </Card>
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-3">
+        <Card className="p-5">
+          <PageHeader size="section" title="Recent SRS Documents" />
+          {recentDocs.length === 0 ? (
+            <EmptyState className="mt-4" icon={FileText} title="No SRS documents yet" />
+          ) : (
+            <div className="mt-3 grid gap-px">
+              {recentDocs.map((document) => (
+                <div key={document.id} className="flex items-center gap-2.5 rounded-md px-2 py-2.5 transition hover:bg-surface-2">
+                  <FileText className="size-4 shrink-0 text-fg-3" />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-[13px] font-medium text-fg">{document.title}</div>
+                    <div className="font-mono text-[11px] text-fg-3">
+                      {document.extracted_requirements?.length ?? 0} requirements
+                    </div>
+                  </div>
+                  <Chip tone="muted">{formatStatus(document.status)}</Chip>
+                  <span className="whitespace-nowrap text-[11px] text-fg-3">{relativeTime(document.created_at)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+
+        <Card className="p-5">
+          <PageHeader size="section" title="Recent Activity" />
+          {activity.length === 0 ? (
+            <EmptyState className="mt-4" title="Nothing here yet" />
+          ) : (
+            <div className="mt-3 grid gap-3.5">
+              {activity.map((item) => (
+                <div key={item.id} className="flex gap-2.5">
+                  <span className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-full bg-accent2/15 text-accent2">
+                    <item.icon className="size-3.5" />
+                  </span>
+                  <div>
+                    <div className="text-[13px] text-fg">{item.title}</div>
+                    <div className="mt-0.5 text-[11px] text-fg-3">{relativeTime(item.time)}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+
+        <PlanCard subscription={subscription} used={creditsUsed} limit={creditLimit} percent={creditPercent} />
+      </div>
+    </section>
+  )
+}
+
+function PlanCard({
+  subscription,
+  used,
+  limit,
+  percent,
+}: {
+  subscription: Subscription | null
+  used: number
+  limit: number
+  percent: number
+}) {
+  const plan = subscription?.plan
+  const renews = subscription?.current_period_end
+    ? new Date(subscription.current_period_end).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    : null
+  const features = [
+    plan?.can_generate_srs ? 'SRS generation' : null,
+    plan?.can_generate_ai_diagrams ? 'AI class diagrams' : null,
+    plan?.can_export_srs ? 'SRS export' : null,
+    plan?.can_use_manual_drawio ? 'Manual draw.io editing' : null,
+  ].filter((value): value is string => Boolean(value))
+
+  return (
+    <div className="relative overflow-hidden rounded-lg border border-accent2/20 bg-gradient-to-br from-[#1a1040] to-[#0d1f3c] p-5.5">
+      <div className="relative z-10">
+        <div className="flex items-center justify-between">
+          <span className="font-display text-lg font-extrabold text-white">{plan?.name ?? 'Free Plan'}</span>
+          <Chip tone={subscription?.status === 'active' ? 'active' : 'muted'}>{subscription?.status ?? 'free'}</Chip>
+        </div>
+        {renews ? <div className="mt-1 text-xs text-white/40">Renews {renews}</div> : null}
+        <div className="mt-4">
+          <div className="flex justify-between text-xs text-white/50">
+            <span>SRS credits</span>
+            <span className="font-semibold text-white">
+              {used.toLocaleString()} / {limit.toLocaleString()}
+            </span>
+          </div>
+          <div className="mt-1 h-1 overflow-hidden rounded-full bg-white/10">
+            <div className="h-full rounded-full bg-gradient-to-r from-accent2 to-accent" style={{ width: `${percent}%` }} />
+          </div>
+        </div>
+        {features.length > 0 ? (
+          <div className="mt-4 grid gap-2">
+            {features.map((feature) => (
+              <div key={feature} className="flex items-center gap-2 text-[12.5px] text-white/70">
+                <Check className="size-3.5 text-success" />
+                {feature}
+              </div>
+            ))}
+          </div>
+        ) : null}
+        <a
+          href="#subscription"
+          className="mt-5 block rounded-md border border-white/15 bg-white/10 py-2 text-center text-[13px] font-semibold text-white transition hover:bg-white/20"
+        >
+          Manage subscription
+        </a>
+      </div>
+    </div>
+  )
+}
+
+type ActivityItem = { id: string; title: ReactNode; time: string; icon: typeof FileText }
+
+function buildActivity(srsDocuments: SrsDocument[], diagrams: Diagram[], jobs: GenerationJob[]): ActivityItem[] {
+  const entries: ActivityItem[] = [
+    ...srsDocuments.map((document) => ({
+      id: `doc-${document.id}`,
+      title: (
+        <>
+          SRS document <strong>{document.title}</strong> {document.status}
+        </>
+      ),
+      time: document.created_at,
+      icon: FileText,
+    })),
+    ...diagrams.map((diagram) => ({
+      id: `diagram-${diagram.id}`,
+      title: (
+        <>
+          Diagram <strong>{diagram.title}</strong> updated
+        </>
+      ),
+      time: diagram.updated_at,
+      icon: Network,
+    })),
+    ...jobs.map((job) => ({
+      id: `job-${job.id}`,
+      title: (
+        <>
+          {job.job_type.replaceAll('_', ' ')} job {job.status}
+        </>
+      ),
+      time: job.updated_at,
+      icon: WandSparkles,
+    })),
+  ]
+  return entries.sort((a, b) => b.time.localeCompare(a.time)).slice(0, 5)
+}
+
+function groupBy<T>(items: T[], key: (item: T) => string): Record<string, T[]> {
+  return items.reduce<Record<string, T[]>>((accumulator, item) => {
+    const bucket = key(item)
+    ;(accumulator[bucket] ??= []).push(item)
+    return accumulator
+  }, {})
+}
+
+function formatStatus(status: string) {
+  return status.replaceAll('_', ' ').replace(/^\w/, (character) => character.toUpperCase())
+}
+
+function relativeTime(iso: string) {
+  const diffMs = Date.now() - new Date(iso).getTime()
+  const minutes = Math.round(diffMs / 60000)
+  if (minutes < 1) return 'just now'
+  if (minutes < 60) return `${minutes}m ago`
+  const hours = Math.round(minutes / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.round(hours / 24)
+  if (days < 7) return `${days}d ago`
+  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}

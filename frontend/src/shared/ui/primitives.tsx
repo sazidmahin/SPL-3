@@ -1,90 +1,300 @@
-import type { ReactNode } from 'react'
+import type { AnchorHTMLAttributes, ButtonHTMLAttributes, HTMLAttributes, ReactNode } from 'react'
+import { forwardRef } from 'react'
+import type { LucideIcon } from 'lucide-react'
+import { cn } from './cn'
+import { buttonClasses, chipTones } from './styles'
+import type { ButtonSize, ButtonVariant, Tone } from './styles'
 
-type Tone = 'neutral' | 'success' | 'warning' | 'danger' | 'info'
+/* ── Card ─────────────────────────────────────────────── */
 
-type SectionHeaderProps = {
-  label: string
-  title: string
-  description?: string
-  actions?: ReactNode
+export function Card({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
+  return <div className={cn('rounded-lg border border-border bg-surface shadow-sm', className)} {...props} />
 }
 
-export function SectionHeader({ label, title, description, actions }: SectionHeaderProps) {
+/* ── Button ───────────────────────────────────────────── */
+
+type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & { variant?: ButtonVariant; size?: ButtonSize }
+
+export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
+  { variant = 'primary', size = 'md', className, type, ...props },
+  ref,
+) {
+  return <button ref={ref} type={type ?? 'button'} className={buttonClasses({ variant, size, className })} {...props} />
+})
+
+type LinkButtonProps = AnchorHTMLAttributes<HTMLAnchorElement> & { variant?: ButtonVariant; size?: ButtonSize }
+
+export function LinkButton({ variant = 'primary', size = 'md', className, ...props }: LinkButtonProps) {
+  return <a className={buttonClasses({ variant, size, className })} {...props} />
+}
+
+/* ── Chip ─────────────────────────────────────────────── */
+
+type ChipProps = HTMLAttributes<HTMLSpanElement> & { tone?: Tone }
+
+export function Chip({ tone = 'neutral', className, ...props }: ChipProps) {
   return (
-    <div className="flex flex-col items-start justify-between gap-4 sm:flex-row">
+    <span
+      className={cn(
+        'inline-flex items-center gap-1 whitespace-nowrap rounded-full border px-2.5 py-0.5 text-[11px] font-semibold',
+        chipTones[tone],
+        className,
+      )}
+      {...props}
+    />
+  )
+}
+
+/* ── PageHeader ───────────────────────────────────────── */
+
+type PageHeaderProps = {
+  title: string
+  description?: ReactNode
+  eyebrow?: string
+  actions?: ReactNode
+  size?: 'page' | 'section'
+  className?: string
+}
+
+export function PageHeader({ title, description, eyebrow, actions, size = 'page', className }: PageHeaderProps) {
+  const section = size === 'section'
+  const Heading = section ? 'h2' : 'h1'
+  return (
+    <div className={cn('flex flex-wrap items-start justify-between gap-4', className)}>
       <div>
-        <span className="block text-xs font-extrabold uppercase tracking-wide text-brand-600">{label}</span>
-        <h2 className="mt-2 text-xl font-bold leading-tight text-ink">{title}</h2>
-        {description ? <p className="mt-2 max-w-3xl text-sm text-muted">{description}</p> : null}
+        {eyebrow ? <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-accent">{eyebrow}</span> : null}
+        <Heading
+          className={cn(
+            'font-display font-extrabold tracking-tight text-fg',
+            section ? 'text-[15px] font-bold' : 'text-2xl',
+          )}
+        >
+          {title}
+        </Heading>
+        {description ? <p className="mt-1 max-w-3xl text-[13.5px] text-fg-2">{description}</p> : null}
       </div>
       {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
     </div>
   )
 }
 
+/* ── StatTile ─────────────────────────────────────────── */
+
 type StatTileProps = {
   label: string
   value: string | number
-  meta: string
-  tone?: Tone
+  delta?: string
+  deltaDirection?: 'up' | 'down'
+  icon?: LucideIcon
+  children?: ReactNode
 }
 
-export function StatTile({ label, value, meta, tone = 'neutral' }: StatTileProps) {
+export function StatTile({ label, value, delta, deltaDirection = 'up', icon: Icon, children }: StatTileProps) {
   return (
-    <article className={`grid min-h-32 gap-2 rounded-lg border border-slate-200 border-t-4 bg-white p-4 shadow-sm ${toneClass[tone]}`}>
-      <span className="text-sm font-semibold text-muted">{label}</span>
-      <strong className="text-3xl font-bold leading-none text-ink">{value}</strong>
-      <small className="text-sm font-semibold text-muted">{meta}</small>
-    </article>
+    <Card className="px-5 py-[18px]">
+      <div className="flex items-start justify-between gap-3">
+        <span className="text-xs font-medium uppercase tracking-[0.06em] text-fg-3">{label}</span>
+        {Icon ? <Icon className="size-4 text-fg-3" /> : null}
+      </div>
+      <div className="mt-1.5 mb-1 font-display text-[26px] font-extrabold leading-none text-fg">{value}</div>
+      {delta ? (
+        <div className={cn('text-[11.5px] font-semibold', deltaDirection === 'up' ? 'text-success' : 'text-danger')}>{delta}</div>
+      ) : null}
+      {children}
+    </Card>
   )
 }
 
-type StatusChipProps = {
-  children: ReactNode
-  tone?: Tone
+/* ── ProgressBar ──────────────────────────────────────── */
+
+export function ProgressBar({ value, className }: { value: number; className?: string }) {
+  return (
+    <div className={cn('h-1.5 overflow-hidden rounded-full bg-surface-3', className)}>
+      <div
+        className="h-full rounded-full bg-gradient-to-r from-accent to-accent2 transition-[width] duration-300"
+        style={{ width: `${Math.max(0, Math.min(100, value))}%` }}
+      />
+    </div>
+  )
 }
 
-export function StatusChip({ children, tone = 'neutral' }: StatusChipProps) {
-  return <span className={`inline-flex min-h-7 max-w-full items-center justify-center rounded-full border px-2.5 py-1 text-xs font-extrabold capitalize whitespace-nowrap ${chipClass[tone]}`}>{children}</span>
+/* ── DataTable ────────────────────────────────────────── */
+
+export function DataTable({ className, children, ...props }: HTMLAttributes<HTMLTableElement>) {
+  return (
+    <div className="overflow-x-auto">
+      <table
+        className={cn(
+          'w-full border-separate border-spacing-0 text-left',
+          '[&_th]:border-b [&_th]:border-border [&_th]:bg-surface-2 [&_th]:px-3.5 [&_th]:py-2.5 [&_th]:text-[11px] [&_th]:font-semibold [&_th]:uppercase [&_th]:tracking-[0.07em] [&_th]:text-fg-3',
+          '[&_td]:border-b [&_td]:border-border [&_td]:px-3.5 [&_td]:py-3 [&_td]:align-middle [&_td]:text-[13px] [&_td]:text-fg-2',
+          '[&_tbody_tr:last-child_td]:border-b-0 [&_tbody_tr]:transition-colors [&_tbody_tr:hover_td]:bg-surface-2',
+          className,
+        )}
+        {...props}
+      >
+        {children}
+      </table>
+    </div>
+  )
 }
 
-type CompactListItem = {
-  id: string
+/* ── EmptyState ───────────────────────────────────────── */
+
+type EmptyStateProps = {
   title: string
-  meta: string
-  value?: string
-  tone?: Tone
+  description?: string
+  icon?: LucideIcon
+  action?: ReactNode
+  className?: string
 }
 
-type CompactListProps = {
-  items: CompactListItem[]
-  emptyText: string
+export function EmptyState({ title, description, icon: Icon, action, className }: EmptyStateProps) {
+  return (
+    <div
+      className={cn(
+        'grid place-items-center gap-2 rounded-lg border border-dashed border-border bg-surface-2 px-6 py-12 text-center',
+        className,
+      )}
+    >
+      {Icon ? <Icon className="size-6 text-fg-3" /> : null}
+      <p className="font-display text-sm font-bold text-fg">{title}</p>
+      {description ? <p className="max-w-sm text-xs text-fg-3">{description}</p> : null}
+      {action ? <div className="mt-1">{action}</div> : null}
+    </div>
+  )
 }
 
-export function CompactList({ items, emptyText }: CompactListProps) {
+/* ── CompactList ──────────────────────────────────────── */
+
+type CompactListItem = { id: string; title: string; meta: string; value?: string; tone?: Tone }
+
+export function CompactList({ items, emptyText }: { items: CompactListItem[]; emptyText: string }) {
   if (items.length === 0) {
-    return <p className="text-sm text-muted">{emptyText}</p>
+    return <p className="text-[13px] text-fg-3">{emptyText}</p>
   }
-
   return (
     <div className="grid gap-2">
       {items.map((item) => (
-        <article className="flex min-h-14 items-center justify-between gap-3 rounded-md border border-slate-200 bg-slate-50 px-3 py-2.5" key={item.id}>
-          <div>
-            <strong className="block font-bold capitalize text-ink">{item.title}</strong>
-            <small className="block text-sm text-muted">{item.meta}</small>
+        <div
+          key={item.id}
+          className="flex min-h-14 items-center justify-between gap-3 rounded-md border border-border bg-surface-2 px-3 py-2.5"
+        >
+          <div className="min-w-0">
+            <strong className="block truncate text-[13px] font-semibold text-fg">{item.title}</strong>
+            <small className="block truncate text-xs text-fg-3">{item.meta}</small>
           </div>
-          {item.value ? <StatusChip tone={item.tone}>{item.value}</StatusChip> : null}
-        </article>
+          {item.value ? <Chip tone={item.tone ?? 'muted'}>{item.value}</Chip> : null}
+        </div>
       ))}
     </div>
   )
 }
 
-const toneClass: Record<Tone, string> = {
-  neutral: 'border-t-slate-300', info: 'border-t-blue-600', success: 'border-t-brand-600', warning: 'border-t-amber-600', danger: 'border-t-red-700',
+/* ── RadioCard ────────────────────────────────────────── */
+
+type RadioCardProps = {
+  name: string
+  value: string
+  checked?: boolean
+  defaultChecked?: boolean
+  onChange?: (value: string) => void
+  disabled?: boolean
+  title: ReactNode
+  description?: ReactNode
+  icon?: LucideIcon
+  meta?: ReactNode
+  children?: ReactNode
 }
 
-const chipClass: Record<Tone, string> = {
-  neutral: 'border-slate-200 bg-slate-100 text-slate-900', info: 'border-blue-300 bg-blue-100 text-blue-700', success: 'border-emerald-300 bg-emerald-100 text-emerald-800', warning: 'border-amber-300 bg-amber-100 text-amber-700', danger: 'border-red-200 bg-red-50 text-red-800',
+export function RadioCard({
+  name,
+  value,
+  checked,
+  defaultChecked,
+  onChange,
+  disabled,
+  title,
+  description,
+  icon: Icon,
+  meta,
+  children,
+}: RadioCardProps) {
+  return (
+    <label
+      className={cn(
+        'block rounded-lg border-[1.5px] border-border px-4 py-3.5 transition',
+        'has-[:checked]:border-accent has-[:checked]:bg-accent/10',
+        disabled ? 'cursor-not-allowed opacity-55' : 'cursor-pointer hover:border-border-strong hover:bg-surface-2',
+      )}
+    >
+      <div className="flex items-start gap-3">
+        <input
+          type="radio"
+          name={name}
+          value={value}
+          checked={checked}
+          defaultChecked={defaultChecked}
+          disabled={disabled}
+          onChange={(event) => onChange?.(event.target.value)}
+          className="mt-0.5 size-[15px] shrink-0 accent-accent"
+        />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5 text-[13px] font-semibold text-fg">
+            {Icon ? <Icon className="size-3.5 text-fg-2" /> : null}
+            {title}
+          </div>
+          {description ? <div className="mt-0.5 text-[11.5px] text-fg-3">{description}</div> : null}
+          {children}
+        </div>
+        {meta ? <div className="flex shrink-0 items-center gap-1">{meta}</div> : null}
+      </div>
+    </label>
+  )
+}
+
+/* ── StepTrack ────────────────────────────────────────── */
+
+type StepTrackProps = {
+  steps: string[]
+  current: number
+  className?: string
+}
+
+export function StepTrack({ steps, current, className }: StepTrackProps) {
+  return (
+    <div className={cn('flex items-center', className)}>
+      {steps.map((label, index) => {
+        const done = index < current
+        const active = index === current
+        return (
+          <div className="flex flex-1 items-center last:flex-none" key={label}>
+            <div className="flex flex-col items-center gap-1.5">
+              <div
+                className={cn(
+                  'grid size-8 place-items-center rounded-full border-2 text-xs font-bold transition',
+                  done && 'border-accent bg-accent text-fg-invert',
+                  active && 'border-accent bg-surface text-accent shadow-[0_0_0_4px_rgba(0,212,170,0.15)]',
+                  !done && !active && 'border-border bg-surface-2 text-fg-3',
+                )}
+              >
+                {done ? '✓' : index + 1}
+              </div>
+              <span
+                className={cn(
+                  'whitespace-nowrap text-[11px] font-semibold',
+                  active ? 'text-accent' : done ? 'text-fg-2' : 'text-fg-3',
+                )}
+              >
+                {label}
+              </span>
+            </div>
+            {index < steps.length - 1 ? (
+              <div className={cn('mx-1 mb-4 h-0.5 flex-1', done ? 'bg-accent' : 'bg-border')} />
+            ) : null}
+          </div>
+        )
+      })}
+    </div>
+  )
 }

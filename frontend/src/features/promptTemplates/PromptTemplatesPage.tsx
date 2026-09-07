@@ -1,6 +1,6 @@
-import { useState } from 'react'
-import { BrainCircuit, FileText, GitBranch, Network, Search, ShieldCheck, Sparkles } from 'lucide-react'
-import type { LucideIcon } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { BrainCircuit, FileText, GitBranch, Network, Search, ShieldCheck } from 'lucide-react'
+import { Card, Chip, Input, PageHeader, StatTile, cn } from '../../shared/ui'
 
 type PromptTemplate = {
   name: string
@@ -168,75 +168,92 @@ UNTRUSTED_STAKEHOLDER_TEXT_END`,
 
 export function PromptTemplatesPage() {
   const [selectedTemplate, setSelectedTemplate] = useState<PromptTemplate>(templates[0])
+  const [query, setQuery] = useState('')
+
+  const filtered = useMemo(() => {
+    const term = query.trim().toLowerCase()
+    if (!term) return templates
+    return templates.filter(
+      (template) =>
+        template.name.toLowerCase().includes(term) ||
+        template.description.toLowerCase().includes(term) ||
+        template.purpose.toLowerCase().includes(term),
+    )
+  }, [query])
+
+  const llmTasks = templates.filter((template) => template.purpose !== 'input_guardrail').length
+  const guardrails = templates.filter((template) => template.purpose === 'input_guardrail').length
 
   return (
-    <section className="mx-auto grid max-w-400 gap-5 p-4 sm:p-6" id="prompt-templates">
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <span className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-[0.12em] text-brand-600"><Sparkles size={16} /> Prompt Library</span>
-          <h1 className="mt-1 text-3xl font-bold tracking-tight text-slate-950">Prompt Templates</h1>
-          <p className="mt-1 text-sm text-slate-500">Versioned prompts used by the SRS generation pipeline.</p>
-        </div>
-        <label className="flex min-w-60 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-slate-400">
-          <Search size={18} />
-          <input className="min-w-0 flex-1 text-sm text-slate-800 outline-none" placeholder="Search templates..." />
-        </label>
-      </header>
+    <section className="grid gap-6" id="prompt-templates">
+      <PageHeader
+        eyebrow="Prompt library"
+        title="Prompt Templates"
+        description="Versioned prompts used by the SRS generation pipeline."
+        actions={
+          <div className="relative min-w-[15rem]">
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-fg-3" />
+            <Input
+              className="pl-9"
+              placeholder="Search templates…"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+            />
+          </div>
+        }
+      />
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard icon={FileText} label="Total templates" value="5" />
-        <StatCard icon={BrainCircuit} label="LLM tasks" value="4" />
-        <StatCard icon={ShieldCheck} label="Guardrails" value="1" />
-        <StatCard icon={Network} label="Diagram ready" value="Soon" />
+      <div className="grid gap-3.5 sm:grid-cols-2 xl:grid-cols-4">
+        <StatTile label="Total templates" value={templates.length} icon={FileText} />
+        <StatTile label="LLM tasks" value={llmTasks} icon={BrainCircuit} />
+        <StatTile label="Guardrails" value={guardrails} icon={ShieldCheck} />
+        <StatTile label="Diagram ready" value="Soon" icon={Network} />
       </div>
 
       <div className="grid gap-5 xl:grid-cols-[22rem_minmax(0,1fr)]">
-        <section className="grid content-start gap-3" aria-label="Prompt templates">
-          {templates.map((template) => (
+        <div className="grid content-start gap-3" aria-label="Prompt templates">
+          {filtered.map((template) => (
             <button
-              className={selectedTemplate.name === template.name ? 'grid grid-cols-[2.75rem_minmax(0,1fr)] gap-3 rounded-xl border border-brand-500 bg-brand-50 p-4 text-left shadow-sm' : 'grid grid-cols-[2.75rem_minmax(0,1fr)] gap-3 rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:border-brand-300'}
-              type="button"
               key={template.name}
+              type="button"
               onClick={() => setSelectedTemplate(template)}
+              className={cn(
+                'grid grid-cols-[2.75rem_minmax(0,1fr)] gap-3 rounded-lg border bg-surface p-4 text-left shadow-sm transition',
+                selectedTemplate.name === template.name ? 'border-accent bg-accent/10' : 'border-border hover:border-border-strong',
+              )}
             >
-              <div className="grid size-11 place-items-center rounded-xl bg-brand-100 text-brand-700"><GitBranch size={20} /></div>
+              <div className="grid size-11 place-items-center rounded-md bg-accent/15 text-accent">
+                <GitBranch className="size-5" />
+              </div>
               <div>
-                <header className="flex items-center justify-between gap-2">
-                  <h2 className="text-sm font-bold text-slate-950">{template.name}</h2>
-                  <span className="rounded bg-white px-1.5 py-0.5 text-xs font-bold text-slate-500">{template.version}</span>
-                </header>
-                <p className="mt-1 text-xs leading-5 text-slate-600">{template.description}</p>
-                <footer className="mt-3 flex items-center justify-between gap-2"><strong className={template.status === 'Active' ? 'rounded-full bg-emerald-100 px-2 py-1 text-xs text-emerald-700' : 'rounded-full bg-amber-100 px-2 py-1 text-xs text-amber-700'}>{template.status}</strong><small className="text-xs font-semibold text-slate-500">{template.purpose}</small>
-                </footer>
+                <div className="flex items-center justify-between gap-2">
+                  <h2 className="text-sm font-bold text-fg">{template.name}</h2>
+                  <span className="rounded bg-surface-3 px-1.5 py-0.5 text-xs font-bold text-fg-3">{template.version}</span>
+                </div>
+                <p className="mt-1 text-xs leading-5 text-fg-2">{template.description}</p>
+                <div className="mt-3 flex items-center justify-between gap-2">
+                  <Chip tone={template.status === 'Active' ? 'active' : 'pending'}>{template.status}</Chip>
+                  <small className="text-xs font-semibold text-fg-3">{template.purpose}</small>
+                </div>
               </div>
             </button>
           ))}
-        </section>
+        </div>
 
-        <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm" aria-label="Selected prompt template">
-          <header className="flex items-start justify-between gap-3 border-b border-slate-100 p-5">
+        <Card className="overflow-hidden" aria-label="Selected prompt template">
+          <div className="flex items-start justify-between gap-3 border-b border-border p-5">
             <div>
-              <span className="text-xs font-bold uppercase tracking-[0.12em] text-brand-600">{selectedTemplate.purpose}</span>
-              <h2 className="mt-1 text-xl font-bold text-slate-950">{selectedTemplate.name}</h2>
+              <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-accent">{selectedTemplate.purpose}</span>
+              <h2 className="mt-1 font-display text-xl font-bold text-fg">{selectedTemplate.name}</h2>
             </div>
-            <strong className="rounded bg-slate-100 px-2 py-1 text-xs text-slate-600">{selectedTemplate.version}</strong>
-          </header>
-          <p className="p-5 text-sm leading-6 text-slate-600">{selectedTemplate.description}</p>
-          <pre className="mx-5 mb-5 max-h-175 overflow-auto rounded-xl bg-slate-950 p-4 text-xs leading-5 text-slate-100"><code>{selectedTemplate.body}</code></pre>
-        </section>
+            <span className="rounded bg-surface-3 px-2 py-1 text-xs text-fg-2">{selectedTemplate.version}</span>
+          </div>
+          <p className="p-5 text-[13px] leading-6 text-fg-2">{selectedTemplate.description}</p>
+          <pre className="mx-5 mb-5 max-h-[44rem] overflow-auto rounded-lg bg-sidebar p-4 font-mono text-xs leading-5 text-sidebar-fg-active">
+            <code>{selectedTemplate.body}</code>
+          </pre>
+        </Card>
       </div>
     </section>
-  )
-}
-
-function StatCard({ icon: Icon, label, value }: { icon: LucideIcon; label: string; value: string }) {
-  return (
-    <article className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-      <span className="grid size-10 place-items-center rounded-lg bg-brand-100 text-brand-700"><Icon size={22} /></span>
-      <div>
-        <small className="text-xs font-semibold text-slate-500">{label}</small>
-        <strong className="mt-1 block text-2xl font-bold text-slate-950">{value}</strong>
-      </div>
-    </article>
   )
 }
