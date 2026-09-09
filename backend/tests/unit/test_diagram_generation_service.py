@@ -104,8 +104,11 @@ def test_rule_based_attribute_extraction_keeps_domain_nouns_as_relationships() -
     )
     classes = {diagram_class.name: diagram_class for diagram_class in model.classes}
 
-    assert classes["User"].attributes == ["id", "status"]
+    # "an account" is a domain noun, not a primitive field, so it stays a class
+    # linked by a relationship — and no synthetic id/status columns are invented.
     assert "Account" in classes
+    assert classes["User"].attributes == []
+    assert {(rel.source, rel.target) for rel in model.relationships} == {("User", "Account")}
 
 
 def test_rule_based_generator_uses_multi_word_attribute_dictionary() -> None:
@@ -130,6 +133,31 @@ def test_rule_based_generator_uses_multi_word_attribute_dictionary() -> None:
         "postalCode: String",
         "isActive: Boolean",
     ]
+
+
+def test_rule_based_generator_drops_nouns_without_method_attribute_or_edge() -> None:
+    context = ClassDiagramContext(
+        title="Booking Class Diagram",
+        requirements=[
+            "A traveller reserves a flight.",
+            "The itinerary is printed on paper.",
+        ],
+        source_id=uuid4(),
+        source_type="srs_document",
+    )
+
+    model = RuleBasedClassDiagramGenerator().generate(
+        None, workspace_id=uuid4(), project_id=uuid4(), context=context
+    )
+    names = {diagram_class.name for diagram_class in model.classes}
+
+    assert {"Traveller", "Flight"}.issubset(names)
+    # "itinerary" / "paper" are only mentioned, never acted on or linked — no
+    # synthetic validate()-only classes for them.
+    assert "Itinerary" not in names
+    assert "Paper" not in names
+    traveller = next(cls for cls in model.classes if cls.name == "Traveller")
+    assert traveller.methods == ["reserveFlight()"]
 
 
 def test_legacy_drawio_builder_uses_canonical_relationship_renderer() -> None:

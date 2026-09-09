@@ -280,6 +280,36 @@ def test_invalid_relationship_semantics_are_rejected() -> None:
     assert any("invalid direction" in error for error in validation["errors"])
 
 
+def test_relationship_to_excluded_class_is_inert_not_an_error() -> None:
+    model = _relationship_model("association")
+    model["classes"][1]["enabled"] = False
+
+    validation = validate_class_model(model)
+
+    assert validation["valid"] is True
+    assert not validation["errors"]
+
+
+def test_relationship_to_truly_missing_class_is_still_rejected() -> None:
+    model = _relationship_model("association")
+    model["relationships"][0]["targetClassId"] = "class_ghost"
+
+    validation = validate_class_model(model)
+
+    assert validation["valid"] is False
+    assert any("target class is missing or disabled" in error for error in validation["errors"])
+
+
+def test_xml_drops_edges_that_point_at_an_excluded_class() -> None:
+    model = _relationship_model("association")
+    model["classes"][1]["enabled"] = False
+
+    xml, validation = generate_drawio_xml(model)
+
+    assert validation["valid"] is True
+    assert ET.fromstring(xml).find(".//mxCell[@id='edge_child_parent']") is None
+
+
 def test_rule_inheritance_has_child_to_parent_direction_without_multiplicity() -> None:
     analysis, _, _, class_model = _flow("A savings account extends an account.")
 
@@ -289,3 +319,109 @@ def test_rule_inheritance_has_child_to_parent_direction_without_multiplicity() -
     assert relationship["targetClassId"] == "class_account"
     assert relationship["sourceMultiplicity"] is None
     assert relationship["targetMultiplicity"] is None
+
+
+def test_primitive_field_nouns_become_attributes_not_classes() -> None:
+    _, _, _, class_model = _flow(
+        "A member can borrow a book. "
+        "A member has a full name, an email address and a membership status."
+    )
+
+    classes = {cls["id"]: cls for cls in class_model["classes"]}
+    assert set(classes) == {"class_member", "class_book"}
+    member_attributes = {attr["name"] for attr in classes["class_member"]["attributes"]}
+    assert member_attributes == {"fullName", "emailAddress", "membershipStatus"}
+    # No FullName / EmailAddress / MembershipStatus / Status classes were minted.
+    assert not any(
+        cls["name"] in {"FullName", "EmailAddress", "MembershipStatus", "Status", "Name"}
+        for cls in class_model["classes"]
+    )
+
+
+def test_noun_without_behaviour_or_state_is_not_a_class() -> None:
+    _, _, _, class_model = _flow(
+        "A customer can place an order. The order confirmation appears on the screen."
+    )
+
+    names = {cls["name"] for cls in class_model["classes"]}
+    assert {"Customer", "Order"}.issubset(names)
+    # "screen" is generic; "confirmation" is only name-dropped, never acted on.
+    assert "Screen" not in names
+    assert "Confirmation" not in names
+
+
+def test_attribute_only_noun_is_kept_as_a_class() -> None:
+    _, _, _, class_model = _flow("A loan has a due date and a return date.")
+
+    loan = next((cls for cls in class_model["classes"] if cls["id"] == "class_loan"), None)
+    assert loan is not None
+    assert {attr["name"] for attr in loan["attributes"]} == {"dueDate", "returnDate"}
+
+
+def test_relative_clause_is_not_split_into_a_second_object() -> None:
+    analysis = analyze_text("The librarian can remove books that are damaged or lost.")
+
+    objects = {fact["object"] for fact in analysis["facts"]}
+    assert objects == {"Book"}
+    assert "Lost" not in objects
+
+
+def test_contraction_is_expanded_so_negation_is_detected() -> None:
+    fact = analyze_text("A guest can't delete a review.")["facts"][0]
+
+    assert fact["modality"] == "negative"
+    assert fact["negated"] is True
+
+
+def test_stakeholder_want_sentence_becomes_a_fact() -> None:
+    fact = analyze_text("I want customers to be able to track their order.")["facts"][0]
+
+    assert fact["actor"] == "Customer"
+    assert fact["action"] == "track"
+    assert fact["object"] == "Order"
+
+
+def test_stakeholder_first_person_maps_to_a_real_actor() -> None:
+    fact = analyze_text("I need to see all the orders.")["facts"][0]
+
+    assert fact["actor"] == "Administrator"
+    assert fact["action"] == "view"
+    assert fact["object"] == "Order"
+
+
+def test_there_should_be_a_way_for_x_to_y() -> None:
+    fact = analyze_text("There should be a way for a manager to reject an order.")["facts"][0]
+
+    assert fact["actor"] == "Manager"
+    assert fact["action"] == "reject"
+    assert fact["object"] == "Order"
+
+
+def test_be_able_to_is_stripped_and_goal_clause_dropped() -> None:
+    fact = analyze_text(
+        "Customers should be able to cancel an order so that they are not charged."
+    )["facts"][0]
+
+    assert fact["actor"] == "Customer"
+    assert fact["action"] == "cancel"
+    assert fact["object"] == "Order"
+
+
+def test_stakeholder_document_yields_requirements_without_the_narrative_table() -> None:
+    raw = (
+        "I want patients to be able to book an appointment online. "
+        "My staff need to be able to view the daily schedule. "
+        "A receptionist can register a new patient."
+    )
+    analysis = analyze_text(raw)
+    final_story = generate_final_story(raw, analysis["sentences"], analysis["facts"], [])
+    requirements = generate_requirements(final_story, analysis["facts"])["requirements"]
+    class_model = generate_class_model(requirements, analysis["facts"])
+
+    assert final_story["extractionMetadata"]["storySource"] == "rule_facts"
+    names = {cls["name"] for cls in class_model["classes"]}
+    assert {"Patient", "Staff", "Receptionist", "Appointment"}.issubset(names)
+    assert any(
+        "book" in req["statement"].lower() and "appointment" in req["statement"].lower()
+        for req in requirements
+    )

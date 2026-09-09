@@ -17,12 +17,12 @@ cp .env.docker.example .env      # edit secrets / OLLAMA_MODEL if you like
 docker compose up -d --build
 ```
 
-| Service  | URL                                            |
-|----------|------------------------------------------------|
-| Frontend | http://localhost:5173                          |
-| Backend  | http://localhost:8000  (docs: `/docs`)         |
-| Ollama   | http://localhost:11434 (`/api/tags`)           |
-| Postgres | localhost:5432                                 |
+| Service  | URL                                     |
+| -------- | --------------------------------------- |
+| Frontend | http://localhost:5173                   |
+| Backend  | http://localhost:8000  (docs:`/docs`) |
+| Ollama   | http://localhost:11434 (`/api/tags`)  |
+| Postgres | localhost:5432                          |
 
 `ollama-init` pulls `OLLAMA_MODEL` (default `llama3.2`) into a named volume on first
 run and then exits — that's expected. Watch it with `docker compose logs -f ollama-init`.

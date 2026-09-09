@@ -78,7 +78,10 @@ def snake_case(value: str) -> str:
 def pascal_case(value: str | None) -> str:
     if not value:
         return "Unknown"
-    words = re.findall(r"[A-Za-z0-9]+", value)
+    # Split existing camelCase / PascalCase runs so "receive EmailReminder"
+    # becomes "ReceiveEmailReminder", not "ReceiveEmailreminder".
+    spaced = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", value)
+    words = re.findall(r"[A-Za-z0-9]+", spaced)
     return "".join(word[:1].upper() + word[1:].lower() for word in words) or "Unknown"
 
 
@@ -130,6 +133,16 @@ _ENTITY_CUT_WORDS = (
     "in",
     "by",
     "as",
+    "to",
+    "of",
+    "off",
+    "up",
+    "i",
+    "we",
+    "than",
+    "including",
+    "containing",
+    "namely",
     "and",
     "or",
     "but",
@@ -162,6 +175,22 @@ _ENTITY_LEADING_NOISE = (
     "existing",
     "valid",
     "invalid",
+    "registered",
+    "authenticated",
+    "authorized",
+    "logged-in",
+    "approved",
+    "verified",
+    "active",
+    "current",
+    "selected",
+    "given",
+    "specific",
+    "particular",
+    "certain",
+    "relevant",
+    "corresponding",
+    "respective",
     "their",
     "his",
     "her",
@@ -175,12 +204,28 @@ _ENTITY_LEADING_NOISE = (
 )
 
 
+_TRAILING_ENTITY_NOISE = (
+    "online", "offline", "remotely", "digitally", "manually", "automatically",
+    "directly", "instantly", "securely", "easily", "quickly", "properly",
+    "correctly", "successfully", "later", "now", "today", "anytime", "anywhere",
+    "here", "there", "too", "also", "as well", "please",
+)
+
+
 def normalize_entity(value: str | None) -> str | None:
     if value is None:
         return None
     cleaned = re.sub(r"\s+", " ", value.strip().lower())
     if not cleaned:
         return None
+    # Strip a leading quantity phrase ("up to five books" -> "five books").
+    cleaned = re.sub(
+        r"^(?:up to|at least|at most|no more than|no less than|not more than|not less than|"
+        r"more than|less than|fewer than|about|around|approximately|exactly|"
+        r"one or more|one or many|zero or more|one or two)\s+",
+        "",
+        cleaned,
+    )
     # Drop everything from the first relative pronoun / preposition / conjunction onward.
     tokens = cleaned.split(" ")
     trimmed: list[str] = []
@@ -212,21 +257,91 @@ def normalize_entity(value: str | None) -> str | None:
     # A phrase that still starts with a preposition has no head noun of its own.
     if re.match(r"^(?:with|to|for|of|on|at|in|by|from|about|into|as)\b", phrase):
         return None
+    # Drop trailing adverbs ("book an appointment online" -> "appointment").
+    phrase = re.sub(rf"(?:\s+(?:{'|'.join(_TRAILING_ENTITY_NOISE)}))+$", "", phrase)
+    if not phrase:
+        return None
     # Keep at most the trailing three words as the noun phrase (head + up to two modifiers).
     words = phrase.split(" ")[-3:]
+    # A determiner can survive into that tail when it followed a comma
+    # ("title, an isbn, a due date"); drop it so we don't PascalCase "ADueDate".
+    while len(words) > 1 and re.sub(r"[^a-z]", "", words[0]) in {"a", "an", "the", "one"}:
+        words = words[1:]
     words[-1] = singularize(words[-1])
     return pascal_case(" ".join(words))
+
+
+# Written-out forms of common contractions so the modal / negation dictionaries
+# (which list "cannot", "must not", "does not", …) match consistently.
+_CONTRACTIONS = {
+    "can't": "cannot",
+    "won't": "will not",
+    "shan't": "shall not",
+    "ain't": "is not",
+    "don't": "do not",
+    "doesn't": "does not",
+    "didn't": "did not",
+    "isn't": "is not",
+    "aren't": "are not",
+    "wasn't": "was not",
+    "weren't": "were not",
+    "haven't": "have not",
+    "hasn't": "has not",
+    "hadn't": "had not",
+    "wouldn't": "would not",
+    "shouldn't": "should not",
+    "couldn't": "could not",
+    "mustn't": "must not",
+    "mightn't": "might not",
+    "needn't": "need not",
+    "it's": "it is",
+    "that's": "that is",
+    "there's": "there is",
+    "who's": "who is",
+    "what's": "what is",
+    "let's": "let us",
+    "we're": "we are",
+    "they're": "they are",
+    "you're": "you are",
+    "i'm": "i am",
+    "we've": "we have",
+    "they've": "they have",
+    "you've": "you have",
+    "i've": "i have",
+    "we'll": "we will",
+    "they'll": "they will",
+    "you'll": "you will",
+    "i'll": "i will",
+}
+_CONTRACTION_PATTERN = re.compile(
+    r"\b(" + "|".join(re.escape(key) for key in _CONTRACTIONS) + r")\b",
+    flags=re.IGNORECASE,
+)
+
+
+def _expand_contractions(text: str) -> str:
+    return _CONTRACTION_PATTERN.sub(lambda match: _CONTRACTIONS[match.group(0).lower()], text)
 
 
 def normalize_text(raw_text: str) -> dict[str, Any]:
     normalized = unicodedata.normalize("NFKC", raw_text)
     normalized = normalized.replace("\r\n", "\n").replace("\r", "\n")
+    # Straighten smart quotes / dashes so downstream regexes see plain ASCII.
+    normalized = normalized.translate(str.maketrans({"‘": "'", "’": "'", "“": '"', "”": '"', "–": "-", "—": "-", "…": "..."}))
+    normalized = re.sub(r"\s*&\s*", " and ", normalized)
+    normalized = _expand_contractions(normalized)
     normalized = re.sub(r"[ \t\f\v]+", " ", normalized)
+    normalized = re.sub(r" *\n *", "\n", normalized)
     normalized = re.sub(r"\n+", "\n", normalized).strip()
     return {
         "rawText": raw_text,
         "normalizedText": normalized,
-        "matchedRuleIds": ["TXT_UNICODE_NFKC_001", "TXT_WHITESPACE_COLLAPSE_001"],
+        "matchedRuleIds": [
+            "TXT_UNICODE_NFKC_001",
+            "TXT_WHITESPACE_COLLAPSE_001",
+            "TXT_PUNCTUATION_ASCII_001",
+            "TXT_CONTRACTION_EXPAND_001",
+        ],
     }
 
 
@@ -241,15 +356,37 @@ _SENTENCE_ABBREVIATIONS = (
     "mrs.",
     "ms.",
     "dr.",
+    "prof.",
     "fig.",
+    "cf.",
+    "al.",
+    "inc.",
+    "ltd.",
+    "co.",
+    "corp.",
+    "dept.",
+    "est.",
+    "min.",
+    "max.",
+    "sec.",
+    "req.",
+    "spec.",
+    "ref.",
+    "u.s.",
+    "u.k.",
+    "u.n.",
+    "ph.d.",
+    "b.sc.",
+    "m.sc.",
 )
 
 
 def _protect_abbreviations(text: str) -> str:
     protected = text
     for abbreviation in _SENTENCE_ABBREVIATIONS:
+        # \b so "ms." only matches the title, never the tail of "items."/"terms."
         protected = re.sub(
-            re.escape(abbreviation),
+            rf"\b{re.escape(abbreviation)}",
             abbreviation.replace(".", "․"),
             protected,
             flags=re.IGNORECASE,
@@ -319,25 +456,166 @@ def _split_clause_text(text: str) -> list[str]:
             for word in head
         )
 
+    # A relative / subordinate clause ("books that are damaged or lost") modifies
+    # the noun before it and must never be split on its internal and/or/comma.
+    relative_pattern = re.compile(
+        r"\s+\b(?:that|which|who|whom|whose|where|when|because|so that|in order to)\b\s+",
+        flags=re.IGNORECASE,
+    )
+
+    # Quantity idioms that contain "or"/"and" must stay atomic across the split
+    # ("one or more line items" is one object, not "one" + "more line items").
+    quantity_idioms = [
+        phrase
+        for phrase in load_dictionaries().get("quantifiers", {})
+        if re.search(r"\b(?:or|and)\b", phrase)
+    ] + ["one or two", "more or less", "at least", "at most", "no more than"]
+
+    def _protect_quantity(value: str) -> str:
+        for idiom in quantity_idioms:
+            value = re.sub(re.escape(idiom), idiom.replace(" ", "\x00"), value, flags=re.IGNORECASE)
+        return value
+
     # Hard breaks first.
     segments = [segment.strip() for segment in re.split(r"\s*;\s*|\s+\bthen\b\s+", text) if segment.strip()]
     result: list[str] = []
     for segment in segments:
-        pieces = re.split(r"\s*,?\s+\b(?:and|or)\b\s+|\s*,\s+", segment)
+        segment = _protect_quantity(segment)
+        relative_tail = ""
+        relative_match = relative_pattern.search(segment)
+        if relative_match:
+            relative_tail = segment[relative_match.start():]
+            segment = segment[: relative_match.start()].strip()
+        pieces = re.split(r"\s*,?\s+\b(?:and|or)\b\s+|\s*,\s+", segment) if segment else []
         buffer = pieces[0].strip() if pieces else segment
+        segment_result: list[str] = []
         for piece in pieces[1:]:
             piece = piece.strip()
             if not piece:
                 continue
             if looks_like_predicate(piece):
                 if buffer:
-                    result.append(buffer)
+                    segment_result.append(buffer)
                 buffer = piece
             else:
                 buffer = f"{buffer}, {piece}" if buffer else piece
         if buffer:
-            result.append(buffer)
+            segment_result.append(buffer)
+        if relative_tail:
+            if segment_result:
+                segment_result[-1] = f"{segment_result[-1]}{relative_tail}"
+            else:
+                segment_result.append(relative_tail.strip())
+        result.extend(part.replace("\x00", " ") for part in segment_result)
     return result or [text]
+
+
+_RELATIVE_CLAUSE_RE = re.compile(
+    r"\s+\b(?:that|which|who|whom|whose|where|when)\b\s+.*$",
+    flags=re.IGNORECASE | re.DOTALL,
+)
+
+
+def _strip_relative_clause(phrase: str | None) -> str:
+    """Drop a trailing relative clause so its internal and/or is not mistaken
+    for a coordinated object list."""
+    return _RELATIVE_CLAUSE_RE.sub("", phrase or "").strip()
+
+
+# ---------------------------------------------------------------------------
+# Stakeholder ("real people") voice — colloquial requirement sentences.
+# ---------------------------------------------------------------------------
+
+def _narrative_actors() -> dict[str, str]:
+    return {str(k).lower(): str(v) for k, v in load_dictionaries().get("narrative_actors", {}).items()}
+
+
+def resolve_actor(raw: str | None) -> str | None:
+    """normalize_entity, but first map a colloquial subject
+    ("I", "we", "people", "my staff") onto a real actor class."""
+    if not raw:
+        return None
+    lowered = re.sub(r"\s+", " ", raw.strip().lower()).strip(" ,.;:")
+    aliases = _narrative_actors()
+    if lowered in aliases:
+        return aliases[lowered]
+    without_article = re.sub(r"^(?:a|an|the|our|my|your|their)\s+", "", lowered)
+    if without_article in aliases:
+        return aliases[without_article]
+    return normalize_entity(raw)
+
+
+_GOAL_CLAUSE_RE = re.compile(
+    r"\s*[,;]?\s*\b(?:so that|so (?:they|we|i|you|it|he|she)\b|so as to|in order (?:to|that)|"
+    r"because|since|as this|which means|thereby|hence)\b.*$",
+    flags=re.IGNORECASE | re.DOTALL,
+)
+_ABILITY_RE = re.compile(
+    r"\b(?:be able to|have the ability to|has the ability to|have the option to|"
+    r"the ability to|the option to|a way to|the possibility to|be allowed to)\s+",
+    flags=re.IGNORECASE,
+)
+_NARRATIVE_WANT = (
+    r"(?:really\s+|also\s+|just\s+|simply\s+)*"
+    r"(?:want|wants|wanted|need|needs|needed|would like|would love|'d like|wish|wishes|"
+    r"expect|expects|require|requires|hope|hopes|intend|intends|plan|plans|prefer|prefers)"
+)
+_NARRATIVE_INTENT_RE = re.compile(
+    rf"^(?P<narrator>i|we|the business|the company|the owner|the business owner|management|"
+    rf"my (?:staff|team|company|business)|our (?:staff|team))\s+{_NARRATIVE_WANT}\s+"
+    rf"(?:that\s+|to\s+see\s+that\s+)?"
+    rf"(?:(?P<beneficiary>[a-z][\w' -]*?)\s+(?:to be able to|to|should be able to|should|"
+    rf"can|could|must|will|would)\s+)?"
+    rf"(?P<rest>.+)$",
+    flags=re.IGNORECASE,
+)
+_PROVISION_RE = re.compile(
+    r"^(?:there|it)\s+(?:should|must|shall|needs to|has to|ought to|will|would)\s+be\s+"
+    r"(?:a\s+(?:way|option|means|mechanism|feature|screen|page|button|form|facility)\s+)?"
+    r"(?:possible\s+)?for\s+(?P<actor>[a-z][\w' -]*?)\s+to\s+(?P<rest>.+)$",
+    flags=re.IGNORECASE,
+)
+
+
+def denarrate_clause(text: str) -> str:
+    """Rewrite one colloquial stakeholder clause into the plain
+    "<actor> <modal> <action> <object>" shape the fact rules already parse.
+
+    "I want people to be able to see the clothes I sell"
+        -> "User can see the clothes"
+    "Customers should be able to put items in their basket"
+        -> "Customers should put items in their basket"
+    "There should be a way for a manager to approve orders"
+        -> "manager can approve orders"
+    Anything it does not recognise is returned unchanged.
+    """
+    cleaned = _GOAL_CLAUSE_RE.sub("", text).strip(" ,;:")
+    # A leading "if/when someone …" trigger left after clause splitting — keep the
+    # predicate, drop the trigger word (the condition, if structured, is captured
+    # elsewhere from the full sentence).
+    cleaned = re.sub(r"^(?:if|when|whenever|once|after|before|while|as soon as)\s+", "", cleaned, flags=re.IGNORECASE)
+
+    provision = _PROVISION_RE.match(cleaned)
+    if provision:
+        actor = provision.group("actor").strip()
+        rest = _ABILITY_RE.sub("", provision.group("rest")).strip()
+        return f"{actor} can {rest}"
+
+    intent = _NARRATIVE_INTENT_RE.match(cleaned)
+    if intent:
+        rest = _ABILITY_RE.sub("", intent.group("rest")).strip()
+        rest = re.sub(r"^(?:to|that|it|us|them)\s+", "", rest, flags=re.IGNORECASE).strip()
+        beneficiary = (intent.group("beneficiary") or "").strip()
+        # "need to be able to view …" — the regex can capture "to be able" as the
+        # beneficiary; that is scaffolding, not a person.
+        if re.match(r"^(?:to|be|able|the ability|a way|an option)\b", beneficiary, re.IGNORECASE):
+            beneficiary = ""
+        if beneficiary:
+            return f"{beneficiary} can {rest}"
+        actor = resolve_actor(intent.group("narrator")) or "Stakeholder"
+        return f"{actor} can {rest}"
+
+    return _ABILITY_RE.sub("", cleaned)
 
 
 def split_clauses(sentences: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -602,7 +880,9 @@ def extract_facts(sentences: list[dict[str, Any]], clauses: list[dict[str, Any]]
 
     for clause in clauses:
         sentence = sentence_lookup[clause["sentenceId"]]
-        text = clause["normalizedText"].strip()
+        # Rewrite stakeholder voice ("I want people to be able to see …") into the
+        # plain "<actor> <modal> <action> <object>" shape the rules below parse.
+        text = denarrate_clause(clause["normalizedText"].strip())
         lowered = text.lower()
         fact_index = len(facts) + 1
         condition = _condition_from_text(sentence["normalizedText"])
@@ -664,7 +944,7 @@ def extract_facts(sentences: list[dict[str, Any]], clauses: list[dict[str, Any]]
                 raw_action = phrase
                 break
         if relationship_match and relationship_type:
-            actor = normalize_entity(relationship_match.group("source"))
+            actor = resolve_actor(relationship_match.group("source"))
             object_name = normalize_entity(relationship_match.group("object"))
             action, _, action_warnings = _canonical_action(raw_action)
             warnings = action_warnings
@@ -706,7 +986,7 @@ def extract_facts(sentences: list[dict[str, Any]], clauses: list[dict[str, Any]]
         if grant_match:
             for action_name, object_name in _expand_action_object(grant_match.group("action"), grant_match.group("object")):
                 canonical_action, action_rule_id, action_warnings = _canonical_action(action_name)
-                actor = normalize_entity(grant_match.group("actor"))
+                actor = resolve_actor(grant_match.group("actor"))
                 normalized_object = normalize_entity(object_name)
                 facts.append(
                     _fact_template(
@@ -752,8 +1032,11 @@ def extract_facts(sentences: list[dict[str, Any]], clauses: list[dict[str, Any]]
         match = only_match or active_match or present_match
         if match:
             raw_action = match.group("action").strip()
-            actor = normalize_entity(match.group("actor"))
-            for action_name, object_name in _expand_action_object(raw_action, match.group("object")):
+            actor = resolve_actor(match.group("actor"))
+            # "remove books that are damaged or lost" — the object is just "books";
+            # the relative clause is a filter, not a second object.
+            object_group = _strip_relative_clause(match.group("object"))
+            for action_name, object_name in _expand_action_object(raw_action, object_group):
                 action, action_rule_id, warnings = _canonical_action(action_name)
                 normalized_object = normalize_entity(object_name)
                 if normalized_object and normalized_object.lower() in load_dictionaries().get("pronouns", {}).get("objectPronouns", []):
@@ -826,8 +1109,10 @@ def extract_facts(sentences: list[dict[str, Any]], clauses: list[dict[str, Any]]
         if action_token and (has_modal or len(tokens) <= 6):
             before = " ".join(token["text"] for token in tokens[: action_token["index"] - 1])
             after = " ".join(token["text"] for token in tokens[action_token["index"] :])
+            # Drop a trailing modal so "the librarian can" resolves to "Librarian".
+            before = re.sub(rf"\s+{modal_pattern}\s*$", "", before, flags=re.IGNORECASE).strip()
             action, _, warnings = _canonical_action(action_token["text"])
-            actor = normalize_entity(before) or None
+            actor = resolve_actor(before) or None
             object_name = normalize_entity(after) or None
             facts.append(
                 _fact_template(
@@ -1147,6 +1432,7 @@ def _business_narrative_story_sections(sentences: list[dict[str, Any]]) -> list[
                     "modality": "should",
                     "negation": False,
                     "temporalConstraint": None,
+                    "sentenceIndex": sentence.get("sentenceIndex"),
                     "normalizedSentence": f"As a {actor.lower()}, I want to {want}, so that {goal}.",
                     "sourceFactId": f"NAR-{index:03d}",
                     "sourceSentence": source_sentence,
@@ -1157,59 +1443,85 @@ def _business_narrative_story_sections(sentences: list[dict[str, Any]]) -> list[
     return sections
 
 
-def generate_final_story(original_text: str, sentences: list[dict[str, Any]], facts: list[dict[str, Any]], answers: list[dict[str, Any]]) -> dict[str, Any]:
-    narrative_sections = _business_narrative_story_sections(sentences)
-    if narrative_sections:
-        return {
-            "originalText": original_text,
-            "normalizedSentences": sentences,
-            "atomicStorySections": narrative_sections,
-            "appliedClarificationAnswers": answers,
-            "unresolvedFields": [],
-            "warnings": [],
-            "extractionMetadata": {
-                "dictionaryVersionId": DICTIONARY_VERSION,
-                "ruleVersionId": RULE_VERSION,
-                "narrativeRuleCount": len(narrative_sections),
-            },
-        }
-
-    sections = []
-    for index, fact in enumerate(facts, start=1):
-        actor = fact.get("actor") or "UnknownActor"
-        action = fact.get("action") or "UnknownAction"
-        object_name = fact.get("object") or "UnknownObject"
+def _fact_story_sections(facts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    sections: list[dict[str, Any]] = []
+    for fact in facts:
+        actor = fact.get("actor")
+        action = fact.get("action")
+        object_name = fact.get("object")
+        # A usable story needs an action plus at least one of actor / object; a
+        # lone noun or a lone verb is not a requirement.
+        if fact.get("nfr") is None and not (action and (actor or object_name)):
+            continue
+        index = len(sections) + 1
+        actor_label = actor or "UnknownActor"
+        action_label = action or "UnknownAction"
+        object_label = object_name or "UnknownObject"
         condition = condition_to_text(fact.get("condition"))
-        sentence = f"The {actor} can {action} an {object_name}."
+        modal = {"obligation": "must", "negative": "cannot"}.get(str(fact.get("modality")), "can")
+        sentence = f"The {actor_label} {modal} {action_label} an {object_label}."
         if condition:
-            sentence = f"If {condition}, the {actor} can {action} an {object_name}."
+            sentence = f"If {condition}, the {actor_label} {modal} {action_label} an {object_label}."
         sections.append(
             {
                 "id": f"US-001-S{index}",
-                "actor": actor,
-                "action": action,
-                "object": object_name,
+                "actor": actor_label,
+                "action": action_label,
+                "object": object_label,
                 "condition": condition,
                 "trigger": fact.get("trigger"),
                 "quantity": fact.get("quantity"),
                 "modality": fact.get("modality"),
                 "negation": fact.get("negated"),
                 "temporalConstraint": fact.get("temporalConstraint"),
+                "sentenceIndex": fact.get("sentenceIndex"),
                 "normalizedSentence": sentence,
                 "sourceFactId": fact["id"],
                 "sourceSentence": fact["sourceText"],
-                "warnings": fact.get("warnings", []) + [f"{field} was not identified." for field in fact.get("missingFields", [])],
+                "warnings": fact.get("warnings", [])
+                + [f"{field} was not identified." for field in fact.get("missingFields", [])],
                 "matchedRuleId": "FIN_ATOMIC_STORY_TEMPLATE_001",
             }
         )
+    return sections
+
+
+def generate_final_story(original_text: str, sentences: list[dict[str, Any]], facts: list[dict[str, Any]], answers: list[dict[str, Any]]) -> dict[str, Any]:
+    # Per sentence: a curated business-narrative pattern (if it matches that
+    # sentence) wins, because it is hand-tuned prose; every other sentence is
+    # covered by the rule engine, which now understands stakeholder voice
+    # directly (denarrate_clause). So a shop-story paragraph still reads well and
+    # an arbitrary stakeholder document is no longer ignored.
+    narrative_sections = _business_narrative_story_sections(sentences)
+    covered = {section.get("sentenceIndex") for section in narrative_sections}
+    fact_sections = [
+        section for section in _fact_story_sections(facts) if section.get("sentenceIndex") not in covered
+    ]
+
+    merged = sorted(
+        narrative_sections + fact_sections,
+        key=lambda section: (section.get("sentenceIndex") or 0),
+    )
+    for index, section in enumerate(merged, start=1):
+        section["id"] = f"US-001-S{index}"
+
+    story_source = (
+        "rule_facts"
+        if not narrative_sections
+        else "business_narrative" if not fact_sections else "mixed"
+    )
     return {
         "originalText": original_text,
         "normalizedSentences": sentences,
-        "atomicStorySections": sections,
+        "atomicStorySections": merged,
         "appliedClarificationAnswers": answers,
         "unresolvedFields": sorted({field for fact in facts for field in fact.get("missingFields", [])}),
-        "warnings": sorted({warning for section in sections for warning in section.get("warnings", [])}),
-        "extractionMetadata": {"dictionaryVersionId": DICTIONARY_VERSION, "ruleVersionId": RULE_VERSION},
+        "warnings": sorted({warning for section in merged for warning in section.get("warnings", [])}),
+        "extractionMetadata": {
+            "dictionaryVersionId": DICTIONARY_VERSION,
+            "ruleVersionId": RULE_VERSION,
+            "storySource": story_source,
+        },
     }
 
 
@@ -1328,10 +1640,57 @@ def _requirement_source_ids(requirements: list[dict[str, Any]], actor: str, obje
     )
 
 
+def _attribute_lexicon() -> tuple[set[str], dict[str, dict[str, str]], dict[str, str]]:
+    dictionaries = load_dictionaries()
+    primitives = {item.lower() for item in dictionaries.get("primitive_attributes", [])}
+    phrases = {
+        str(key).lower(): value
+        for key, value in dictionaries.get("attribute_phrases", {}).items()
+        if isinstance(value, dict) and value.get("name")
+    }
+    hints = {key.lower(): str(value) for key, value in dictionaries.get("data_type_hints", {}).items()}
+    return primitives, phrases, hints
+
+
+def _attribute_name_forms() -> set[str]:
+    """snake_case of every token / phrase that names a field, not a class."""
+    primitives, phrases, _ = _attribute_lexicon()
+    forms = {snake_case(word) for word in primitives}
+    for key, spec in phrases.items():
+        forms.add(snake_case(key))
+        forms.add(snake_case(str(spec.get("name", ""))))
+    forms.discard("")
+    return forms
+
+
+def _is_attribute_like(name: str | None) -> bool:
+    """True when a candidate class name is really a primitive field / data phrase."""
+    if not name:
+        return False
+    snake = snake_case(name)
+    if snake in _attribute_name_forms():
+        return True
+    primitives, _, _ = _attribute_lexicon()
+    tail = snake.split("_")[-1]
+    return tail in primitives or singularize(tail) in primitives
+
+
+_POSSESSION_RE = re.compile(
+    r"\b(?:has|have|having|had|contains?|containing|includes?|including|holds?|"
+    r"stores?|records?|tracks?|comprising|consisting of|with the following|with)\b",
+    flags=re.IGNORECASE,
+)
+_ATTRIBUTE_CHUNK_NOISE = re.compile(
+    r"^(?:an?|the|its|their|his|her|our|your|each|every|some|one|a valid|a unique|"
+    r"a required|an optional|following|fields?|attributes?|details?|properties)\s+",
+    flags=re.IGNORECASE,
+)
+
+
 def _attributes_for_sentences(sentences: list[str]) -> list[dict[str, Any]]:
     """Pull known attribute phrases (e.g. "phone number", "due date") out of prose."""
     blob = " ".join(sentences).lower()
-    attribute_phrases: dict[str, dict[str, str]] = load_dictionaries().get("attribute_phrases", {})
+    _, attribute_phrases, _ = _attribute_lexicon()
     found: dict[str, dict[str, Any]] = {}
     for phrase, spec in attribute_phrases.items():
         if re.search(rf"\b{re.escape(phrase)}\b", blob):
@@ -1343,6 +1702,106 @@ def _attributes_for_sentences(sentences: list[str]) -> list[dict[str, Any]]:
                 "sourceRuleId": "ATTR_PHRASE_DICTIONARY_001",
             }
     return sorted(found.values(), key=lambda item: item["name"].lower())
+
+
+def _attributes_for_class(name: str, sentences: list[str]) -> list[dict[str, Any]]:
+    """Given an already-confirmed class name, mine ITS evidence sentences for fields.
+
+    Two sources: (1) any known multi-word attribute phrase in an evidence
+    sentence; (2) bare primitive nouns, but only inside a possession list that
+    this class itself opens ("a member has a name, an email and a join date").
+    """
+    primitives, phrases, hints = _attribute_lexicon()
+    found: dict[str, dict[str, Any]] = {}
+
+    def _record(attr_name: str, attr_type: str, rule_id: str) -> None:
+        if attr_name and attr_name not in found:
+            found[attr_name] = {
+                "id": f"attr_{snake_case(attr_name)}",
+                "name": attr_name,
+                "type": attr_type,
+                "visibility": "private",
+                "sourceRuleId": rule_id,
+            }
+
+    name_tokens = set(re.findall(r"[a-z]+", name.lower()))
+    for sentence in sentences:
+        lowered = sentence.lower()
+        for phrase, spec in phrases.items():
+            if re.search(rf"\b{re.escape(phrase)}\b", lowered):
+                _record(spec["name"], spec.get("type", "String"), "ATTR_PHRASE_DICTIONARY_001")
+        match = _POSSESSION_RE.search(lowered)
+        if not match:
+            continue
+        head = set(re.findall(r"[a-z]+", lowered[: match.start()]))
+        if name_tokens and not (name_tokens & head):
+            continue
+        tail = re.split(
+            r"[.?!;:]|\bso that\b|\bbecause\b|\bin order to\b|\bwhen\b|\bwhere\b",
+            lowered[match.end():],
+        )[0]
+        for raw_chunk in re.split(r"\s*,\s*|\s+and\s+|\s+or\s+", tail):
+            chunk = _ATTRIBUTE_CHUNK_NOISE.sub("", raw_chunk.strip()).strip()
+            words = re.findall(r"[a-z]+", chunk)
+            if not words or len(words) > 3:
+                continue
+            phrase_key = " ".join(words)
+            if phrase_key in phrases:
+                spec = phrases[phrase_key]
+                _record(spec["name"], spec.get("type", "String"), "ATTR_PHRASE_DICTIONARY_001")
+                continue
+            last = words[-1]
+            head_word = last if last in primitives else singularize(last) if singularize(last) in primitives else None
+            if head_word:
+                attr_name = camel_case(phrase_key) if len(words) > 1 else head_word
+                _record(attr_name, hints.get(head_word, "String"), "ATTR_PRIMITIVE_NOUN_001")
+    return sorted(found.values(), key=lambda item: item["name"].lower())
+
+
+def _attribute_record_for(name: str) -> dict[str, Any] | None:
+    """Build one attribute record from a noun already known to be attribute-like.
+
+    Rejects mangled multi-noun phrases (e.g. "TitleAnIsbn" from a botched list
+    normalisation) — only a known phrase or a short "<modifier> <primitive>"
+    form is accepted.
+    """
+    primitives, phrases, hints = _attribute_lexicon()
+    parts = [part for part in snake_case(name).split("_") if part]
+    if parts and parts[0] in {"a", "an", "the"}:
+        parts = parts[1:]
+    if not parts:
+        return None
+    spaced = " ".join(parts)
+    if spaced in phrases:
+        spec = phrases[spaced]
+        return {
+            "id": f"attr_{snake_case(spec['name'])}",
+            "name": spec["name"],
+            "type": spec.get("type", "String"),
+            "visibility": "private",
+            "sourceRuleId": "ATTR_PHRASE_DICTIONARY_001",
+        }
+    tail = parts[-1]
+    head = singularize(tail)
+    key = head if head in primitives else tail if tail in primitives else None
+    if key is None or len(parts) > 2:
+        return None
+    attr_name = camel_case(spaced) if len(parts) > 1 else key
+    return {
+        "id": f"attr_{snake_case(attr_name)}",
+        "name": attr_name,
+        "type": hints.get(key, "String"),
+        "visibility": "private",
+        "sourceRuleId": "ATTR_PRIMITIVE_NOUN_001",
+    }
+
+
+def _merge_attribute(cls: dict[str, Any], name: str) -> None:
+    record = _attribute_record_for(name)
+    if record and all(existing["name"] != record["name"] for existing in cls["attributes"]):
+        cls["attributes"] = sorted(
+            cls["attributes"] + [record], key=lambda item: item["name"].lower()
+        )
 
 
 def generate_class_model(requirements: list[dict[str, Any]], facts: list[dict[str, Any]], threshold: int = 4) -> dict[str, Any]:
@@ -1386,6 +1845,11 @@ def generate_class_model(requirements: list[dict[str, Any]], facts: list[dict[st
     state_words = {item.lower() for item in load_dictionaries().get("state_words", [])}
     for name in list(scores):
         lowered = name.lower()
+        # A primitive field / data phrase is never a class, no matter how often
+        # it is mentioned — it will be folded into its owner as an attribute.
+        if _is_attribute_like(name):
+            del scores[name]
+            continue
         if lowered in primitive:
             scores[name] -= 5
         if lowered in generic:
@@ -1402,7 +1866,7 @@ def generate_class_model(requirements: list[dict[str, Any]], facts: list[dict[st
             "id": class_id,
             "name": name,
             "stereotype": "entity" if name != "System" else "service",
-            "attributes": _attributes_for_sentences(sorted(entity_sentences.get(name, set()))),
+            "attributes": _attributes_for_class(name, sorted(entity_sentences.get(name, set()))),
             "methods": [],
             "sourceFactIds": sorted(source_fact_ids.get(name, set())),
             "sourceRequirementIds": source_ids,
@@ -1423,6 +1887,11 @@ def generate_class_model(requirements: list[dict[str, Any]], facts: list[dict[st
             continue
         source_id = f"class_{snake_case(actor)}"
         target_id = f"class_{snake_case(object_name)}"
+        # "X has a due date" — the target is a field, so record it on X instead
+        # of inventing a DueDate class + edge.
+        if source_id in classes and target_id not in classes and _is_attribute_like(object_name):
+            _merge_attribute(classes[source_id], object_name)
+            continue
         if source_id not in classes or target_id not in classes:
             continue
 
@@ -1483,8 +1952,14 @@ def generate_class_model(requirements: list[dict[str, Any]], facts: list[dict[st
             }
         )
 
-    # Rule: a class with no methods is an inert noun — drop it and any dangling edges.
-    kept_ids = {class_id for class_id, cls in classes.items() if cls["methods"]}
+    # Rule: a noun only becomes a class if it has behaviour (at least one method)
+    # or state (at least one attribute). A bare noun that is merely mentioned or
+    # merely linked is inert — drop it and any dangling edges.
+    kept_ids = {
+        class_id
+        for class_id, cls in classes.items()
+        if cls["methods"] or cls["attributes"]
+    }
     dropped = sorted(classes[class_id]["name"] for class_id in classes if class_id not in kept_ids)
     classes = {class_id: cls for class_id, cls in classes.items() if class_id in kept_ids}
     relationships = [
@@ -1525,10 +2000,15 @@ def _dedupe_relationships(relationships: list[dict[str, Any]]) -> list[dict[str,
 def validate_class_model(class_model: dict[str, Any]) -> dict[str, Any]:
     errors: list[str] = []
     class_ids: set[str] = set()
+    disabled_class_ids: set[str] = set()
     for item in class_model.get("classes", []):
-        if not isinstance(item, dict) or not item.get("enabled", True):
+        if not isinstance(item, dict):
             continue
         class_id = str(item.get("id") or "").strip()
+        if not item.get("enabled", True):
+            if class_id:
+                disabled_class_ids.add(class_id)
+            continue
         if not class_id:
             errors.append("Enabled class is missing an ID.")
         elif class_id in class_ids:
@@ -1541,6 +2021,14 @@ def validate_class_model(class_model: dict[str, Any]) -> dict[str, Any]:
     for relationship in class_model.get("relationships", []):
         if not isinstance(relationship, dict) or not relationship.get("enabled", True):
             continue
+
+        # A relationship whose endpoint the user has excluded is inert, not an
+        # error — skip it the same way a disabled relationship is skipped.
+        source_id = relationship.get("sourceClassId")
+        target_id = relationship.get("targetClassId")
+        if source_id in disabled_class_ids or target_id in disabled_class_ids:
+            continue
+
         relationship_id = str(relationship.get("id") or "").strip()
         if not relationship_id:
             errors.append("Enabled relationship is missing an ID.")
@@ -1550,8 +2038,6 @@ def validate_class_model(class_model: dict[str, Any]) -> dict[str, Any]:
         else:
             relationship_ids.add(relationship_id)
 
-        source_id = relationship.get("sourceClassId")
-        target_id = relationship.get("targetClassId")
         if source_id not in class_ids:
             errors.append(f"Relationship {relationship_id} source class is missing or disabled.")
         if target_id not in class_ids:
@@ -1725,8 +2211,15 @@ def generate_drawio_xml(class_model: dict[str, Any]) -> tuple[str, dict[str, Any
                 },
             )
 
+    rendered_class_ids = {str(cls["id"]) for cls in classes}
     relationships = sorted(
-        [item for item in class_model.get("relationships", []) if item.get("enabled", True)],
+        [
+            item
+            for item in class_model.get("relationships", [])
+            if item.get("enabled", True)
+            and str(item.get("sourceClassId", "")) in rendered_class_ids
+            and str(item.get("targetClassId", "")) in rendered_class_ids
+        ],
         key=lambda item: (
             str(item.get("sourceClassId", "")),
             str(item.get("targetClassId", "")),
@@ -1824,6 +2317,12 @@ def validate_drawio_xml(xml_text: str, class_model: dict[str, Any] | None = None
                 errors.append(f"Edge {edge.attrib.get('id')} target points to a missing or disabled class.")
         for relationship in class_model.get("relationships", []):
             if not relationship.get("enabled", True):
+                continue
+            # Edges to an excluded class are intentionally left out of the XML.
+            if (
+                relationship.get("sourceClassId") not in class_ids
+                or relationship.get("targetClassId") not in class_ids
+            ):
                 continue
             relationship_id = relationship.get("id")
             edge = parsed.find(f".//mxCell[@id='{relationship_id}'][@edge='1']")
