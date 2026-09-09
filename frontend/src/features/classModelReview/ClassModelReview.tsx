@@ -32,6 +32,17 @@ export function ClassModelReview({ revision, busy, onSave, onDraftChange, onRevi
   const [phase, setPhase] = useState<'classes' | 'relationships'>('classes')
   const classes = asRows(draft.classes)
   const relationships = asRows(draft.relationships)
+  const includedClasses = classes.filter((item) => item.enabled !== false)
+  const includedClassIds = new Set(includedClasses.map((item) => text(item, 'id')))
+  // Only relationships between two included classes belong in this review; an
+  // edge to an excluded class is carried in the draft but hidden until the class
+  // is included again.
+  const visibleRelationships = relationships
+    .map((item, index) => ({ item, index }))
+    .filter(
+      ({ item }) =>
+        includedClassIds.has(text(item, 'sourceClassId')) && includedClassIds.has(text(item, 'targetClassId')),
+    )
 
   function updateDraft(updater: (current: Record<string, unknown>) => Record<string, unknown>) {
     setDraft((current) => {
@@ -45,6 +56,27 @@ export function ClassModelReview({ revision, busy, onSave, onDraftChange, onRevi
       ...current,
       classes: asRows(current.classes).map((item, itemIndex) => (itemIndex === index ? { ...item, ...patch } : item)),
     }))
+  }
+  // Excluding a class also excludes every relationship attached to it, so the
+  // relationship review never asks about edges that point at a hidden class.
+  // Re-including brings an edge back only when its other endpoint is included too.
+  function setClassEnabled(index: number, enabled: boolean) {
+    updateDraft((current) => {
+      const rows = asRows(current.classes)
+      const rowsAfter = rows.map((item, itemIndex) => (itemIndex === index ? { ...item, enabled } : item))
+      const enabledIds = new Set(rowsAfter.filter((item) => item.enabled !== false).map((item) => text(item, 'id')))
+      const classId = text(rows[index], 'id')
+      return {
+        ...current,
+        classes: rowsAfter,
+        relationships: asRows(current.relationships).map((relationship) => {
+          const source = text(relationship, 'sourceClassId')
+          const target = text(relationship, 'targetClassId')
+          if (source !== classId && target !== classId) return relationship
+          return { ...relationship, enabled: enabledIds.has(source) && enabledIds.has(target) }
+        }),
+      }
+    })
   }
   function updateRelationship(index: number, patch: Entity) {
     updateDraft((current) => ({
@@ -76,7 +108,7 @@ export function ClassModelReview({ revision, busy, onSave, onDraftChange, onRevi
       }))
   }
   function addRelationship() {
-    if (!classes.length) return
+    if (!includedClasses.length) return
     updateDraft((current) => ({
       ...current,
       relationships: [
@@ -84,8 +116,8 @@ export function ClassModelReview({ revision, busy, onSave, onDraftChange, onRevi
         {
           id: identifier(`edge_${relationships.length + 1}`, 'edge'),
           type: 'association',
-          sourceClassId: text(classes[0], 'id'),
-          targetClassId: text(classes[1] ?? classes[0], 'id'),
+          sourceClassId: text(includedClasses[0], 'id'),
+          targetClassId: text(includedClasses[1] ?? includedClasses[0], 'id'),
           direction: 'undirected',
           sourceMultiplicity: '1',
           targetMultiplicity: '0..*',
@@ -136,7 +168,7 @@ export function ClassModelReview({ revision, busy, onSave, onDraftChange, onRevi
                   className="size-4 accent-accent"
                   type="checkbox"
                   checked={item.enabled !== false}
-                  onChange={(event) => updateClass(index, { enabled: event.target.checked })}
+                  onChange={(event) => setClassEnabled(index, event.target.checked)}
                 />
                 Include
               </label>
@@ -181,17 +213,17 @@ export function ClassModelReview({ revision, busy, onSave, onDraftChange, onRevi
             Connect the approved classes and confirm their relationship type and multiplicity.
           </p>
         </div>
-        <Button variant="secondary" size="sm" onClick={addRelationship} disabled={!classes.length}>
+        <Button variant="secondary" size="sm" onClick={addRelationship} disabled={!includedClasses.length}>
           <Plus /> Add relationship
         </Button>
       </header>
       <div className="grid gap-4">
-        {relationships.map((item, index) => (
+        {visibleRelationships.map(({ item, index }) => (
           <article className="grid gap-3 rounded-lg border border-border p-4" key={text(item, 'id') || index}>
             <div className="grid gap-3 sm:grid-cols-3">
               <ClassSelect
                 label="From"
-                classes={classes}
+                classes={includedClasses}
                 selected={text(item, 'sourceClassId')}
                 onChange={(sourceClassId) => updateRelationship(index, { sourceClassId })}
               />
@@ -211,7 +243,7 @@ export function ClassModelReview({ revision, busy, onSave, onDraftChange, onRevi
               </label>
               <ClassSelect
                 label="To"
-                classes={classes}
+                classes={includedClasses}
                 selected={text(item, 'targetClassId')}
                 onChange={(targetClassId) => updateRelationship(index, { targetClassId })}
               />
@@ -283,9 +315,9 @@ export function ClassModelReview({ revision, busy, onSave, onDraftChange, onRevi
           </article>
         ))}
       </div>
-      {!relationships.length ? (
+      {!visibleRelationships.length ? (
         <p className="rounded-md bg-surface-2 p-4 text-[13px] text-fg-3">
-          No relationships were generated. Add any relationships you need before continuing.
+          No relationships between the included classes. Add any relationships you need before continuing.
         </p>
       ) : null}
       <footer className="flex flex-wrap gap-3 border-t border-border pt-4">

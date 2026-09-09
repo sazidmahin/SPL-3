@@ -66,21 +66,34 @@ ENTITY_STOPWORDS = {
     "requirements",
 }
 ACTION_VERBS = {
+    "activate",
     "add",
     "approve",
     "archive",
     "assign",
     "authenticate",
+    "authorize",
+    "borrow",
     "calculate",
     "cancel",
     "capture",
     "change",
     "check",
     "classify",
+    "configure",
     "create",
+    "deactivate",
     "delete",
+    "deliver",
+    "deploy",
+    "deposit",
+    "disable",
+    "dispatch",
     "download",
+    "duplicate",
     "edit",
+    "enable",
+    "escalate",
     "export",
     "extract",
     "generate",
@@ -89,27 +102,40 @@ ACTION_VERBS = {
     "list",
     "load",
     "login",
+    "logout",
     "manage",
+    "migrate",
     "notify",
     "open",
     "pay",
     "persist",
     "publish",
+    "purchase",
     "read",
+    "reconcile",
+    "redeem",
     "register",
     "reject",
     "remove",
+    "renew",
     "render",
+    "reserve",
+    "resolve",
     "respond",
     "review",
     "save",
     "select",
     "send",
+    "share",
     "show",
     "store",
     "submit",
+    "subscribe",
     "switch",
+    "synchronize",
     "track",
+    "transfer",
+    "unsubscribe",
     "update",
     "upload",
     "validate",
@@ -126,7 +152,16 @@ ATTRIBUTE_OWNERSHIP_PATTERN = re.compile(
     flags=re.IGNORECASE,
 )
 ATTRIBUTE_LIST_PREFIX = re.compile(r"^(?:the\s+)?(?:following\s+)?(?:attributes?|fields?|details?)\s*(?:are|:)?\s*", re.IGNORECASE)
-ATTRIBUTE_RELATIONSHIP_ACTIONS = {"has", "have", "include", "includes", "store", "stores", "record", "records"}
+ATTRIBUTE_RELATIONSHIP_ACTIONS = {
+    "has", "have", "having", "had", "include", "includes", "including",
+    "store", "stores", "record", "records", "contain", "contains", "with",
+}
+
+
+def _is_attribute_relationship_action(raw_action: str) -> bool:
+    # "has a" / "has many" / "with the following" all count as possessive.
+    first = raw_action.strip().lower().split(" ", 1)[0]
+    return first in ATTRIBUTE_RELATIONSHIP_ACTIONS
 
 class DiagramGenerationError(Exception):
     """Base class for expected diagram generation failures."""
@@ -196,8 +231,16 @@ def normalize_methods(methods: list[str]) -> list[str]:
 
 def _class_name_from_token(token: str) -> str | None:
     normalized = token.strip("_-.,;:").lower()
-    generic_nouns = {item.lower() for item in load_dictionaries().get("generic_nouns", [])}
-    if len(normalized) < 3 or normalized in ENTITY_STOPWORDS or normalized in generic_nouns or _normalize_action(normalized):
+    dictionaries = load_dictionaries()
+    generic_nouns = {item.lower() for item in dictionaries.get("generic_nouns", [])}
+    primitive_attributes = {item.lower() for item in dictionaries.get("primitive_attributes", [])}
+    if (
+        len(normalized) < 3
+        or normalized in ENTITY_STOPWORDS
+        or normalized in generic_nouns
+        or normalized in primitive_attributes
+        or _normalize_action(normalized)
+    ):
         return None
     if normalized in IRREGULAR_NOUNS:
         return IRREGULAR_NOUNS[normalized]
@@ -330,7 +373,7 @@ def _extract_rule_based_model(requirements: list[str]) -> ClassDiagramModel:
                 if not source or not target or not relationship_type or source == target:
                     continue
                 raw_action = str(fact.get("rawAction") or fact.get("action") or "").lower()
-                if requirement.strip().lower() in attribute_only_requirements and raw_action in ATTRIBUTE_RELATIONSHIP_ACTIONS:
+                if requirement.strip().lower() in attribute_only_requirements and _is_attribute_relationship_action(raw_action):
                     if source not in class_names:
                         class_names.append(source)
                     methods_by_class.setdefault(source, [])
@@ -362,11 +405,16 @@ def _extract_rule_based_model(requirements: list[str]) -> ClassDiagramModel:
         sentence_classes = [(position, class_name) for position, _, class_name, _ in tokens if class_name]
         sentence_actions = [(position, action) for position, _, _, action in tokens if action]
 
-        for _, class_name in sentence_classes:
+        def _register(class_name: str | None) -> None:
+            if not class_name:
+                return
             if class_name not in class_names:
                 class_names.append(class_name)
             methods_by_class.setdefault(class_name, [])
 
+        # A noun only earns a class when it actually plays a role: the subject or
+        # target of an action, or the owner of explicit attributes. A noun that
+        # is merely name-dropped in a sentence is left out.
         for action_position, action in sentence_actions:
             subject = next(
                 (class_name for position, class_name in reversed(sentence_classes) if position < action_position),
@@ -381,33 +429,46 @@ def _extract_rule_based_model(requirements: list[str]) -> ClassDiagramModel:
                 None,
             )
             owner = subject or (sentence_classes[0][1] if sentence_classes else None)
+            _register(owner)
+            _register(target)
             if owner is not None:
                 method = _method_name(action, target)
-                if method not in methods_by_class.setdefault(owner, []):
+                if method not in methods_by_class[owner]:
                     methods_by_class[owner].append(method)
             if subject and target and subject != target:
+                _register(subject)
                 relationship = DiagramRelationship(source=subject, target=target, label=action)
                 if relationship not in relationships:
                     relationships.append(relationship)
 
-        if not sentence_actions and len(sentence_classes) >= 2:
-            source = sentence_classes[0][1]
-            target = sentence_classes[1][1]
-            relationship = DiagramRelationship(source=source, target=target, label="relates to")
-            if source != target and relationship not in relationships:
-                relationships.append(relationship)
+        for _, class_name in sentence_classes:
+            if class_name in attributes_by_class:
+                _register(class_name)
 
     if not class_names:
-        class_names = ["Requirement"]
-        methods_by_class = {"Requirement": ["validate()"]}
+        return ClassDiagramModel(
+            classes=[DiagramClass(name="Requirement", attributes=[], methods=["validate()"])],
+            relationships=[],
+        )
 
+    # Drop any candidate that ended up with no method, no attribute and no edge —
+    # it never proved it was a class.
+    surviving = [
+        class_name
+        for class_name in class_names[:8]
+        if methods_by_class.get(class_name)
+        or attributes_by_class.get(class_name)
+        or any(rel.source == class_name or rel.target == class_name for rel in relationships)
+    ]
+    if not surviving:
+        surviving = class_names[:1]
     classes = [
         DiagramClass(
             name=class_name,
-            attributes=attributes_by_class.get(class_name) or (["id", "status"] if methods_by_class.get(class_name) else ["id"]),
-            methods=methods_by_class.get(class_name) or ["validate()"],
+            attributes=attributes_by_class.get(class_name, []),
+            methods=methods_by_class.get(class_name, []),
         )
-        for class_name in class_names[:8]
+        for class_name in surviving
     ]
     allowed_class_names = {diagram_class.name for diagram_class in classes}
     return ClassDiagramModel(

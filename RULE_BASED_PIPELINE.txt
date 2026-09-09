@@ -1,0 +1,969 @@
+================================================================================
+ SPL-3  ·  RULE-BASED PIPELINE  ·  HOW IT WORKS, RULE BY RULE
+================================================================================
+
+Code:   backend/app/rule_engine/pipeline.py      (all logic)
+        backend/app/rule_engine/dictionaries.py  (loads the JSON word lists)
+        backend/app/dictionaries/v1/*.json       (the actual vocab / patterns)
+
+Versions stamped on every output:
+        RULE_VERSION       = "rules_v1"
+        DICTIONARY_VERSION = "dict_v1"
+
+The rule engine is 100% deterministic and regex + dictionary driven.
+There is NO machine learning, NO POS tagger, NO LLM in this path.
+Same input text -> byte-for-byte same output, every time.
+
+The engine powers:
+  - the "rule_based" class-diagram generation mode, AND
+  - the "xml" stage of EVERY mode (even the LLM modes hand their class model
+    to generate_drawio_xml / validate_class_model here).
+
+There is also a SECOND, lighter rule extractor for the diagram-generation
+"rule_based" METHOD — diagram_generation_service._extract_rule_based_model —
+described in section 13b. It shares the dictionaries and analyze_text.
+
+
+================================================================================
+ 1.  THE 6 STAGES
+================================================================================
+
+STAGES = ["input", "clarifications", "final-story", "requirements",
+          "class-model", "xml"]
+
+Text flows downhill. Each stage is a pure function of the stage(s) before it:
+
+  raw text
+     │  normalize_text
+     ▼
+  normalized text
+     │  split_sentences
+     ▼
+  sentences ──► split_clauses ──► clauses
+                                    │  extract_facts
+                                    ▼
+                                  FACTS  (actor / action / object / modality / …)
+     ┌──────────────────────────────┤
+     │  generate_clarifications     │  (questions for the human)
+     ▼                              │
+  clarification questions           │
+     │  human answers               │
+     ▼                              ▼
+  apply_answers  ───────────────► merged FACTS
+                                    │  generate_final_story
+                                    ▼
+                                  atomic user-story sections
+                                    │  generate_requirements
+                                    ▼
+                                  FR- / NFR- / BR- requirements
+                                    │  generate_class_model
+                                    ▼
+                                  class model  { classes[], relationships[] }
+                                    │  validate_class_model  (gate)
+                                    │  generate_drawio_xml
+                                    ▼
+                                  draw.io XML  +  validate_drawio_xml
+
+Top-level entry point: analyze_text(raw_text) runs normalize -> split_sentences
+-> split_clauses -> extract_facts -> generate_clarifications and returns all of
+it in one dict.
+
+Every artefact a rule produces carries a `matchedRuleId` (or `triggeredRuleId`
+for questions) so the UI can show *why* a thing exists. All rule IDs are listed
+in section 14.
+
+
+================================================================================
+ 2.  THE DICTIONARIES  (backend/app/dictionaries/v1/)
+================================================================================
+
+Loaded once, cached (lru_cache), read from *.json with UTF-8-BOM tolerance.
+File name (without .json) = dictionary key. To extend the engine you edit these
+files, not the code.
+
+action_aliases.json / action_aliases_extra.json
+    verb  -> canonical verb.   e.g. "places"->"create", "edit"->"update",
+    "buy"->"purchase", "see"/"display"/"show"/"read"->"view".
+    Merged together, lower-cased. This is the "known action" vocabulary.
+    action_aliases_extra now carries ~300 forms (base + -s/-ed/-ing) covering
+    upload/download/share/subscribe/borrow/return/reserve/renew/notify/assign/
+    authenticate/activate/deactivate/escalate/resolve/deliver/refund/transfer/
+    migrate/deploy/receive/… — extend it, not the parser.
+
+relationship_phrases.json / relationship_phrases_extra.json
+    phrase -> UML relationship type. ~75 phrases after the expansion.
+      "has","have","has a","has many","belongs to","references","links to",
+      "refers to","points to","maps to","assigned to","owned by"  -> association
+      "owns","contains","consists of","is composed of","part of",
+      "comprises","made up of"                                    -> composition
+      "includes","groups","aggregates"                            -> aggregation
+      "uses","depends on","requires","invokes","triggers","notifies",
+      "reads from","writes to"                                    -> dependency
+      "is a","is a type of","is a kind of","extends","inherits from",
+      "specializes"                                               -> inheritance
+      "implements","realizes","conforms to","acts as"             -> realization
+    (longest phrase matched first, so "has a" beats "has")
+
+quantifiers.json
+    phrase -> UML multiplicity.
+      "one","exactly one","single"        -> "1"
+      "zero or one","optional","at most one"-> "0..1"
+      "one or more","at least one"         -> "1..*"
+      "multiple","many","several","zero or more","all" -> "0..*"
+      "none","no"                          -> "0"
+
+obligation_modals.json    ["must","shall","should","has to","have to",
+                            "is required to","needs to", …]      -> "obligation"
+permission_modals.json    ["can","may","could","is allowed to",
+                            "is able to","has permission to", …] -> "permission"
+negative_modals.json      ["cannot","can not","may not","must not","shall not",
+                            "should not","never","does not","do not","will not"]
+                                                                 -> "negative"
+    These three, concatenated, also form the generic MODAL pattern used by the
+    fact-extraction regexes (longest phrase matched first).
+
+nfr_keywords.json
+    NFR category -> { keywords:[…], metric:"…" }.
+      Performance  -> responseTime   (fast, quick, latency, throughput, seconds…)
+      Availability -> uptime         (uptime, downtime, 24/7, 99.9, always on…)
+      Security     -> securityControl(encrypt, authenticate, rbac, 2fa, tls…)
+      Usability    -> usability      (usable, accessible, intuitive, wcag…)
+      Reliability  -> …              (reliable, recover, failover, fault tolerant)
+      (plus any others defined in the file)
+
+primitive_attributes.json
+    ~200 words that are DATA, not classes: id, name, username, email, password,
+    status, type, category, role, date, time, year, amount, balance, total,
+    price, quantity, number, description, title, code, reference, url, address,
+    city, country, phone, latitude, colour, size, weight, version, is*/has* …
+    Used to (a) reject "name, email, phone" noun-lists as non-facts,
+    (b) penalise such words in class scoring, and (c) HARD-EXCLUDE them from
+    ever being a class (_is_attribute_like) — they are folded into their owner.
+
+generic_nouns.json
+    Empty-calorie / UI / infra nouns that must never be domain classes: system,
+    application, platform, service, data, record, item, request, response, api,
+    endpoint, page, screen, view, dashboard, panel, widget, button, form, field,
+    dropdown, modal, dialog, layout, template, process, step, parameter,
+    payload, metadata … (-4 in scoring; a strong noun can still survive)
+
+state_words.json
+    ~75 lifecycle states: created, updated, deleted, active, pending, approved,
+    rejected, failed, completed, cancelled, archived, published, enabled,
+    locked, verified, expired, open, closed, resolved, shipped, delivered,
+    paid, overdue, suspended, reserved … (-6 in class scoring — a state is not
+    an entity).
+
+pronouns.json
+    { actorPronouns:[he,she,they,him,her,them,who],
+      objectPronouns:[it,this,that,these,those,which],
+      possessivePronouns:[his,her,their,its] }
+
+attribute_phrases.json
+    ~65 multi-word phrases -> attribute spec { name, type }.
+      "phone number" -> {phoneNumber, String}   "due date" -> {dueDate, Date}
+      "date of birth"-> {dateOfBirth, Date}     "email address"-> {emailAddress,String}
+      "unit price" -> {unitPrice, Decimal}      "tracking number"->{trackingNumber,…}
+    Recognised anywhere in a class's evidence sentence; single bare primitive
+    nouns in a possession list are also captured (rule ATTR_PRIMITIVE_NOUN_001).
+
+narrative_actors.json
+    Colloquial subject -> real actor class, used by resolve_actor (stage 7b):
+      "i" / "we" / "the business" / "management"   -> Administrator
+      "my staff" / "the team" / "employees"        -> Staff
+      "people" / "someone" / "anyone" / "visitors" -> User
+      "they" / "them" (weak anaphora default)      -> User
+      "customers" / "members" / "guests" / …       -> Customer / Member / …
+
+business_narrative_patterns.json
+    A list of { id, pattern(regex), actor, action, object, want, goal }.
+    Plain-English "shop story" phrasing -> a ready-made user story. Now a
+    per-sentence OVERLAY (stage 10): a matched sentence uses its canned story,
+    every other sentence is handled by the rule engine. No longer all-or-nothing.
+
+Also present and used for tokenising / splitting help: stopwords, articles,
+conjunctions, conditional_markers, temporal_markers, quantifiers, actor_hints,
+data_type_hints, irregular_verbs, phrase_aliases.
+
+
+================================================================================
+ 3.  STAGE — normalize_text(raw_text)
+================================================================================
+
+Rule TXT_UNICODE_NFKC_001
+    Unicode NFKC normalise (full-width chars, ligatures, etc. -> canonical).
+
+Rule TXT_PUNCTUATION_ASCII_001
+    Smart quotes/dashes/ellipsis -> ASCII ( ' " - ... ).  " & " -> " and ".
+
+Rule TXT_CONTRACTION_EXPAND_001
+    Written-out contractions so the modal dictionaries match:
+      can't->cannot  won't->will not  don't->do not  doesn't->does not
+      isn't->is not  shouldn't->should not  mustn't->must not  it's->it is …
+      (see _CONTRACTIONS in pipeline.py for the full table)
+
+Rule TXT_WHITESPACE_COLLAPSE_001
+    CRLF/CR -> LF; runs of spaces/tabs -> single space; spaces around a newline
+    dropped; runs of newlines -> single newline; trim ends.
+
+Output: { rawText, normalizedText, matchedRuleIds:[…] }.
+
+
+================================================================================
+ 4.  STAGE — split_sentences(normalized_text)
+================================================================================
+
+Rule SPL_SENTENCE_TERMINATOR_001
+
+Pre-processing (_protect_abbreviations):
+    - Known abbreviations ("e.g." "i.e." "etc." "vs." "approx." titles like "dr."
+      / "prof.", "inc." "ltd." "co." "corp." "dept." "min." "max." "sec."
+      "req." "spec." "ref." "u.s." "u.k." "ph.d." "b.sc." …) have their dots
+      swapped for a placeholder (U+2024) so they don't end a sentence. Restored
+      afterwards.  Full list: _SENTENCE_ABBREVIATIONS in pipeline.py.  Matched
+      with a leading \b, so "ms." only hits the title "Ms." — never the tail of
+      "items." / "terms." / "systems.".
+    - "99.9%", "1.5 seconds" — a dot between two digits is likewise protected.
+
+Splitting:
+    - Split on newlines first (each line handled separately).
+    - Strip a leading list bullet / numbering:  "- ", "* ", "• ", "1. ", "2) ",
+      "a) "  etc.
+    - Within a line, cut on runs of  . ! ?   (regex  [^.!?]+(?:[.!?]+|$) ).
+
+Each sentence gets: id "sentence_001", text, normalizedText (terminator
+stripped), sentenceIndex, startOffset, endOffset.
+
+
+================================================================================
+ 5.  STAGE — split_clauses(sentences)
+================================================================================
+
+Rule SPL_CLAUSE_COMMA_CONJUNCTION_001   (_split_clause_text)
+
+Goal: break a sentence into independent predicates WITHOUT shredding noun lists
+("name, email, and phone number" must stay together).
+
+Step 1 — hard breaks: split on ";" and on the word "then".
+
+Step 1b — quantity idioms that contain and/or ("one or more", "zero or more",
+"one or two") have their inner spaces swapped for a sentinel so the split in
+step 3 does not tear "one or more line items" apart. Restored at the end.
+
+Step 2 — relative-clause guard: within a segment, everything from the first
+"that / which / who / whom / whose / where / when / because / so that / in
+order to" onward is sliced off, held aside, and re-attached to the last clause
+AFTER step 3 — so its internal and/or/comma is never treated as a break.
+  "the librarian can remove books that are damaged or lost"
+        -> ["the librarian can remove books that are damaged or lost"]  (1 clause)
+
+Step 3 — soft breaks: split the remaining head on "," / "and" / "or", then GLUE
+the pieces back together UNLESS a piece "looks like a new predicate", i.e. one
+of its first 4 words is:
+      - a modal word (from permission/obligation/negative modal dicts), OR
+      - a known action verb (action_aliases), OR
+      - the singular of a known action verb.
+
+  "the user can log in and the admin can approve"
+        -> ["the user can log in", "the admin can approve"]      (2 clauses)
+  "a member can update the name, email, and phone number"
+        -> ["a member can update the name, email, and phone number"]  (1 clause)
+
+Each clause: id "clause_001_001", sentenceId, text, sentenceIndex, clauseIndex,
+offsets.
+
+
+================================================================================
+ 6.  STAGE — tokenize(text)
+================================================================================
+
+Rule TOK_WORD_001
+    Words = regex  [A-Za-z0-9']+ .  Each token: index, text, normalized(lower),
+    offsets. Used inside the positional fallback of fact extraction.
+
+
+================================================================================
+ 6b.  HELPER — normalize_entity(phrase)   (used everywhere for actor/object)
+================================================================================
+
+Turns a raw noun phrase into a clean PascalCase class-name candidate:
+
+  1. lower-case, collapse spaces.
+  2. Strip a leading quantity phrase: "up to", "at least", "at most", "no more
+     than", "more than", "fewer than", "about", "approximately", "exactly" …
+     ("up to five books" -> "five books").
+  3. CUT the phrase at the first relative pronoun / preposition / conjunction
+     (that, which, who, when, where, with, from, for, by, as, TO, OF, off, than,
+     including, containing, and, or, but …) — "book that is overdue" -> "book",
+     "report of all overdue loans" -> "report", "add book to the catalog"
+     -> (object) "book".
+  4. Strip leading determiners / quantifiers / weak adjectives, repeatedly:
+     a, an, the, one, each, every, any, some, all, many, multiple, new,
+     existing, valid, registered, authenticated, approved, verified, active,
+     current, selected, given, specific, their, this, these, "at least one",
+     "up to", numbers / "one".."ten" …
+  5. If the phrase now STARTS with a preposition (with/to/for/of/on/at/in/by/
+     from/about/into/as) -> return None (no head noun).
+  6. Keep at most the LAST 3 words; then drop a leading determiner that survived
+     into that tail ("title, an isbn, a due date" tail "a due date" -> "due
+     date", not "ADueDate").
+  7. Singularise the last word (ies->y, sses->ss, trailing s dropped).
+  8. PascalCase the result, splitting any camelCase runs so
+     "receive EmailReminder" -> "ReceiveEmailReminder".
+
+Returns None if nothing survives — that becomes a missing actor/object.
+
+
+================================================================================
+ 7.  STAGE — extract_facts(sentences, clauses)      ← the heart of the engine
+================================================================================
+
+Runs once per CLAUSE. For each clause it also pre-computes:
+    condition = _condition_from_text(sentence)   (see 7.9)
+    nfr       = _nfr_from_sentence(sentence)     (see 7.1)
+
+It then tries a fixed, ORDERED list of patterns. FIRST MATCH WINS, the loop
+`continue`s to the next clause. `known_entities` accumulates every actor/object
+seen so far (used for pronoun resolution).
+
+Helper — MODAL pattern = alternation of every permission + obligation + negative
+modal phrase, longest first.
+Helper — ARTICLE pattern = "(a|an|the) ".
+
+------------------------------------------------------------------ 7.1  NFR
+If nfr is not None AND ("system" in clause OR the nfr has a category):
+    emit fact:  actor="System", action = nfr.metric or "satisfy",
+                object = nfr category, extractionType=DICTIONARY_PATTERN,
+                matchedRuleId = NFR_<CATEGORY>_KEYWORD_001.
+
+_nfr_from_sentence:
+    - category matches if any of its keywords appears (word-boundary) in the
+      sentence.
+    - then look for a number:
+        "within|under|less than|no more than  <N>  seconds|minutes|hours|ms"
+      words "one".."ten" are accepted and converted to digits.
+    - measurable = True only if a number+unit was found; operator "<=".
+    - if not measurable: warning "No numeric <category> target was found."
+
+------------------------------------------------------------------ 7.2  PASSIVE
+Rule EXT_PASSIVE_OBJECT_ACTION_001        extractionType = PASSIVE_PATTERN
+    ^ (article)? <object>  MODAL  be  <action> $
+    e.g. "an order must be approved" -> actor=None, object=Order, action=approve.
+    (also used as a late fallback near the end, filling action=rawAction if the
+    verb is unknown.)
+
+------------------------------------------------------------------ 7.3  RELATIONSHIP PHRASE
+Rule REL_PHRASE_DICTIONARY_001            extractionType = PHRASE_PATTERN
+    For every relationship phrase (longest first):
+        ^ (article)? <source>  (MODAL )?  <phrase>  <object> $
+    e.g. "a library has many books":
+        source=Library, object=Book, relationshipType=association,
+        raw_action = the phrase ("has").
+    If the type is association / aggregation / composition:
+        sourceMultiplicity = "1"
+        targetMultiplicity = _quantity_from_text(clause)   (see 7.10)
+                             -> if none found: "0..*" + warning
+                                "Default multiplicity applied."
+        matchedRuleId becomes the multiplicity rule id if one fired (MUL_*).
+
+------------------------------------------------------------------ 7.4  SYSTEM GRANTS
+Rule EXT_SYSTEM_GRANTS_ACTOR_ACTION_OBJECT_001
+    ^ (article)? <x>  (MODAL )?  (allow|allows|enable|enables|permit|permits|
+        let|lets|give|gives|grant|grants)  (article)? <actor>
+        (to | the ability to | permission to)  <action>  (article)? <object> $
+    e.g. "the system shall allow a manager to approve the request".
+    The <action> and <object> are run through _expand_action_object (7.11),
+    so "create and update the order" yields two facts.
+    extractionType = EXACT_PATTERN, or POSITIONAL_GUESS if the verb is unknown.
+    Carries the pre-computed `condition`.
+
+------------------------------------------------------------------ 7.5  "ONLY <actor> …"
+Rule EXT_ONLY_ACTOR_CAN_ACTION_OBJECT_001
+    ^ only  (article)? <actor>  MODAL  <action>  (article)? <object> $
+    Marks that this is an exclusivity statement (feeds a BR- rule later).
+
+------------------------------------------------------------------ 7.6  ACTIVE + MODAL
+Rule EXT_<canonical-action-rule>          (from _canonical_action)
+    ^ (article)? <actor>  MODAL  <action>  (article)? <object> $
+    The normal "a customer can place an order" shape.
+    _canonical_action(verb):
+        in action_aliases      -> (canonical, EXT_ACTION_ALIAS_001,  [])
+        not in dictionary      -> (verb-lower, EXT_UNKNOWN_ACTION_001,
+                                   ['Unknown action "…".'])
+        None                   -> (None, EXT_NO_ACTION_001, [])
+
+------------------------------------------------------------------ 7.7  PRESENT TENSE, NO MODAL
+Rule EXT_PRESENT_TENSE_ACTION_001
+    Only tried if 7.5/7.6 did NOT match:
+    ^ (article)? <actor>  <verb(e?s)>  (article)? <object> $
+    AND the verb (or its singular) must be in action_aliases.
+    e.g. "the system sends a confirmation email".
+
+For 7.5 / 7.6 / 7.7 the raw object group is first passed through
+_strip_relative_clause (drop a trailing "… that/which/who …" so its internal
+and/or is not read as a second object — "books that are damaged or lost"
+-> "books"), then _expand_action_object, and:
+    Pronoun object handling — if the normalised object is an objectPronoun
+    ("it","this","that"…):
+        - exactly one distinct known entity so far  -> use that entity
+        - else if a condition subject exists         -> use it
+        - else                                       -> keep pronoun + warning
+          'Pronoun "…" has multiple possible references.'
+
+------------------------------------------------------------------ 7.8  POSITIONAL FALLBACK
+Rule EXT_POSITIONAL_ACTION_001            extractionType = POSITIONAL_GUESS
+    Last resort. Reject first if the clause is a bare noun list (every token is
+    a primitive_attribute) — that's attributes, not a fact.
+    Find the first token that is a known action verb (and not itself a
+    primitive noun). Require EITHER a modal is present OR the clause is short
+    (<= 6 tokens).
+        actor  = normalize_entity(text before the verb, trailing modal removed
+                 so "the librarian can" -> "Librarian")
+        object = normalize_entity(text after the verb)
+    If nothing matches at all -> NO fact is produced for that clause.
+
+------------------------------------------------------------------ 7.9  CONDITION
+_condition_from_text (per sentence, attached to the fact.condition):
+    (if|when|unless)  (the|a|an)? <subject>
+        (fails|failed|is failed|succeeds|expires|is invalid|is valid)
+    -> { subject: normalize_entity(subject), operator:"is",
+         value:"failed" | "expires" | "invalid" | "valid" | "succeeds" }
+
+------------------------------------------------------------------ 7.10 QUANTITY -> MULTIPLICITY
+_quantity_from_text(text), tried in order:
+    1. quantifiers.json phrase (word-boundary, longest first)  -> MUL_QUANTIFIER_DICTIONARY_001
+    2. "exactly <N>"            -> "N"        MUL_EXACT_NUMBER_001
+    3. "at least <N>"           -> "N..*"     MUL_AT_LEAST_NUMBER_001
+    4. "at most <N>"            -> "0..N"     MUL_AT_MOST_NUMBER_001
+    5. "maximum|up to <N>"      -> "0..N"     MUL_MAX_NUMBER_001
+    6. "minimum <N>"            -> "N..*"     MUL_MIN_NUMBER_001
+    7. "between <A> and <B>"    -> "A..B"     MUL_BETWEEN_NUMBER_001
+
+------------------------------------------------------------------ 7.11 COORDINATION EXPANSION
+_split_coordinated: split on "," / "and" / "or", drop leading articles.
+_expand_action_object(action, object):
+      N actions × 1 object   -> N pairs
+      1 action  × M objects  -> M pairs
+      N actions × N objects  -> zip pairs
+      else                   -> just the first of each
+    Capped at 4 actions, 6 objects.
+
+------------------------------------------------------------------ 7.12 MODALITY (every fact)
+_modality(clause text), checked in order:
+      any negative_modal phrase  -> ("negative",  negated=True)
+      any obligation_modal phrase-> ("obligation", negated=False)
+      otherwise                  -> ("permission", negated=False)
+
+------------------------------------------------------------------ 7.13 THE FACT RECORD
+_fact_template produces (key fields):
+    id "fact_001", sourceText(clause), sourceSentenceId, sourceSentenceText,
+    sourceClauseId, sentenceIndex, clauseIndex,
+    actor, action, rawAction, object, condition,
+    modality, negated,
+    quantity / sourceMultiplicity / targetMultiplicity,
+    relationshipType, nfr,
+    matchedRuleId, extractionType,
+    missingFields  (any of actor/action/object that is None, unless it's an NFR),
+    warnings[].
+
+
+================================================================================
+ 7b.  STAKEHOLDER VOICE — denarrate_clause()  (runs first, per clause)
+================================================================================
+
+Before any rule in stage 7 sees a clause, denarrate_clause rewrites colloquial
+"real person" phrasing into the plain "<actor> <modal> <action> <object>" shape
+the rules already parse. Everything it does not recognise is returned unchanged.
+
+  1. Drop a trailing goal / rationale clause:
+       "… so that they can shop"  |  "… so they can track it"  |  "… because …"
+       |  "… in order to …"  |  "… which means …"          -> removed
+  2. Drop a leading trigger word left by clause splitting:
+       "if / when / whenever / once / after / before / while <predicate>"
+       -> "<predicate>"
+  3. Provision form  (Rule inside EXT_* via rewrite):
+       "There should be a way for <actor> to <verb> <object>"
+       "It must be possible for <actor> to <verb> <object>"
+       -> "<actor> can <verb> <object>"
+  4. Intent form:
+       "<narrator> want[s] / need[s] / would like / wish / expect / plan
+         [ <beneficiary> to [be able to] ] <verb> <object>"
+       - with a beneficiary   -> "<beneficiary> can <verb> <object>"
+       - without a beneficiary -> "<narrator-actor> can <verb> <object>"
+         where <narrator-actor> is resolve_actor(narrator) (see below).
+       "to be able" / "be able" captured as a beneficiary is discarded.
+  5. Strip "be able to" / "the ability to" / "the option to" / "a way to" /
+     "be allowed to" anywhere.
+
+resolve_actor(raw)  — normalize_entity, but first map a colloquial subject onto
+a real actor class via narrative_actors.json:
+       I / we / the business / management / the owner   -> Administrator
+       my staff / the team / employees                  -> Staff
+       people / someone / anyone / a person / visitors   -> User
+       they / them / he / she (anaphora, weak default)   -> User
+       users / customers / members / guests / clients    -> User / Customer / …
+resolve_actor is used for the ACTOR slot of every extraction pattern (the
+OBJECT slot still uses plain normalize_entity).
+
+  "I want people to be able to see the clothes so that they can decide"
+        -> denarrate -> "people can see the clothes"
+        -> EXT_ACTION_ALIAS_001 -> actor User, action view, object Clothes
+  "My staff need to be able to view the daily schedule"
+        -> "Staff can view the daily schedule"
+  "There should be a way for a manager to reject an order"
+        -> "a manager can reject an order"
+
+The curated business_narrative_patterns.json (stage 10) is now only a
+per-sentence overlay for the shop-story demo, not a precondition for handling
+informal input.
+
+
+================================================================================
+ 8.  STAGE — generate_clarifications(facts)
+================================================================================
+
+One pass over facts. Emits questions with id "CLR-001", a `category`, the
+`sourceSentence` (full triggering sentence, shown in a quote box in the UI),
+`answerMapping` (which fact slot the answer fills), `triggeredRuleId`.
+
+Per fact, the FIRST matching gap question (mutually exclusive if/elif):
+
+  CLR_MISSING_ACTOR_001   action + object, no actor
+        "Who can <action> the <object>?"                     -> slot actor
+  CLR_MISSING_OBJECT_001  actor + action, no object
+        "What can the <actor> <action>?"                     -> slot object
+  CLR_MISSING_ACTION_001  actor + object, no action
+        "What does the <actor> do with the <object>?"        -> slot action
+  CLR_UNKNOWN_ACTION_001  fact has an 'Unknown action' warning
+        'What does "<rawAction>" mean in this story?'         -> slot canonicalAction
+
+Then, independently (can add more than one):
+
+  CLR_AMBIGUOUS_PRONOUN_001   fact has a 'multiple possible references' warning
+        "Which entity does the pronoun in “…” refer to?"     -> slot object
+  CLR_VAGUE_NFR_TARGET_001    fact.nfr exists but not measurable
+        "What measurable <category> target should be used?"   -> slot nfrTarget
+  CLR_VAGUE_QUANTIFIER_001    action + object, NO digit in clause, AND a vague
+                              quantity word (some, several, a few, multiple,
+                              many, various, a lot of, certain…)
+        "How many <object> are expected (number or range)?"  -> slot quantity
+  CLR_VAGUE_TIMING_001        no nfr, AND a vague time word (quickly, fast, soon,
+                              regularly, periodically, immediately, real-time,
+                              as soon as possible…)
+        "What is the exact timing or frequency this requires?"-> slot temporalConstraint
+  CLR_CONFLICTING_MODALITY_001  cross-fact: the SAME (actor,action,object) is
+                              asserted both positively and negatively somewhere
+        "Can the <actor> <action> the <object> or not? The text says both."
+                                                             -> slot note (asked once per triple)
+
+
+================================================================================
+ 9.  STAGE — apply_answers(facts, answers, question_lookup)
+================================================================================
+
+Deep-copies facts. Applies answers in createdAt order. Skips answers whose
+status is "skipped" / "not_applicable", or with no text / no target slot.
+
+Slot handling:
+    canonicalAction  -> fact.action = camelCase(value) if it has a space,
+                        else value.strip()
+    nfrTarget        -> fact.nfr.targetValue = value; measurable=True; warnings=[]
+    actor | object   -> fact[slot] = normalize_entity(value)
+    anything else     -> fact[slot] = value.strip()
+The filled slot is removed from missingFields; fact.extractionType is set to
+"CLARIFICATION_ANSWER".
+
+
+================================================================================
+ 10.  STAGE — generate_final_story(original, sentences, facts, answers)
+================================================================================
+
+Story sections are merged PER SENTENCE from two sources:
+
+  (a) _business_narrative_story_sections(sentences) — for each sentence, test
+      every regex in business_narrative_patterns.json. On a match emit a canned
+      section: actor/action/object from the pattern, modality "should",
+      normalizedSentence "As a <actor>, I want to <want>, so that <goal>.",
+      matchedRuleId = pattern.id (e.g. NAR_CUSTOMER_ACCOUNT_001), sourceFactId
+      "NAR-00n", sentenceIndex recorded. Duplicate (actor,action,object) skipped.
+
+  (b) _fact_story_sections(facts) — Rule FIN_ATOMIC_STORY_TEMPLATE_001
+      one section per USABLE fact (an NFR fact, or a fact with an action plus at
+      least one of actor/object — a lone noun or lone verb is dropped):
+        actor  = fact.actor  or "UnknownActor"
+        action = fact.action or "UnknownAction"
+        object = fact.object or "UnknownObject"
+        modal  = must (obligation) | cannot (negative) | can
+        sentence = "The <actor> <modal> <action> an <object>."
+        ("If <condition>, " prefixed when there is a condition)
+
+  MERGE: narrative sections win for the sentences they matched; fact sections
+  cover every other sentence. Result sorted by sentenceIndex, ids re-numbered.
+  extractionMetadata.storySource = "business_narrative" | "mixed" | "rule_facts".
+
+  So a curated shop-story paragraph still reads well, and an arbitrary
+  stakeholder document is now fully covered by the rule engine (see stage 7b).
+
+  Story-level: unresolvedFields = union of all fact missingFields;
+               warnings = sorted unique section warnings.
+
+
+================================================================================
+ 11.  STAGE — generate_requirements(final_story, facts)
+================================================================================
+
+One pass over the story sections. Counters FR / NFR / BR.
+
+NFR section (fact.nfr present)
+  Rule = the nfr's own matchedRuleId (NFR_<CATEGORY>_KEYWORD_001)
+    id "NFR-001", requirementType "non_functional",
+    statement "The system shall satisfy <category> expectations[ within <N> <unit>]."
+    carries nfrCategory / metric / operator / targetValue / unit / measurable.
+    (the " within N unit" suffix only if measurable AND targetValue is an int)
+    -> `continue` (an NFR never also makes an FR/BR).
+
+Functional section (everything else)
+  Rule FR_ACTOR_ACTION_OBJECT_001             (no condition)
+  Rule FR_CONDITIONAL_ACTOR_ACTION_OBJECT_001 (has condition)
+    id "FR-001", requirementType "functional",
+    actor_phrase = "an unspecified actor" if actor=="UnknownActor"
+                   else "the <actor>"
+    statement "The system shall allow <actor_phrase> to <action> the <object>."
+    ("If <condition>, " prefixed when there is a condition)
+    extractionMethod = the source fact's extractionType.
+
+Business rule (added ALONGSIDE the FR when the source text — sentence + condition,
+lower-cased — contains any of:
+    only, cannot, must not, at least, at most, exactly, before, after, unless,
+    contain, own)
+    id "BR-001", requirementType "business_rule":
+      "only" present            -> "Only the <actor> may <action> the <object>."
+                                   Rule BR_ONLY_ACTOR_ACTION_OBJECT_001
+      "contain" or "own"        -> "The <actor> must maintain the required
+                                   <object> relationship."
+                                   Rule BR_MANDATORY_CONTAINMENT_001
+      otherwise                 -> "The <actor> is constrained when attempting
+                                   to <action> the <object>."
+                                   Rule BR_CONSTRAINT_KEYWORD_001
+
+Every requirement starts enabled:true. (The review UI can toggle that.)
+
+
+================================================================================
+ 12.  STAGE — generate_class_model(requirements, facts, threshold=4)
+================================================================================
+
+--- 12a.  SCORE every candidate entity name -------------------------------------
+
+Start Counter at 0. Add points:
+
+  from each FACT:
+      + 5   fact.actor      (if set and not "Unknown…")
+      + 4   fact.object     (   "                     )
+      + 4   fact.actor  AND + 4  fact.object   — extra, only if the fact has a
+            relationshipType (relationship facts weigh more)
+  from each REQUIREMENT (enabled, not non_functional):
+      + 5   requirement.actor
+      + 4   requirement.object
+
+  HARD EXCLUDE (removed from scoring entirely, whatever the score):
+      _is_attribute_like(name) — snake_case(name) is a primitive_attributes word
+      or an attribute_phrases key / target name, OR its last word (or its
+      singular) is a primitive. "Status", "DueDate", "PhoneNumber",
+      "EmailAddress" can never be classes — they are folded into their owner in
+      12c instead.
+
+  PENALTIES (name lower-cased):
+      - 5   name is in primitive_attributes.json
+      - 4   name is in generic_nouns.json
+      - 6   name is a pronoun word  OR  in state_words.json
+
+--- 12b.  KEEP names with score >= threshold (default 4) -----------------------
+
+  class id   = "class_" + snake_case(name)
+  stereotype = "service" for name=="System", else "entity"
+  attributes = _attributes_for_class(name, that class's evidence sentences) —
+               two sources, class-SCOPED (find the class first, THEN its fields):
+                 (1) any attribute_phrases.json phrase appearing in an evidence
+                     sentence  -> ATTR_PHRASE_DICTIONARY_001
+                 (2) a bare primitive noun, but ONLY inside a possession list
+                     the class itself opens ("a member has a name, an email and
+                     a join date" — head before has/have/with/contains/... must
+                     mention the class)  -> ATTR_PRIMITIVE_NOUN_001
+               record: { id "attr_<snake>", name, type (from data_type_hints or
+               the phrase spec), visibility private, sourceRuleId }
+  methods    = []  for now
+  sourceFactIds / sourceRequirementIds recorded for traceability
+  enabled    = true
+
+--- 12c.  SYNTHESISE METHODS + RELATIONSHIPS from requirements -----------------
+
+For every enabled functional/business requirement with a real actor AND object:
+
+  source_id = class_<actor>,  target_id = class_<object>
+
+  * if the source is a kept class and the TARGET is attribute-like (a primitive
+    field, not a class) -> record it as an attribute on the source
+    (_merge_attribute) and skip the edge. "X has a due date" adds dueDate to X,
+    it does NOT mint a DueDate class + edge.
+  * otherwise, if source or target is not a kept class -> skip.
+
+  method on the ACTING class:
+      name = camelCase("<action> <object>")   e.g. "createOrder"
+      returnType = <object>,  visibility public,  static false
+      (de-duplicated per (class, method name))
+
+  method on the ACTED-UPON class (so entities aren't empty shells):
+      name = camelCase(<action>)  e.g. "create"   (falls back to "handle")
+      returnType = "Boolean"
+
+  relationship:
+      id    "edge_<actor>_<action|uses>_<object>"
+      type  = normalize_relationship_type(fact.relationshipType or "association")
+              (looked up via the requirement's source sentence)
+      label = <action> or "uses"
+      direction = "source-to-target"
+      if type in {association, aggregation, composition}:
+          sourceMultiplicity = fact.sourceMultiplicity or "1"
+          targetMultiplicity = fact.targetMultiplicity or "0..*"
+          warning "Default multiplicity applied." when target was defaulted
+      else: multiplicities null
+      enabled = true
+
+--- 12d.  ELIMINATE INERT NOUNS  (deliberate design choice) -------------------
+
+  kept = classes that ended up with >= 1 method OR >= 1 attribute.
+  Everything else is DROPPED; its name is listed in model.eliminatedClasses.
+  Any relationship touching a dropped class is also dropped.
+  Rationale: a noun with no behaviour AND no state is an inert mention, not a
+  class. A pure association target that never earned a method or a field is
+  dropped along with its edge (strict precision — the user asked for this).
+  The lifecycle method added in 12c keeps genuine "object" entities alive.
+
+--- 12e.  DEDUPE RELATIONSHIPS  (_dedupe_relationships) -----------------------
+
+  key = (sourceClassId, targetClassId, type, label). Duplicates merge their
+  sourceRequirementIds.
+
+Output model:
+  { classes[] (sorted by name), relationships[] (deduped),
+    enums:[], constraints:[], eliminatedClasses?[],
+    dictionaryVersionId, ruleVersionId }
+
+
+================================================================================
+ 13.  STAGE — validate + generate draw.io XML
+================================================================================
+
+--- validate_class_model(model)  ->  Rule VAL_CLASS_MODEL_REFERENCES_001 -------
+
+Builds the set of ENABLED class ids (also tracks which ids are present but
+DISABLED). Then checks:
+
+  * enabled class with no id                -> "Enabled class is missing an ID."
+  * duplicate class id                      -> "Duplicate class ID: <id>."
+  * enabled relationship with no id         -> "Enabled relationship is missing an ID."
+  * relationship id clashes with another
+    relationship or a class id              -> "Duplicate diagram element ID: <id>."
+  * relationship whose source/target class
+    is PRESENT-BUT-DISABLED (Include off)   -> treated as INERT: the whole
+                                              relationship is skipped, no error.
+  * relationship whose source/target class
+    id does NOT exist at all                -> "Relationship <id> source/target
+                                              class is missing or disabled."
+  * relationship.type not one of the 6      -> "… unsupported type: <t>."
+  * relationship.direction not one of the 4 -> "… invalid direction: <d>."
+    valid types      : association, aggregation, composition, dependency,
+                       inheritance, realization  (+ aliases: generalization,
+                       extends, inherits -> inheritance; implements,
+                       implementation -> realization)
+    valid directions : undirected, source-to-target, target-to-source,
+                       bidirectional   (none/unspecified -> undirected)
+  * for association/aggregation/composition: each multiplicity, if given, must
+    match  ^(?:\*|\d+|\d+\.\.(?:\d+|\*))$    -> "… invalid <field>: <v>."
+  * inheritance / realization with source == target
+                                            -> "… cannot target the same class …"
+  * inheritance edges form a cycle          -> "Inheritance relationships contain a cycle."
+
+Result: { valid: <no errors>, errors:[…], matchedRuleId }.
+The class-model stage CANNOT be approved while `valid` is false — the errors are
+joined with "; " and thrown as the state error.
+
+--- generate_drawio_xml(model)  ->  Rule VAL_XML_DRAWIO_001 -------------------
+
+  Runs validate_class_model first; if invalid, returns ("", validation).
+  Renders only ENABLED classes, laid out on a 3-column grid
+  (startX 80, startY 80, gaps 340×260, class width 240). Each class is a
+  swimlane with an attributes compartment and a methods compartment
+  ("- attr: Type", "+ method(): ReturnType").
+  Renders only relationships that are enabled AND whose BOTH endpoints are
+  enabled classes (edges to an excluded class are intentionally omitted).
+  Edge style per type/direction comes from relationship_drawio_style():
+      association  dashed=0 + arrows by direction (open arrowheads)
+      composition  startArrow=diamondThin startFill=1  endArrow=none
+      aggregation  startArrow=diamondThin startFill=0  endArrow=none
+      inheritance  endArrow=block endFill=0            dashed=0
+      dependency   dashed=1 endArrow=open
+      realization  dashed=1 endArrow=block endFill=0
+  For association/aggregation/composition, multiplicities are emitted as
+  edge-label cells "<edge id>_source_multiplicity" / "_target_multiplicity"
+  at positions -0.85 / 0.85 along the edge.
+
+--- validate_drawio_xml(xml, model)  ->  Rule VAL_XML_* ---------------------
+
+  VAL_XML_WELL_FORMED_001 : the XML must parse.
+  Structural checks: every vertex cell has <mxGeometry>; every edge cell has
+  relative geometry; no duplicate cell ids.
+  Cross-check against the model: re-runs validate_class_model; every edge's
+  source/target must point at an enabled class; every enabled relationship
+  between two enabled classes must have a matching XML edge, with EXACTLY the
+  expected style string, and its multiplicity labels present with the right
+  values.
+
+
+================================================================================
+ 13b.  THE OTHER ENGINE — diagram_generation_service._extract_rule_based_model
+================================================================================
+
+The "rule_based" diagram-generation METHOD (SUPPORTED_METHODS) has its own
+lighter extractor. It reuses pipeline.analyze_text per requirement string, plus
+its own token scan. Same precision principles now apply:
+
+  _class_name_from_token rejects a token that is a generic_noun, a
+  primitive_attributes word, an ENTITY_STOPWORD, or an ACTION_VERBS verb.
+
+  _extract_rule_based_attributes: "<Owner> has/have/includes/stores/records
+  <list>" — each list item is kept as an attribute only if it names a known
+  primitive / type-hint word (or the sentence says "fields/attributes/details");
+  a bare domain noun ("User has Account") stays a relationship. Multi-word
+  phrases resolve through attribute_phrases.json.
+
+  A noun becomes a class ONLY when it actually plays a role: the subject or
+  target of an action, an endpoint of a typed relationship, or the owner of
+  extracted attributes. A name merely mentioned is ignored.
+
+  Final filter: drop any candidate with no method, no attribute AND no edge.
+  No synthetic "id" / "status" columns and no filler "validate()" method are
+  invented any more (only the whole-model fallback, when nothing at all was
+  found, emits a single Requirement/validate() class).
+
+  build_drawio_xml then hands the model to pipeline.generate_drawio_xml /
+  validate_class_model (section 13) for rendering + validation.
+
+
+================================================================================
+ 14.  COMPLETE RULE-ID INDEX
+================================================================================
+
+Text / split / token
+  TXT_UNICODE_NFKC_001            NFKC normalise
+  TXT_PUNCTUATION_ASCII_001       smart quotes/dashes -> ASCII, & -> and
+  TXT_CONTRACTION_EXPAND_001      can't -> cannot, etc.
+  TXT_WHITESPACE_COLLAPSE_001     collapse whitespace / newlines
+  SPL_SENTENCE_TERMINATOR_001     sentence split on . ! ? (abbrev-aware)
+  SPL_CLAUSE_COMMA_CONJUNCTION_001 clause split on ; then , / and / or / then
+                                  (relative clauses kept intact)
+  TOK_WORD_001                    word tokeniser
+
+Stakeholder voice
+  (denarrate_clause has no rule id of its own — it rewrites the clause so one of
+   the EXT_* rules below matches; resolve_actor maps the subject to an actor)
+
+Fact extraction
+  EXT_NO_ACTION_001               raw action was None
+  EXT_ACTION_ALIAS_001            verb found in action dictionary
+  EXT_UNKNOWN_ACTION_001          verb NOT in dictionary (-> clarification)
+  EXT_PASSIVE_OBJECT_ACTION_001   "<object> must be <action>"
+  EXT_SYSTEM_GRANTS_ACTOR_ACTION_OBJECT_001  "system allows <actor> to <action> <object>"
+  EXT_ONLY_ACTOR_CAN_ACTION_OBJECT_001       "only <actor> <modal> <action> <object>"
+  EXT_PRESENT_TENSE_ACTION_001    "<actor> <verb>s <object>" (no modal)
+  EXT_POSITIONAL_ACTION_001       positional fallback around first known verb
+  REL_PHRASE_DICTIONARY_001       relationship phrase matched
+
+NFR
+  NFR_PERFORMANCE_KEYWORD_001 / NFR_AVAILABILITY_KEYWORD_001 /
+  NFR_SECURITY_KEYWORD_001 / NFR_USABILITY_KEYWORD_001 /
+  NFR_RELIABILITY_KEYWORD_001 ...   (NFR_<CATEGORY>_KEYWORD_001, category from
+                                     nfr_keywords.json)
+
+Multiplicity
+  MUL_QUANTIFIER_DICTIONARY_001   quantifiers.json phrase
+  MUL_EXACT_NUMBER_001            "exactly N"          -> N
+  MUL_AT_LEAST_NUMBER_001         "at least N"         -> N..*
+  MUL_AT_MOST_NUMBER_001          "at most N"          -> 0..N
+  MUL_MAX_NUMBER_001              "maximum / up to N"  -> 0..N
+  MUL_MIN_NUMBER_001              "minimum N"          -> N..*
+  MUL_BETWEEN_NUMBER_001          "between A and B"    -> A..B
+
+Clarifications
+  CLR_MISSING_ACTOR_001          action+object, no actor
+  CLR_MISSING_OBJECT_001         actor+action, no object
+  CLR_MISSING_ACTION_001         actor+object, no action
+  CLR_UNKNOWN_ACTION_001         verb not in dictionary
+  CLR_AMBIGUOUS_PRONOUN_001      pronoun with >1 possible referent
+  CLR_VAGUE_NFR_TARGET_001       NFR keyword but no number
+  CLR_VAGUE_QUANTIFIER_001       "some / several / many …" instead of a number
+  CLR_VAGUE_TIMING_001           "quickly / soon / real-time …" with no value
+  CLR_CONFLICTING_MODALITY_001   same actor/action/object asserted both ways
+
+Final story
+  NAR_* (e.g. NAR_CUSTOMER_ACCOUNT_001)   business-narrative pattern (per-sentence
+                                          overlay) from business_narrative_patterns.json
+  NAR_BUSINESS_INTENT_001                 fallback id for a narrative pattern
+  FIN_ATOMIC_STORY_TEMPLATE_001           one story section per usable fact
+                                          (storySource = rule_facts | mixed |
+                                           business_narrative)
+
+Requirements
+  FR_ACTOR_ACTION_OBJECT_001              functional requirement
+  FR_CONDITIONAL_ACTOR_ACTION_OBJECT_001  functional requirement with a condition
+  BR_ONLY_ACTOR_ACTION_OBJECT_001         "only …" exclusivity rule
+  BR_MANDATORY_CONTAINMENT_001            "contain" / "own" rule
+  BR_CONSTRAINT_KEYWORD_001               other constraint keyword
+  (NFR requirements reuse the NFR_<CATEGORY>_KEYWORD_001 id)
+
+Class model / XML
+  ATTR_PHRASE_DICTIONARY_001              attribute pulled from attribute_phrases.json
+  ATTR_PRIMITIVE_NOUN_001                 attribute = bare primitive noun in a
+                                          possession list on its owner class
+  VAL_CLASS_MODEL_REFERENCES_001          class-model validation result
+  VAL_XML_DRAWIO_001                      draw.io XML generation / validation
+  VAL_XML_WELL_FORMED_001                 XML failed to parse
+
+
+================================================================================
+ 15.  KEY CONSTANTS / DEFAULTS  (quick reference)
+================================================================================
+
+  class-score threshold ...................... 4
+  actor score ............................... +5     object score ........ +4
+  relationship-fact bonus ................... +4 actor, +4 object
+  primitive-attribute penalty ............... -5   (AND hard-excluded from classes)
+  generic-noun penalty ...................... -4
+  pronoun / state-word penalty .............. -6
+  attribute-like name ...................... never a class (folded into owner)
+  default source multiplicity ............... "1"
+  default target multiplicity .............. "0..*"   (+ warning)
+  cardinality relationship types ........... association, aggregation, composition
+  class kept iff ........................... >= 1 method OR >= 1 attribute
+                                            (else eliminated + edge dropped)
+  entity noun phrase ....................... trailing <= 3 words, last word
+                                            singularised, leading article/qty
+                                            stripped, relative clause cut
+  coordination cap ......................... 4 actions, 6 objects
+  positional fallback ...................... needs a modal OR clause <= 6 tokens;
+                                            trailing modal stripped from actor
+  dictionaries expanded ................... action_aliases_extra (~300 verb
+                                            forms), relationship_phrases_extra
+                                            (~75 phrases), generic_nouns,
+                                            primitive_attributes, attribute_
+                                            phrases, state_words, nfr_keywords
+  stakeholder voice ....................... denarrate_clause + narrative_actors.json
+                                            handle "I want <X> to be able to <Y>",
+                                            "there should be a way for …", goal
+                                            clauses; narrative table is now a
+                                            per-sentence overlay, not a gate
+
+================================================================================
+ END
+================================================================================
