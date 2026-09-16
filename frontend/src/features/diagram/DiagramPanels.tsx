@@ -1,9 +1,11 @@
+import { useRef } from 'react'
 import type { FormEvent } from 'react'
 import type { Diagram, DiagramVersion } from '../../domains/diagram/types'
 import type { Project } from '../../domains/project/types'
 import type { WorkspaceMembership } from '../../domains/workspace/types'
+import { downloadDataUrl } from '../../shared/download'
 import { Button, Card, Field, Input, PageHeader, Select, Textarea, cn } from '../../shared/ui'
-import { DrawioEmbed } from './DrawioEmbed'
+import { DrawioEmbed, type DrawioEmbedHandle } from './DrawioEmbed'
 
 type DiagramsPanelProps = {
   activeWorkspace: WorkspaceMembership | undefined
@@ -22,6 +24,7 @@ type DiagramsPanelProps = {
   onResetXml: () => void
   onSaveVersion: () => void
   onExportDiagram: () => void
+  onImageExportError: (message: string) => void
 }
 
 const optionClass = 'grid w-full gap-1 rounded-md border px-3 py-2.5 text-left text-sm transition'
@@ -47,7 +50,21 @@ export function DiagramsPanel({
   onResetXml,
   onSaveVersion,
   onExportDiagram,
+  onImageExportError,
 }: DiagramsPanelProps) {
+  const drawioRef = useRef<DrawioEmbedHandle>(null)
+
+  async function handleImageExport(format: 'png' | 'jpeg') {
+    if (!drawioRef.current) return
+    try {
+      const dataUrl = await drawioRef.current.exportImage(format)
+      const extension = format === 'jpeg' ? 'jpg' : 'png'
+      downloadDataUrl(`${activeDiagram?.title ?? 'diagram'}.${extension}`, dataUrl)
+    } catch (caught) {
+      onImageExportError(caught instanceof Error ? caught.message : 'Unable to export diagram image')
+    }
+  }
+
   return (
     <Card className="grid gap-4 p-5">
       <PageHeader
@@ -90,7 +107,7 @@ export function DiagramsPanel({
         </div>
         <div className="grid min-w-0 gap-3">
           {diagramXml ? (
-            <DrawioEmbed xml={diagramXml} title="Draw.io diagram preview" className="h-96" />
+            <DrawioEmbed ref={drawioRef} xml={diagramXml} title="Draw.io diagram preview" className="h-96" />
           ) : (
             <p className="rounded-md bg-surface-2 p-4 text-[13px] text-fg-3">Select a diagram to preview it.</p>
           )}
@@ -121,6 +138,24 @@ export function DiagramsPanel({
               disabled={!activeDiagram || isSavingDiagram || !canUseManualDrawio}
             >
               {isSavingDiagram ? 'Saving…' : 'Save version'}
+            </Button>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => void handleImageExport('png')}
+              disabled={!diagramXml || !canExportDiagrams}
+            >
+              Download PNG
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => void handleImageExport('jpeg')}
+              disabled={!diagramXml || !canExportDiagrams}
+            >
+              Download JPG
             </Button>
           </div>
           {!canExportDiagrams ? <UpgradeNote>Upgrade to export diagrams.</UpgradeNote> : null}

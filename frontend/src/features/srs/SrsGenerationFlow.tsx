@@ -1,13 +1,14 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
-import { AlertTriangle, CheckCircle2, Download, Loader2, Play, Quote, RotateCcw, Save } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Download, ImageDown, Loader2, Play, Quote, RotateCcw, Save } from 'lucide-react'
 import type { AiProviderSetting } from '../../domains/aiSettings/types'
 import type { GenerationMode, PipelineRun, PipelineStage, PipelineStageRevision } from '../../domains/generationPipeline/types'
 import type { Project } from '../../domains/project/types'
 import type { WorkspaceMembership } from '../../domains/workspace/types'
+import { downloadDataUrl } from '../../shared/download'
 import { Button, Card, Chip, Modal, ModalClose, ModalContent, PageHeader, RadioCard, StepTrack, Textarea, inputClasses, cn } from '../../shared/ui'
 import { ClassModelReview } from '../classModelReview/ClassModelReview'
-import { DrawioEmbed } from '../diagram/DrawioEmbed'
+import { DrawioEmbed, type DrawioEmbedHandle } from '../diagram/DrawioEmbed'
 
 type Props = {
   activeWorkspace: WorkspaceMembership | undefined
@@ -864,6 +865,10 @@ function RequirementsReview({
 function XmlReview({ revision }: { revision: PipelineStageRevision }) {
   const xml = typeof revision.payload.xml === 'string' ? revision.payload.xml : ''
   const valid = (revision.payload.validation as Record<string, unknown> | undefined)?.valid === true
+  const drawioRef = useRef<DrawioEmbedHandle>(null)
+  const [pngError, setPngError] = useState<string | null>(null)
+  const [isExportingPng, setIsExportingPng] = useState(false)
+
   function download() {
     const file = new Blob([xml], { type: 'application/xml;charset=utf-8' })
     const url = URL.createObjectURL(file)
@@ -875,6 +880,21 @@ function XmlReview({ revision }: { revision: PipelineStageRevision }) {
     link.remove()
     URL.revokeObjectURL(url)
   }
+
+  async function downloadPng() {
+    if (!drawioRef.current) return
+    setPngError(null)
+    setIsExportingPng(true)
+    try {
+      const dataUrl = await drawioRef.current.exportImage('png')
+      downloadDataUrl('class-diagram.png', dataUrl)
+    } catch (caught) {
+      setPngError(caught instanceof Error ? caught.message : 'Unable to export diagram as PNG')
+    } finally {
+      setIsExportingPng(false)
+    }
+  }
+
   return (
     <section className="grid content-start gap-5">
       <header>
@@ -889,10 +909,16 @@ function XmlReview({ revision }: { revision: PipelineStageRevision }) {
           {valid ? 'The XML is ready to preview, download, and open in Draw.io.' : 'Review the XML before using it.'}
         </p>
       </div>
-      {xml ? <DrawioEmbed xml={xml} title="Draw.io class diagram preview" className="h-[32rem]" /> : null}
-      <Button className="w-max" disabled={!xml} onClick={download}>
-        <Download /> Download Draw.io XML
-      </Button>
+      {xml ? <DrawioEmbed ref={drawioRef} xml={xml} title="Draw.io class diagram preview" className="h-[32rem]" /> : null}
+      <div className="flex flex-wrap gap-2">
+        <Button disabled={!xml} onClick={download}>
+          <Download /> Download Draw.io XML
+        </Button>
+        <Button variant="secondary" disabled={!xml || isExportingPng} onClick={() => void downloadPng()}>
+          <ImageDown /> {isExportingPng ? 'Exporting…' : 'Download as PNG'}
+        </Button>
+      </div>
+      {pngError ? <p className="text-[13px] text-danger">{pngError}</p> : null}
       <details className="rounded-md border border-border p-4">
         <summary className="cursor-pointer text-sm font-semibold text-fg-2">View XML source</summary>
         <pre className="mt-3 max-h-96 overflow-auto rounded-md bg-sidebar p-3 font-mono text-xs leading-5 text-sidebar-fg-active">

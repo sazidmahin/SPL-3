@@ -1088,6 +1088,7 @@ export function useAppController() {
       onResetXml: () => setDiagramXml(BLANK_DRAWIO_XML),
       onSaveVersion: () => void saveDiagramVersion(),
       onExportDiagram: () => void exportCurrentDiagram(),
+      onImageExportError: (message: string) => setError(message),
     },
     createDiagramPanel: {
       activeProject,

@@ -17,3 +17,12 @@ export function downloadTextFile(filename: string, content: string, type: string
   link.remove()
   window.URL.revokeObjectURL(url)
 }
+
+export function downloadDataUrl(filename: string, dataUrl: string) {
+  const link = document.createElement('a')
+  link.href = dataUrl
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+}
