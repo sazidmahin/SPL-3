@@ -32,11 +32,12 @@ class Settings(BaseSettings):
     openai_timeout_seconds: int = 20
     openai_max_retries: int = 0
     ollama_base_url: str = Field(default="http://localhost:11434", alias="OLLAMA_BASE_URL")
-    ollama_model: str = "llama3.2"
-    ollama_models: str = "llama3.2,llama3.1,qwen2.5,qwen2.5-coder,mistral,phi3"
+    ollama_model: str = "llama3.2:1b"
+    ollama_models: str = "llama3.2:1b,llama3.2,llama3.1,qwen2.5,qwen2.5-coder,mistral,phi3"
     ollama_temperature: float = 0
-    ollama_timeout_seconds: int = 120
+    ollama_timeout_seconds: int = 600
     ollama_keep_alive: str = "5m"
+    ollama_num_ctx: int = 16384
     ai_credential_encryption_key: str = "change-this-development-ai-credential-key"
     srsgen_base_model: str = "Qwen/Qwen1.5-1.8B-Chat"
     srsgen_artifact_path: str = "model_artifacts/srsgen-qwen1.5"

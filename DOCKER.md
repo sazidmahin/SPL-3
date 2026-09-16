@@ -24,8 +24,19 @@ docker compose up -d --build
 | Ollama   | http://localhost:11434 (`/api/tags`)  |
 | Postgres | localhost:5432                          |
 
-`ollama-init` pulls `OLLAMA_MODEL` (default `llama3.2`) into a named volume on first
-run and then exits — that's expected. Watch it with `docker compose logs -f ollama-init`.
+`ollama-init` only pulls the single default `OLLAMA_MODEL` (default `llama3.2`) into the
+`ollama-models` named volume, then exits — that's expected. Watch it with
+`docker compose logs -f ollama-init`.
+
+Models are cached in the `ollama-models` volume, which survives `docker compose down`
+and any rebuild of `backend`/`frontend` (only `docker compose down -v` deletes it).
+`ollama-init` checks `ollama list` first and skips the pull entirely (no network call)
+if the model is already cached, so it never re-downloads on later starts. It also never
+fails the stack: a pull error is only logged, not fatal, so `backend`/`frontend` still
+start and the already-running `ollama` service is left alone. This means running
+`docker compose up -d --build backend` (or `frontend`) will not rebuild, restart, or
+disturb `ollama` at all — compose only touches the services you name plus whatever
+still needs to reach a healthy/completed state.
 
 The backend container runs `alembic upgrade head` on every start, and seeds a super
 admin when `SUPER_ADMIN_EMAIL` + `SUPER_ADMIN_PASSWORD` are set.
@@ -35,15 +46,18 @@ admin when `SUPER_ADMIN_EMAIL` + `SUPER_ADMIN_PASSWORD` are set.
 In the app, open **Generate SRS** and pick **Local AI (Ollama)** as the engine — no API
 key needed. It calls the `ollama` service at `http://ollama:11434` using `OLLAMA_MODEL`.
 
-Pull more models:
+Only `OLLAMA_MODEL` is auto-pulled. To use another model (e.g. `qwen2.5`), pull it
+once into the running `ollama` service — it lands in the same cached volume and
+survives restarts/rebuilds:
 
 ```bash
 docker compose exec ollama ollama pull qwen2.5
 docker compose exec ollama ollama list
 ```
 
-Add any pulled model to `OLLAMA_MODELS` in `.env` so it shows up as a selectable model,
-then `docker compose up -d backend`.
+Add the model name to `OLLAMA_MODELS` in `.env` so it shows up as a selectable model
+in the app, then `docker compose up -d backend` (this only recreates the `backend`
+container to pick up the new env var — it does not touch `ollama`).
 
 ## Common commands
 

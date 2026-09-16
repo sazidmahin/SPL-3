@@ -1443,6 +1443,15 @@ def _business_narrative_story_sections(sentences: list[dict[str, Any]]) -> list[
     return sections
 
 
+def _indefinite_article(word: str | None) -> str:
+    """"a"/"an" for a PascalCase noun, correcting the common consonant-sounding
+    vowel-letter cases ("a User", "a Unit") so generated sentences read naturally."""
+    lowered = (word or "").lower()
+    if re.match(r"^(?:uni|use|eu|one)", lowered):
+        return "a"
+    return "an" if lowered[:1] in "aeiou" else "a"
+
+
 def _fact_story_sections(facts: list[dict[str, Any]]) -> list[dict[str, Any]]:
     sections: list[dict[str, Any]] = []
     for fact in facts:
@@ -1459,9 +1468,10 @@ def _fact_story_sections(facts: list[dict[str, Any]]) -> list[dict[str, Any]]:
         object_label = object_name or "UnknownObject"
         condition = condition_to_text(fact.get("condition"))
         modal = {"obligation": "must", "negative": "cannot"}.get(str(fact.get("modality")), "can")
-        sentence = f"The {actor_label} {modal} {action_label} an {object_label}."
+        object_article = _indefinite_article(object_label)
+        sentence = f"The {actor_label} {modal} {action_label} {object_article} {object_label}."
         if condition:
-            sentence = f"If {condition}, the {actor_label} {modal} {action_label} an {object_label}."
+            sentence = f"If {condition}, the {actor_label} {modal} {action_label} {object_article} {object_label}."
         sections.append(
             {
                 "id": f"US-001-S{index}",

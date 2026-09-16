@@ -31,12 +31,14 @@ class OllamaClient:
         temperature: float | None = None,
         timeout_seconds: int | None = None,
         keep_alive: str | None = None,
+        num_ctx: int | None = None,
     ) -> None:
         self.base_url = (base_url or _base_url()).rstrip("/")
         self.model_name = (model_name or settings.ollama_model).strip()
         self.temperature = settings.ollama_temperature if temperature is None else temperature
         self.timeout_seconds = timeout_seconds or settings.ollama_timeout_seconds
         self.keep_alive = keep_alive or settings.ollama_keep_alive
+        self.num_ctx_max = num_ctx or settings.ollama_num_ctx
         if not self.model_name:
             raise LlmConfigurationError("OLLAMA_MODEL is required for local Ollama generation")
 
@@ -83,10 +85,25 @@ class OllamaClient:
             f"Run: ollama pull {wanted}"
         )
 
+    def _context_window_for(self, prompt: str) -> int:
+        """Size the KV cache to what the prompt actually needs.
+
+        On CPU, attention cost scales with num_ctx regardless of how much of it
+        is used, so always requesting the configured max (e.g. 16384) makes
+        short prompts pay the cost of the longest one. Round up to the next
+        power of two, floor 2048, capped at ``num_ctx_max``.
+        """
+        estimated_tokens = int(len(prompt) / 3.2) + 1024  # ~chars-per-token + completion headroom
+        window = 2048
+        while window < estimated_tokens and window < self.num_ctx_max:
+            window *= 2
+        return min(window, self.num_ctx_max)
+
     # --------------------------------------------------------------- generation
     def generate(self, request: LlmRequest) -> LlmResponse:
+        num_ctx = self._context_window_for(request.prompt)
         try:
-            chat_model = self._langchain_chat_model()
+            chat_model = self._langchain_chat_model(num_ctx)
         except LlmConfigurationError:
             chat_model = None
 
@@ -117,7 +134,7 @@ class OllamaClient:
             "prompt": request.prompt,
             "stream": False,
             "keep_alive": self.keep_alive,
-            "options": {"temperature": self.temperature},
+            "options": {"temperature": self.temperature, "num_ctx": num_ctx},
         }
         try:
             data = self._post("/api/generate", body)
@@ -143,7 +160,7 @@ class OllamaClient:
             completion_tokens=completion_tokens,
         )
 
-    def _langchain_chat_model(self) -> Any | None:
+    def _langchain_chat_model(self, num_ctx: int) -> Any | None:
         try:
             from langchain_ollama import ChatOllama
         except ImportError as exc:  # pragma: no cover - optional dependency
@@ -154,6 +171,7 @@ class OllamaClient:
             temperature=self.temperature,
             client_kwargs={"timeout": self.timeout_seconds},
             keep_alive=self.keep_alive,
+            num_ctx=num_ctx,
         )
 
 
