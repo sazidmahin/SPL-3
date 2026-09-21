@@ -1,0 +1,111 @@
+Pipeline test bank — onek type-er requirement/user story, ekekta block alada kore
+SRS input box-e paste kore rule-based pipeline test korte parben. Prottekta block
+alada feature/edge-case target kore (comment line "#" diye marked, oi line ta paste
+korar age baad diye deben, sudhu requirement text ta paste korben).
+
+------------------------------------------------------------
+# 1. Classic "As a <role>, I want <goal>, so that <benefit>" user stories (multiple actors)
+------------------------------------------------------------
+As a Customer, I want to browse products by category, so that I can find items faster.
+As a Customer, I want to add items to my cart, so that I can purchase multiple products together.
+As an Admin, I want to manage the product catalog, so that inventory stays accurate.
+As a Manager, I want to view sales reports, so that I can track team performance.
+As a Guest, I want to create an account, so that I can save my order history.
+
+------------------------------------------------------------
+# 2. Plain functional requirements with modal verbs (must/shall/should/can)
+------------------------------------------------------------
+The system shall allow a customer to place an order.
+The system must send a confirmation email after checkout.
+Users should be able to reset their password using a registered email address.
+The application can generate an invoice for every completed order.
+The warehouse staff must update stock levels after every shipment.
+
+------------------------------------------------------------
+# 3. Stakeholder-voice / colloquial phrasing (denarration + actor resolution test)
+------------------------------------------------------------
+I want people to be able to see their order status at any time.
+We need a way for customers to cancel an order within 24 hours.
+There should be a way for a manager to reject a leave request.
+My staff should be able to update delivery status from their phones.
+Someone should be able to report a bug directly from the dashboard.
+
+------------------------------------------------------------
+# 4. Trigger / goal clause requirements (if-when + "so that")
+------------------------------------------------------------
+When a customer submits a return request, the system shall notify the support team.
+If the payment fails, the system should retry the transaction up to three times.
+Whenever a new employee joins, the admin wants to auto-create their user account.
+Once an order ships, customers want to receive a tracking number by SMS.
+
+------------------------------------------------------------
+# 5. EARS-style requirements
+------------------------------------------------------------
+While the payment is processing, the system shall display a loading indicator.
+Where the user has an expired subscription, the system shall restrict access to premium content.
+The system shall, upon receiving a low-stock alert, notify the inventory manager.
+In the event of a failed login, the system shall lock the account after five attempts.
+
+------------------------------------------------------------
+# 6. Non-functional requirements (performance, security, usability, availability)
+------------------------------------------------------------
+The system must respond to search queries within 2 seconds under normal load.
+All customer passwords must be stored using a secure hashing algorithm.
+The dashboard should be usable on both desktop and mobile browsers.
+The platform must maintain 99.9% uptime during business hours.
+The system shall support at least 500 concurrent users without performance degradation.
+
+------------------------------------------------------------
+# 7. Multiple related actors + relationships (class-model / association test)
+------------------------------------------------------------
+A customer places multiple orders. Each order contains multiple order items. Each
+order item refers to one product. A product belongs to one category. A driver is
+assigned to one delivery, and a delivery is linked to one order.
+
+------------------------------------------------------------
+# 8. CRUD-heavy requirements (method/attribute extraction test)
+------------------------------------------------------------
+The admin can create, update, and delete products, including name, price, description,
+and stock quantity. Customers can view and edit their own profile, including full name,
+email address, and shipping address. Managers can approve or reject expense reports
+submitted by staff.
+
+------------------------------------------------------------
+# 9. Passive-voice requirements
+------------------------------------------------------------
+Orders that remain unpaid for more than 48 hours should be automatically cancelled.
+An email notification is sent to the customer whenever an order is shipped.
+Refund requests are reviewed by a support agent before being approved.
+
+------------------------------------------------------------
+# 10. Ambiguous / underspecified requirements (clarification-question test)
+------------------------------------------------------------
+The system should handle payments securely.
+Users need better reporting.
+The app must be fast and reliable.
+Admins should manage everything related to users.
+
+------------------------------------------------------------
+# 11. Business-narrative style (paragraph, not bullet list)
+------------------------------------------------------------
+I want to build an online food delivery platform. Customers should be able to browse
+restaurants, view menus, and place orders. Restaurant owners need a way to manage their
+menu items and mark orders as preparing, ready, or delivered. Delivery riders should be
+able to accept delivery requests and update their live location. There should be a way
+for customers to rate restaurants and riders after an order is completed. We also need
+an admin panel to manage restaurant onboarding, commission rates, and payouts.
+
+------------------------------------------------------------
+# 12. Full mixed SRS document (combines actors, NFRs, EARS, relationships in one paste)
+------------------------------------------------------------
+We are building a hospital appointment management system. Patients should be able to
+register, search for doctors by specialty, and book an appointment. As a Patient, I
+want to reschedule or cancel my appointment, so that I don't lose my slot unnecessarily.
+Doctors need a way to view their daily schedule and mark appointments as completed or
+no-show. Receptionists should be able to check in patients and manage the waiting list.
+When a doctor cancels an appointment, the system shall notify the affected patient by
+SMS and email. The system must store patient medical history securely and shall allow
+only authorized doctors to access it. Admins can manage doctor profiles, departments,
+and appointment slots. The platform must remain available 24/7 and should respond to
+booking requests within 3 seconds. A patient can have multiple appointments, and each
+appointment belongs to exactly one doctor and one department.

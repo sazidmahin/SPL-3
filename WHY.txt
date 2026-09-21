@@ -1,0 +1,472 @@
+================================================================================
+ SPL-3  ·  WHY.txt
+ Why the rule-based pipeline works the way it does, and why the dictionaries
+ are shaped the way they are.
+================================================================================
+
+Read alongside RULE_BASED_PIPELINE.txt (what each rule does) and
+BACKEND_FEATURES.md §4-5. This file answers "why this design, and not another".
+
+
+================================================================================
+ 0.  ONE-LINE ANSWER
+================================================================================
+
+The pipeline is a deterministic re-implementation of the classic
+"noun -> class, verb -> operation/association, adjective/possessive -> attribute"
+requirements-analysis heuristic (Abbott, 1983), pruned and driven by small
+curated JSON word-lists instead of a POS tagger, a parser, an ontology, or a
+language model — because the product needs outputs that are reproducible,
+explainable, offline, versioned, and tunable by a non-programmer.
+
+
+================================================================================
+ 1.  IS THERE A PAPER?  (provenance / references)
+================================================================================
+
+No paper is cited anywhere in this repository. The approach is home-grown for
+SPL-3. It is, however, a textbook instance of a 40-year line of research on
+"NL text -> UML class model". If you need a citation for a thesis / report, use
+these — the code follows their method, not their code:
+
+[1] Abbott, R. J. (1983). "Program Design by Informal English Descriptions."
+    Communications of the ACM, 26(11), 882-894.  doi:10.1145/182.358441
+    -> THE origin of the heuristic this pipeline runs:
+         common nouns      -> data types / classes
+         proper nouns / direct references -> objects (instances)
+         verbs, verb phrases -> operators / responsibilities
+         adjectives, predicates -> attributes / state
+       Everything in generate_class_model() is a hardened, pruned version of
+       Abbott's "underline the nouns / underline the verbs" procedure.
+
+[2] Chen, P. P.-S. (1983). "English Sentence Structure and Entity-Relationship
+    Diagrams." Information Sciences, 29(2-3), 127-149.
+    -> The same idea for data models: a noun is an entity, a transitive verb is
+       a relationship, an adjective is an attribute; English plurals/quantifiers
+       carry cardinality. Direct ancestor of relationship_phrases.json and
+       quantifiers.json.
+
+[3] Booch, G. (1986). "Object-Oriented Development."
+    IEEE Transactions on Software Engineering, SE-12(2), 211-221.
+    -> Brought Abbott's noun/verb technique into mainstream OOA and added the
+       explicit "reject spurious candidate classes" step -> generic_nouns.json,
+       state_words.json, primitive_attributes.json exist to do exactly that.
+
+[4] Mich, L. (1996). "NL-OOPS: from natural language to object oriented
+    requirements using the natural language processing system LOLITA."
+    Natural Language Engineering, 2(2), 161-187.
+[5] Harmain, H. M. & Gaizauskas, R. (2003). "CM-Builder: A Natural
+    Language-Based CASE Tool for Object-Oriented Analysis."
+    Automated Software Engineering, 10(2), 157-181.  doi:10.1023/A:1022916028950
+[6] Ibrahim, M. & Ahmad, R. (2010). "Class Diagram Extraction from Textual
+    Requirements Using Natural Language Processing (NLP) Techniques." 2nd Int.
+    Conf. on Computer Research and Development (ICCRD), IEEE, pp. 200-204.
+    doi:10.1109/ICCRD.2010.71   (tool: RACE)
+[7] Elbendak, M., Vickers, P. & Rossiter, N. (2011). "Parsed use case
+    descriptions as a basis for object-oriented class model generation."
+    Journal of Systems and Software, 84(7), 1209-1223.
+    doi:10.1016/j.jss.2011.02.025   (tool: Class-Gen)
+    -> [4]-[7] are the CASE-tool lineage: parse requirement text, apply
+       linguistic + heuristic rules, emit an initial UML class model for a human
+       to review. SPL-3's rule engine is the same pipeline shape (analyze ->
+       facts -> requirements -> class model -> review), minus the deep parser.
+
+[8] Mavin, A., Wilkinson, P., Harwood, A. & Novak, M. (2009). "Easy Approach to
+    Requirements Syntax (EARS)." 17th IEEE Int. Requirements Engineering
+    Conference (RE'09), pp. 317-322.
+    -> Why generate_requirements() emits fixed templates
+       "The system shall allow <actor> to <action> the <object>" and
+       "If <condition>, the system shall ...". EARS (and the older RUPP/SOPHIST
+       requirement-sentence template) show that constraining requirements to a
+       tiny keyword set + fixed clause order removes ambiguity. We generate INTO
+       that shape.
+
+[9]  IETF RFC 2119 (Bradner, 1997), "Key words ... to Indicate Requirement
+     Levels" — MUST / SHALL / SHOULD / MAY.
+[10] ISO/IEC/IEEE 29148:2018, Requirements engineering — the normative "shall".
+     -> obligation_modals.json / permission_modals.json / negative_modals.json
+        classify a sentence's deontic force (must / can / cannot) straight out
+        of these standards. "must/shall" -> obligation (candidate business
+        rule), "can/may" -> permission (plain functional), negatives -> a
+        constraint.
+
+[11] ISO/IEC 25010:2011, Systems and software Quality Requirements and
+     Evaluation (SQuaRE) — the software quality model.
+     -> nfr_keywords.json categories (Performance, Availability, Security,
+        Usability, Reliability, Maintainability, Scalability, Portability,
+        Compliance) are the 25010 quality characteristics. Each entry is a bag
+        of surface words that signal that characteristic.
+
+[12] OMG Unified Modeling Language (UML) 2.5.1, formal/2017-12-05 — multiplicity
+     notation ("1", "0..1", "1..*", "0..*").
+     -> the right-hand side of quantifiers.json and the MULTIPLICITY_PATTERN
+        regex.
+
+Further reading in the same family (method matches, exact venue not pinned
+here): Deeptimahanti & Sanyal (2011) "Semi-automatic generation of UML models
+from natural language requirements"; Bajwa et al. "NLP-based automated UML
+diagram generation"; More & Phalnikar (2012); Ambriola & Gervasi (CIRCE, 2006).
+
+
+================================================================================
+ 2.  WHY DICTIONARIES AT ALL  (vs the obvious alternatives)
+================================================================================
+
+The candidates for "how do we decide a word is a verb / a class / an
+attribute / a quantifier" are:
+
+  A. A statistical POS tagger + dependency parser (spaCy, Stanford CoreNLP).
+  B. A learned model / classifier trained on labelled requirements.
+  C. A large language model.
+  D. A domain ontology / WordNet lookup.
+  E. Small, curated, externalised lookup tables.  <-- chosen
+
+Why E:
+
+  1. DETERMINISM & REPRODUCIBILITY. The rule engine is the `rule_v1` product
+     surface and the `xml` stage of every mode. Same input MUST give
+     byte-identical output forever (there is a test that asserts exactly this).
+     A/B/C all drift across library versions, model versions, random seeds, or
+     hardware. A dictionary + regex does not.
+
+  2. EXPLAINABILITY / AUDIT. Every artefact carries a `matchedRuleId` and the
+     model carries `ruleVersionId` + `dictionaryVersionId`. A reviewer can point
+     at a class and get "this came from REL_PHRASE_DICTIONARY_001 firing on the
+     word 'contains' in sentence 4". You cannot get that from a tagger's
+     softmax or an LLM.
+
+  3. OFFLINE / NO RUNTIME COST. No model download, no GPU, no API key, no
+     network call, ~1 ms per document. The rule engine has to run in CI, in the
+     free tier, and behind an air-gap.
+
+  4. TUNABLE BY A NON-PROGRAMMER. A domain expert adds "dispatches: send" to a
+     JSON file and re-runs; no retraining, no code review of the parser. This is
+     the same argument CM-Builder and RACE make for their editable lexicons.
+
+  5. TESTABLE. A closed word list has a finite, reviewable failure surface.
+     `reset_dictionary_cache()` + a fixture swap lets a test pin behaviour.
+
+  6. HONEST SCOPE. A POS tagger buys you ~5% on messy prose and hides the other
+     95% of failure inside a black box. For an assistive tool whose output a
+     human always reviews, a legible 80%-correct first draft beats an opaque
+     85%-correct one. The LLM pipeline (`v1`) is the answer when the user wants
+     deeper understanding and accepts non-determinism.
+
+  Cost we accept: the rule engine is brittle on genuinely free-form,
+  multi-clause, first-person narrative. That is mitigated (not removed) by
+  denarrate_clause() + narrative_actors.json (stakeholder voice) and by
+  business_narrative_patterns.json (curated domain phrasings), and ultimately by
+  offering the LLM pipeline as the other engine.
+
+DESIGN RULES that follow from choosing E:
+  - Dictionaries are DATA, never code. Files under app/dictionaries/v1/.
+  - Closed-world: an unknown word is not an error, it degrades to a warning /
+    a clarification question / a positional guess.
+  - Versioned: the directory is "v1"; DICTIONARY_VERSION is stamped on output.
+  - Longest match first (multi-word phrases beat single words).
+  - Every mapping value is CANONICAL (lower-case verb lemma, one of 6 UML
+    relation types, a UML multiplicity string, a 25010 category, a UML type).
+
+
+================================================================================
+ 3.  WHY EACH DICTIONARY IS SHAPED THE WAY IT IS
+================================================================================
+
+Format for each: WHAT it decides · WHY a list is the right tool · WHY these
+entries · WHAT the alternative would cost.
+
+--------------------------------------------------------------------------------
+action_aliases.json  /  action_aliases_extra.json          verb -> canonical verb
+--------------------------------------------------------------------------------
+WHAT   Recognises "this token is an action" and collapses surface variants
+       ("places","placing","placed","creates") onto one lemma ("create").
+       Drives: is-this-a-fact, method names, clause splitting, the
+       diagram engine's ACTION_VERBS.
+WHY-LIST  A requirements verb vocabulary is small and stable (create, read,
+       update, delete, approve, assign, notify, ...). A morphological stemmer
+       ("universities"->"univers") and a lemmatizer (needs a POS tag we don't
+       have) both mis-fire on domain words. An explicit alias map is exact.
+WHY-THESE  CRUD + workflow verbs (submit/approve/reject/cancel/archive),
+       lifecycle verbs (activate/suspend/expire), and their -s/-ed/-ing forms
+       because we do not run a lemmatizer. Canonical targets are chosen so that
+       synonyms merge ("buy","purchase","order" -> one method), which keeps the
+       class model from sprouting three methods for one behaviour.
+       Deliberately EXCLUDED: nouns that are also verbs and usually appear as
+       nouns in an SRS ("report","comment","order","request","charge","review")
+       — adding them would make the diagram engine refuse "Report" as a class.
+ALT-COST  spaCy lemmatizer: +30 MB model, non-deterministic across releases,
+       still wrong on "logs"/"books"/"orders" without context.
+
+--------------------------------------------------------------------------------
+relationship_phrases.json  /  _extra.json          phrase -> UML relation type
+--------------------------------------------------------------------------------
+WHAT   Maps a linking phrase to one of the 6 UML class-relationship types:
+         has / belongs to / references / assigned to          -> association
+         owns / contains / consists of / part of / comprises  -> composition
+         includes / groups / aggregates                       -> aggregation
+         uses / depends on / calls / invokes / triggers       -> dependency
+         is a / is a kind of / extends / inherits from        -> inheritance
+         implements / realizes / conforms to                  -> realization
+WHY-LIST  There is no reliable syntactic signal for "is this whole/part vs
+       plain association vs generalization" — it is lexical. Semantic role
+       labelling would give you "possession" but not composition-vs-aggregation.
+       A phrase table encodes the OOA convention directly (Chen [2], Booch [3]).
+WHY-THESE  The verbs the OO literature standardly reads as each relation kind.
+       "contains/consists of/part of" -> composition because they imply the
+       part has no independent life; "includes/groups" -> aggregation (shared,
+       independent parts); "uses/depends on" -> a non-structural dependency;
+       copular "is a / kind of" -> inheritance. Multi-word variants ("has a",
+       "has many", "is a kind of") are listed separately and matched first so
+       "has a" (association, carries multiplicity) beats bare "has".
+ALT-COST  A parser + WordNet meronymy check: heavy, and still cannot separate
+       composition from aggregation, which is the only hard part.
+
+--------------------------------------------------------------------------------
+quantifiers.json                          NL quantity phrase -> UML multiplicity
+--------------------------------------------------------------------------------
+WHAT   "one","single","exactly one"          -> "1"
+       "zero or one","optional","at most one" -> "0..1"
+       "one or more","at least one"           -> "1..*"
+       "many","several","multiple","0 or more","all" -> "0..*"
+       "none","no"                            -> "0"
+WHY-LIST  These are frozen English idioms with a textbook UML equivalent
+       (UML 2.5.1 [12]). Numeric forms ("at least 5", "between 2 and 8") are
+       handled by regex in _quantity_from_text; the DICTIONARY covers only the
+       word forms that regex cannot.
+WHY-THESE  The mapping is the standard one taught in every OOA course:
+       "optional" == 0..1, "one or more" == 1..*, a bare plural / "many" ==
+       0..* (the safe default). "all"/"multiple" -> 0..* rather than 1..*
+       because English "customers can have orders" does not assert >= 1.
+ALT-COST  none really — this is the one place a list is unarguably correct.
+
+--------------------------------------------------------------------------------
+obligation_modals.json / permission_modals.json / negative_modals.json
+                                        modal phrase -> deontic force
+--------------------------------------------------------------------------------
+WHAT   Classifies each clause:
+         must / shall / has to / is required to / needs to   -> obligation
+         can / may / could / is allowed to / is able to      -> permission
+         cannot / must not / never / does not / will not     -> negative
+       Consequences: obligation or a constraint keyword -> also emit a
+       business_rule requirement; negative -> mark the fact `negated` and feed
+       the "conflicting rule" clarification; all three concatenated form the
+       generic MODAL pattern the extraction regexes pivot on.
+WHY-LIST  Deontic modality in requirements is a CLOSED grammatical class fixed
+       by standards: RFC 2119 [9] and ISO/IEC/IEEE 29148 [10] literally define
+       "shall/should/may". There is nothing to learn.
+WHY-THESE  Exactly the RFC-2119 / 29148 keyword set plus their common English
+       paraphrases ("has to","is required to","is allowed to") because
+       stakeholders do not write "shall".
+ALT-COST  a modality classifier: pointless for a 20-word closed class.
+
+--------------------------------------------------------------------------------
+nfr_keywords.json                     surface words -> ISO 25010 quality category
+--------------------------------------------------------------------------------
+WHAT   If a sentence contains any keyword for a category, the sentence is an
+       NFR of that category; a following "within N seconds/..." makes it
+       measurable, otherwise a "vague metric" clarification is raised.
+WHY-LIST  Quality attributes are named by a small, well-known jargon
+       vocabulary. The taxonomy itself (which categories exist) is a STANDARD
+       (ISO/IEC 25010 [11]) — not something to infer.
+WHY-THESE  Each list is the plain-language and acronym surface forms an analyst
+       actually types for that 25010 characteristic: Performance = fast, quick,
+       latency, throughput, ms, tps; Security = encrypt, authenticate, rbac,
+       2fa, tls, audit trail; Availability = uptime, 24/7, 99.9, SLA; etc.
+       Broad, ambiguous words ("handle","support","manage","fast enough") are
+       deliberately NOT keywords — one of them in an ordinary functional
+       sentence would wrongly reclassify it as an NFR and delete its actor.
+ALT-COST  a topic classifier: needs labelled NFR data we don't have; the
+       standard already hands us the categories.
+
+--------------------------------------------------------------------------------
+primitive_attributes.json               "field, not a class" stop-list
+--------------------------------------------------------------------------------
+WHAT   Words that denote a data value: id, name, email, status, date, price,
+       quantity, amount, phone, city, code, version, is*/has* ...
+       Uses: (a) a clause that is only a list of these is attributes, not a
+       fact; (b) -5 in class scoring; (c) HARD-EXCLUDE from ever being a class
+       (_is_attribute_like) — such a noun is folded into its owner as an
+       attribute (rule ATTR_PRIMITIVE_NOUN_001).
+WHY-LIST  This is Abbott's "reject spurious candidate classes" step [1][3].
+       "Whether a noun is an entity or an attribute" has NO syntactic tell —
+       "the order date" and "the order line" look identical. It is a modelling
+       convention encoded as a list.
+WHY-THESE  The universal primitive-field vocabulary: identifiers, names,
+       contact fields, money fields, counts, timestamps, addresses, codes,
+       flags, and boolean-shaped "is.../has..." words. Domain nouns that could
+       legitimately be classes (Order, Invoice, Category, Message) are NOT here;
+       genuinely borderline ones (Category, Priority, Level) ARE, because the
+       project asked for STRICT precision — over-excluding a real class is
+       cheaper for the user to fix (re-check a box) than pruning a junk one.
+ALT-COST  a "conceptual vs value" classifier: an open research problem;
+       benchmark tools still get this wrong.
+
+--------------------------------------------------------------------------------
+generic_nouns.json                      "empty-head noun" stop-list
+--------------------------------------------------------------------------------
+WHAT   Nouns that carry no domain content: system, application, data,
+       information, feature, module, plus UI/infra jargon: request, response,
+       page, screen, dashboard, widget, dropdown, layout, endpoint, ...
+       -4 in class scoring.
+WHY-LIST  Abbott/Booch's candidate-class pruning again. "The system stores the
+       data" has two nouns and zero classes. There is no way to know "system"
+       is content-free except by convention.
+WHY-THESE  (1) The words every SRS uses to mean "the thing we are building"
+       ("system","application","platform","service"). (2) UI and framework
+       vocabulary that leaks in from mock-ups and tickets ("screen","modal",
+       "button","payload") and is never a business entity. Domain-plausible
+       words (Report, Notification, Event, Account, Message, Session) are kept
+       OUT of this list on purpose. Penalty is only -4 so a strongly-evidenced
+       noun (actor AND object of relationships) can still survive it.
+ALT-COST  a "domain relevance" score: needs a domain corpus; we have one
+       document.
+
+--------------------------------------------------------------------------------
+state_words.json                         lifecycle state -> not an entity
+--------------------------------------------------------------------------------
+WHAT   created, approved, cancelled, shipped, expired, locked, ... -> -6 in
+       class scoring.
+WHY-LIST  A past-participle state ("the order is approved") reads as a noun
+       candidate ("Approved") to a shallow extractor. A closed list of the
+       states an SRS uses is the cheapest fix.
+WHY-THESE  The standard entity-lifecycle vocabulary (draft/pending/active/
+       archived/...) and CRUD participles. Heavier penalty (-6) than
+       generic_nouns because a state word as a class is almost always wrong.
+
+--------------------------------------------------------------------------------
+pronouns.json                           anaphora without a coreference model
+--------------------------------------------------------------------------------
+WHAT   actorPronouns (he/she/they/who), objectPronouns (it/this/that/these),
+       possessivePronouns (his/her/their/its). Used to: resolve a pronoun
+       object to the last known entity when unambiguous, else raise the
+       "ambiguous pronoun" clarification; and to penalise a pronoun that
+       slipped through as a class name.
+WHY-LIST  Full coreference resolution is a whole NLP subfield with its own
+       models. For requirements the 90% case is "it/this refers to the single
+       entity just mentioned" — a 15-word list plus a "is there exactly one
+       candidate?" check covers that and honestly flags the rest.
+WHY-THESE  The English closed pronoun classes, split by grammatical role so
+       "who" biases toward an actor and "it" toward an object.
+
+--------------------------------------------------------------------------------
+attribute_phrases.json          multi-word attribute -> {name, type}
+--------------------------------------------------------------------------------
+WHAT   "phone number" -> {phoneNumber, String}; "date of birth" ->
+       {dateOfBirth, Date}; "unit price" -> {unitPrice, Decimal}; ...
+       The only source of TYPED attributes.
+WHY-LIST  A tokeniser shreds "date of birth" into three tokens and loses both
+       the attribute and its type. A curated phrase -> spec map keeps the unit
+       of meaning AND attaches a UML type, which no amount of parsing gives you.
+WHY-THESE  The ~65 compound fields that recur across domains (contact fields,
+       addresses, the *Number / *Date / *Amount families, audit fields
+       created/updated at). Types are assigned by the obvious reading (a
+       "...Date" is Date, an "...Amount/Price/Cost" is Decimal, an "is.../has..."
+       is Boolean).
+ALT-COST  chunking + a type inferencer: still needs this table for the type.
+
+--------------------------------------------------------------------------------
+data_type_hints.json                    head noun -> UML primitive type
+--------------------------------------------------------------------------------
+WHAT   id->UUID, email->String, amount->Decimal, count->Integer, date->Date,
+       is/has/can->Boolean, ...
+WHY-LIST  Type is not recoverable from grammar. This is the fallback typer for
+       a bare primitive attribute picked up outside attribute_phrases.json.
+WHY-THESE  The conventional SQL/UML type for each primitive family.
+
+--------------------------------------------------------------------------------
+narrative_actors.json                   colloquial subject -> actor class
+--------------------------------------------------------------------------------
+WHAT   i / we / the business / management -> Administrator ;
+       my staff / the team / employees   -> Staff ;
+       people / someone / anyone / they   -> User ;
+       customers / members / guests       -> Customer / Member / Guest .
+       Used by resolve_actor() for the ACTOR slot of every pattern.
+WHY-LIST  Stakeholders write "I want ...", "we need ...", "people should be
+       able to ...". "I" has no referent in the text — a coref model cannot
+       help. Mapping first/second-person and indefinite subjects to a
+       conventional role is a heuristic, and a heuristic belongs in an editable
+       list, not in code.
+WHY-THESE  The defaults that are right for a stakeholder-authored SRS: the
+       author is the system owner (-> Administrator); "people/someone/anyone"
+       are unauthenticated end users (-> User). KNOWN FAILURE MODE: if the
+       document is written by a customer, "I" should be Customer — that is why
+       this is a per-project JSON file, not a constant.
+ALT-COST  nothing off-the-shelf does speaker-role assignment for requirements.
+
+--------------------------------------------------------------------------------
+business_narrative_patterns.json         canned domain phrasing -> user story
+--------------------------------------------------------------------------------
+WHAT   { regex, actor, action, object, want, goal }. A matched sentence gets a
+       hand-written user story instead of a parsed one.
+WHY-LIST  Some plain-English intents ("I want people to see the clothes I sell")
+       are below the floor of any deterministic parser. For a demo / onboarding
+       corpus you curate the exact phrasings and their ideal output.
+WHY-KEPT-BUT-DEMOTED  After denarrate_clause() the engine handles most
+       stakeholder voice on its own, so this file is no longer an all-or-nothing
+       override — it is now a PER-SENTENCE overlay (a matched sentence uses its
+       canned story, every other sentence is parsed). It stays because it is the
+       cheapest way to guarantee a polished result for a known input, and it
+       costs nothing when it does not match.
+ALT-COST  removing it -> the flagship informal-paragraph demo degrades to the
+       (rougher) parsed output.
+
+--------------------------------------------------------------------------------
+articles.json · stopwords.json · conjunctions.json · conditional_markers.json ·
+temporal_markers.json                    tokenisation / segmentation support
+--------------------------------------------------------------------------------
+WHAT   Function-word lists used to strip determiners from entity names, split a
+       sentence into clauses on real coordinators, and spot "if/when/unless"
+       and "before/after/within" markers.
+WHY-LIST  Function words are the most closed class in the language and never
+       change. Hard-coding them as data keeps the regexes readable and lets a
+       different natural language be supported by swapping the folder.
+
+--------------------------------------------------------------------------------
+irregular_verbs.json · phrase_aliases.json          normalisation edge cases
+--------------------------------------------------------------------------------
+WHAT   "bought"->"purchase", "paid"->"pay"; "log in"->"login",
+       "place order"->"create order".
+WHY-LIST  Without a lemmatizer, irregular past tenses and multi-word verbs need
+       an explicit map. Small, finite, obvious.
+
+--------------------------------------------------------------------------------
+actor_hints.json                         known actor vocabulary
+--------------------------------------------------------------------------------
+WHAT   user, customer, admin, manager, operator, guest, member, ... — a bias
+       toward treating these as actors.
+WHY-LIST  The set of role nouns in software requirements is small and recurring;
+       a hint list nudges ambiguous "the X does Y" toward X-as-actor.
+
+
+================================================================================
+ 4.  THE PRINCIPLE BEHIND ALL OF IT
+================================================================================
+
+Every dictionary encodes ONE modelling decision that has NO reliable
+grammatical signal and IS a documented convention:
+
+    verb form            -> which behaviour            (action_aliases)
+    linking verb         -> which UML relation kind     (relationship_phrases)
+    quantity word        -> which multiplicity          (quantifiers)
+    modal verb           -> functional vs rule vs deny  (*_modals)
+    quality jargon        -> which ISO 25010 category    (nfr_keywords)
+    noun                 -> class or attribute or noise (primitive_attributes,
+                                                         generic_nouns,
+                                                         state_words)
+    compound noun        -> typed attribute             (attribute_phrases,
+                                                         data_type_hints)
+    pronoun / 1st person -> which entity / which role    (pronouns,
+                                                         narrative_actors)
+
+Because each decision is (a) convention-bound, (b) low-cardinality, and
+(c) needs to be auditable and reproducible, a versioned JSON lookup is the
+correct tool — and a parser, an ontology, or a model would each be heavier,
+less predictable, and no more accurate on the parts that actually matter.
+
+The escape hatches for everything a list cannot cover: a clarification question
+to the human, a positional best-guess fact, and — for deep understanding — the
+separate LLM pipeline.
+
+================================================================================
+ END
+================================================================================
