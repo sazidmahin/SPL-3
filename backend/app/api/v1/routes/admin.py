@@ -10,6 +10,7 @@ from app.schemas.admin import (
     AdminGenerationJobRead,
     AdminLlmCallRead,
     AdminProjectRead,
+    AdminPromptTemplateRead,
     AdminSubscriptionRead,
     AdminUserRead,
     AdminWorkspaceRead,
@@ -25,6 +26,7 @@ from app.services.admin_service import (
     list_platform_subscriptions,
     list_platform_users,
     list_platform_workspaces,
+    list_prompt_templates,
     log_admin_action,
     upsert_platform_setting,
 )
@@ -174,6 +176,24 @@ def admin_list_llm_calls(
         result_count=len(llm_calls),
     )
     return llm_calls
+
+
+@router.get("/prompt-templates", response_model=list[AdminPromptTemplateRead])
+def admin_list_prompt_templates(
+    request: Request,
+    admin_user: User = Depends(require_super_admin),
+    db: Session = Depends(get_db),
+):
+    templates = list_prompt_templates(db)
+    _audit(
+        db,
+        request,
+        admin_user=admin_user,
+        action="admin.prompt_templates.list",
+        target_type="prompt_template",
+        result_count=len(templates),
+    )
+    return templates
 
 
 @router.get("/audit-logs", response_model=list[AdminAuditLogRead])

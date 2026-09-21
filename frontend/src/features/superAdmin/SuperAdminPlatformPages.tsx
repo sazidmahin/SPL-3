@@ -4,13 +4,14 @@ import {
   CreditCard,
   Database,
   FileClock,
-  FileText,
   ServerCog,
   UserCog,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { AuthUser } from '../../domains/auth/types'
 import type { GenerationJob } from '../../domains/srs/types'
+import type { PipelineRun } from '../../domains/generationPipeline/types'
+import type { Project } from '../../domains/project/types'
 import type { WorkspaceMembership } from '../../domains/workspace/types'
 import { EmptyState, PageHeader } from '../../shared/ui'
 import { AiGenerationJobs } from '../aiJobs/AiGenerationJobs'
@@ -18,7 +19,6 @@ import { AiGenerationJobs } from '../aiJobs/AiGenerationJobs'
 export type SuperAdminSection =
   | 'users'
   | 'workspaces'
-  | 'plans'
   | 'subscriptions'
   | 'ai-jobs'
   | 'llm-calls'
@@ -30,6 +30,8 @@ type SuperAdminPlatformPageProps = {
   user: AuthUser
   activeWorkspace: WorkspaceMembership | undefined
   generationJobs: GenerationJob[]
+  projects?: Project[]
+  pipelineRuns?: PipelineRun[]
 }
 
 const pageConfig: Record<SuperAdminSection, { title: string; description: string; icon: LucideIcon }> = {
@@ -39,7 +41,6 @@ const pageConfig: Record<SuperAdminSection, { title: string; description: string
     description: 'Manage personal and organization workspaces, ownership, and plans.',
     icon: Building2,
   },
-  plans: { title: 'Plans', description: 'Define pricing plans, features, and limits.', icon: FileText },
   subscriptions: { title: 'Subscriptions', description: 'Monitor billing state and plan changes.', icon: CreditCard },
   'ai-jobs': { title: 'AI Generation Jobs', description: 'Track AI job status and performance.', icon: Bot },
   'llm-calls': { title: 'LLM / API Call Logs', description: 'Inspect model usage, latency, and cost.', icon: Database },
@@ -47,9 +48,9 @@ const pageConfig: Record<SuperAdminSection, { title: string; description: string
   'audit-logs': { title: 'Admin Audit Logs', description: 'Review admin actions and access logs.', icon: FileClock },
 }
 
-export function SuperAdminPlatformPage({ section, generationJobs }: SuperAdminPlatformPageProps) {
+export function SuperAdminPlatformPage({ section, generationJobs, projects = [], pipelineRuns = [] }: SuperAdminPlatformPageProps) {
   if (section === 'ai-jobs') {
-    return <AiGenerationJobs generationJobs={generationJobs} projects={[]} />
+    return <AiGenerationJobs generationJobs={generationJobs} projects={projects} pipelineRuns={pipelineRuns} />
   }
 
   const config = pageConfig[section]

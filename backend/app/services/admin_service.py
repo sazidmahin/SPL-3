@@ -11,6 +11,7 @@ from app.db.models import (
     GenerationJob,
     LlmCall,
     PlatformSetting,
+    PromptTemplate,
     Project,
     Subscription,
     User,
@@ -72,6 +73,10 @@ def list_platform_generation_jobs(db: Session) -> list[GenerationJob]:
 
 def list_platform_llm_calls(db: Session) -> list[LlmCall]:
     return list(db.scalars(select(LlmCall).order_by(LlmCall.created_at.asc())))
+
+
+def list_prompt_templates(db: Session) -> list[PromptTemplate]:
+    return list(db.scalars(select(PromptTemplate).order_by(PromptTemplate.name.asc(), PromptTemplate.version.asc())))
 
 
 def list_admin_audit_logs(db: Session) -> list[AdminAuditLog]:

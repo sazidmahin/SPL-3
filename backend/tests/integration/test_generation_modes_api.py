@@ -12,6 +12,7 @@ from app.db.base import Base
 from app.db.models import UserAiProviderCredential
 from app.main import app
 from app.services.llm_service import LlmResponse
+from app.services.ollama_service import OllamaClient
 
 
 @pytest.fixture()
@@ -142,6 +143,128 @@ def test_rule_based_pipeline_is_editable_and_xml_is_deterministic(client: TestCl
     statuses = {stage["stage_name"]: stage["status"] for stage in refreshed["stages"]}
     assert statuses["class-model"] == "ready_for_review"
     assert statuses["xml"] == "stale"
+
+
+_OLLAMA_NON_JSON_RESPONSES = {
+    "pipeline_clarifications_ollama_questions": (
+        "Sentences: A customer can place an order. An admin can approve an order.\n"
+        "What is the maximum number of items per order?\n"
+        "How long should an unapproved order remain pending?\n"
+        "The order total must be calculated automatically."
+    ),
+    "pipeline_clarifications_answer_suggestion": "Ten items",
+    "pipeline_final-story_ollama_independent": (
+        "A customer places an order for one or more products.\n"
+        "An admin reviews and approves pending orders.\n"
+        "The system automatically calculates the order total."
+    ),
+    "pipeline_requirements_ollama_independent": (
+        "The system shall allow a customer to place an order.\n"
+        "The system shall allow an admin to approve an order.\n"
+        "The system shall respond within two seconds (performance)."
+    ),
+    "pipeline_class-model_ollama_independent": (
+        "The domain centers on a Customer who places an Order containing OrderItem "
+        "entries, and an Admin who approves the Order."
+    ),
+}
+
+
+def test_ollama_pipeline_falls_back_to_text_extraction_when_model_skips_json(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Every content stage must still produce a renderable payload even when the
+    local model ignores the JSON contract and answers in plain prose - this is the
+    normal case for small local models, not an edge case.
+    """
+    monkeypatch.setattr(OllamaClient, "validate_configuration", lambda self: None)
+
+    def fake_generate(self: OllamaClient, request):
+        content = _OLLAMA_NON_JSON_RESPONSES.get(request.purpose, "No structured answer available.")
+        return LlmResponse(content=content, response_payload={"content": content}, prompt_tokens=1, completion_tokens=1)
+
+    monkeypatch.setattr(OllamaClient, "generate", fake_generate)
+
+    token = register(client, "ollama@example.com")
+    workspace_id, project_id = setup_project(client, token)
+    base_url = pipeline_url(workspace_id, project_id)
+
+    created = client.post(
+        base_url,
+        headers=auth_header(token),
+        json={
+            "title": "Order management",
+            "raw_text": "A customer can place an order. An admin can approve an order.",
+            "generation_mode": "ollama",
+        },
+    )
+    assert created.status_code == 201, created.text
+    run = created.json()
+
+    # --- input: approving it generates the clarifications stage ---
+    run = approve_and_proceed(client, token, base_url, run)
+    assert run["current_stage"] == "clarifications"
+
+    # --- clarifications: fallback-extracted questions, each auto-answered ---
+    clarifications = next(stage for stage in run["stages"] if stage["stage_name"] == "clarifications")
+    questions = clarifications["payload"]["clarificationQuestions"]
+    assert len(questions) >= 1
+    for question in questions:
+        assert isinstance(question["id"], str) and question["id"]
+        assert isinstance(question["text"], str) and question["text"]
+        assert isinstance(question["category"], str) and question["category"]
+    answers = clarifications["payload"]["answers"]
+    assert len(answers) == len(questions)
+    for answer in answers:
+        assert answer.get("answerText") == "Ten items"
+
+    # --- approve clarifications: generates final-story ---
+    run = approve_and_proceed(client, token, base_url, run)
+    assert run["current_stage"] == "final-story"
+    final_story = next(stage for stage in run["stages"] if stage["stage_name"] == "final-story")
+    sections = final_story["payload"]["atomicStorySections"]
+    assert len(sections) == 3
+    for section in sections:
+        assert isinstance(section["id"], str) and section["id"]
+        assert isinstance(section["normalizedSentence"], str) and section["normalizedSentence"]
+    assert isinstance(final_story["payload"]["warnings"], list)
+
+    # --- approve final-story: generates requirements ---
+    run = approve_and_proceed(client, token, base_url, run)
+    assert run["current_stage"] == "requirements"
+    requirements_stage = next(stage for stage in run["stages"] if stage["stage_name"] == "requirements")
+    requirements = requirements_stage["payload"]["requirements"]
+    assert len(requirements) == 3
+    types = {requirement["requirementType"] for requirement in requirements}
+    assert types == {"functional", "non_functional"}
+    for requirement in requirements:
+        assert isinstance(requirement["requirementId"], str) and requirement["requirementId"]
+        assert isinstance(requirement["statement"], str) and requirement["statement"]
+        assert requirement["enabled"] is True
+
+    # --- approve requirements: generates class-model ---
+    run = approve_and_proceed(client, token, base_url, run)
+    assert run["current_stage"] == "class-model"
+    class_model_stage = next(stage for stage in run["stages"] if stage["stage_name"] == "class-model")
+    classes = class_model_stage["payload"]["classes"]
+    class_names = {item["name"] for item in classes}
+    assert {"Customer", "Order", "OrderItem", "Admin"}.issubset(class_names)
+    for item in classes:
+        assert isinstance(item["id"], str) and item["id"]
+        assert isinstance(item["attributes"], list)
+        assert isinstance(item["methods"], list)
+        assert isinstance(item["warnings"], list) and item["warnings"]
+    assert class_model_stage["payload"]["relationships"] == []
+
+    # --- approve class-model: generates xml via the deterministic renderer, even
+    # though the class model itself was AI-authored ---
+    run = approve_and_proceed(client, token, base_url, run)
+    assert run["current_stage"] == "xml"
+    xml_stage = next(stage for stage in run["stages"] if stage["stage_name"] == "xml")
+    assert xml_stage["payload"]["validation"]["valid"] is True
+    for name in class_names:
+        assert name in xml_stage["payload"]["xml"]
 
 
 def test_ai_settings_encrypt_key_and_gate_ai_gen(
