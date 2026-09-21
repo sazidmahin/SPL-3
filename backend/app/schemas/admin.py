@@ -97,6 +97,19 @@ class AdminLlmCallRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class AdminPromptTemplateRead(BaseModel):
+    id: UUID
+    name: str
+    version: int
+    purpose: str
+    template_text: str
+    status: str
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class AdminAuditLogRead(BaseModel):
     id: UUID
     admin_user_id: UUID

@@ -5,8 +5,6 @@ import {
   Bell,
   Bot,
   Building2,
-  CircleDollarSign,
-  CreditCard,
   FileClock,
   FileText,
   Flag,
@@ -33,7 +31,6 @@ import { CreateDiagramPanel, DiagramsPanel } from '../features/diagram/DiagramPa
 import { MemberDashboard } from '../features/dashboard/MemberDashboard'
 import { ProjectDirectory } from '../features/project/ProjectDirectory'
 import { PromptTemplatesPage } from '../features/promptTemplates/PromptTemplatesPage'
-import { OrganizationBillingSettings } from '../features/organizationAdmin/OrganizationBillingSettings'
 import { OrganizationMembersRoles } from '../features/organizationAdmin/OrganizationMembersRoles'
 import { OrganizationMemberDashboard } from '../features/organizationMember/OrganizationMemberDashboard'
 import { OrganizationMemberProjectWorkspace } from '../features/organizationMember/OrganizationMemberProjectWorkspace'
@@ -65,9 +62,6 @@ type SectionId =
   | 'exports'
   | 'members'
   | 'prompt-templates'
-  | 'plans'
-  | 'billing'
-  | 'subscription'
   | 'subscriptions'
   | 'usage'
   | 'llm-calls'
@@ -100,9 +94,6 @@ const validSections = new Set<SectionId>([
   'exports',
   'members',
   'prompt-templates',
-  'plans',
-  'billing',
-  'subscription',
   'subscriptions',
   'usage',
   'llm-calls',
@@ -136,9 +127,6 @@ const sectionLabels: Partial<Record<SectionId, string>> = {
   exports: 'Exports',
   members: 'Members',
   'prompt-templates': 'Prompt Templates',
-  plans: 'Plans',
-  billing: 'Billing',
-  subscription: 'Subscription',
   subscriptions: 'Subscriptions',
   usage: 'Usage',
   'llm-calls': 'LLM Calls',
@@ -165,11 +153,7 @@ function sectionFromHash(): SectionId {
 }
 
 function superAdminSectionFrom(section: SectionId): SuperAdminSection | null {
-  if (section === 'subscription') {
-    return 'subscriptions'
-  }
-
-  return ['users', 'workspaces', 'plans', 'subscriptions', 'ai-jobs', 'llm-calls', 'platform-settings', 'audit-logs'].includes(section)
+  return ['users', 'workspaces', 'subscriptions', 'ai-jobs', 'llm-calls', 'platform-settings', 'audit-logs'].includes(section)
     ? (section as SuperAdminSection)
     : null
 }
@@ -195,16 +179,19 @@ export function App() {
   const subscription = controller.billingPanel.subscription
   const roleLabel = activeWorkspace?.role ?? 'member'
   const isSuperAdmin = roleLabel === 'super_admin'
-  const canAccessAdmin = ['owner', 'admin', 'organization_admin', 'super_admin'].includes(roleLabel)
   const isOrganizationAdmin =
     roleLabel === 'organization_admin' ||
     (activeWorkspace?.workspace.type === 'organization' && ['owner', 'admin'].includes(roleLabel))
   const isOrganizationMember = activeWorkspace?.workspace.type === 'organization' && !isOrganizationAdmin && !isSuperAdmin
+  // Being "owner" of one's own personal workspace must NOT grant admin-shell access —
+  // only a real organization admin or platform super admin should see the admin shell.
+  const canAccessAdmin = isSuperAdmin || isOrganizationAdmin
   const isPlatformAdminShell = canAccessAdmin
 
   const memberNavItems: NavItem[] = [
     { id: 'overview', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'projects', label: 'Projects', icon: Folder },
+    { id: 'generate-srs', label: 'Generate SRS', icon: WandSparkles },
     { id: 'srs', label: 'SRS Documents', icon: FileText },
     { id: 'diagram-editor', label: 'Diagrams', icon: Network },
     { id: 'ai-jobs', label: 'AI Generation Jobs', icon: WandSparkles },
@@ -212,6 +199,7 @@ export function App() {
   const organizationMemberNavItems: NavItem[] = [
     { id: 'overview', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'projects', label: 'My Projects', icon: Folder },
+    { id: 'generate-srs', label: 'Generate SRS', icon: WandSparkles },
     { id: 'srs', label: 'SRS Documents', icon: FileText },
     { id: 'diagram-editor', label: 'Diagrams', icon: Network },
     { id: 'ai-jobs', label: 'AI Generation Jobs', icon: WandSparkles },
@@ -224,7 +212,6 @@ export function App() {
         { id: 'generate-srs', label: 'Generate SRS', icon: WandSparkles },
         { id: 'users', label: 'Users', icon: Users },
         { id: 'workspaces', label: 'Workspaces', icon: Building2 },
-        { id: 'plans', label: 'Plans', icon: CreditCard },
         { id: 'subscriptions', label: 'Subscriptions', icon: RefreshCcw },
         { id: 'invoices', label: 'Invoices & Payments', icon: ReceiptText },
       ],
@@ -268,29 +255,15 @@ export function App() {
   const adminNavItems: NavItem[] = [
     { id: 'overview', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'projects', label: 'Projects', icon: Folder },
+    { id: 'generate-srs', label: 'Generate SRS', icon: WandSparkles },
     { id: 'srs', label: 'SRS Documents', icon: FileText },
     { id: 'diagram-editor', label: 'Diagrams', icon: Network },
     { id: 'ai-jobs', label: 'AI Generation Jobs', icon: WandSparkles },
     { id: 'ai-settings', label: 'AI Settings', icon: Bot },
     { id: 'members', label: 'Members', icon: UserCircle },
-    { id: 'billing', label: 'Billing', icon: CircleDollarSign },
   ]
 
   const primaryNavItems = isOrganizationAdmin ? adminNavItems : isOrganizationMember ? organizationMemberNavItems : memberNavItems
-  const billingNavItems: NavItem[] = isSuperAdmin
-    ? []
-    : isOrganizationAdmin
-    ? [
-        { id: 'subscription', label: 'Subscription', icon: CircleDollarSign },
-        { id: 'usage', label: 'Usage', icon: BarChart3 },
-      ]
-    : isOrganizationMember
-    ? []
-    : [
-        { id: 'subscription', label: 'Subscription', icon: CircleDollarSign },
-        { id: 'usage', label: 'Usage', icon: BarChart3 },
-        { id: 'invoices', label: 'Invoices', icon: FileText },
-      ]
   const accountNavItems: NavItem[] = isSuperAdmin
     ? []
     : [
@@ -303,7 +276,6 @@ export function App() {
     ? superAdminNavGroups
     : [
         { items: primaryNavItems },
-        ...(billingNavItems.length ? [{ items: billingNavItems }] : []),
         ...(accountNavItems.length ? [{ items: accountNavItems }] : []),
         ...(canAccessAdmin ? [{ items: [{ id: 'admin', label: 'Admin', icon: Settings } as NavItem] }] : []),
       ]
@@ -334,6 +306,7 @@ export function App() {
       srsDocuments={controller.srsPanel.srsDocuments}
       diagrams={controller.diagramsPanel.diagrams}
       generationJobs={controller.srsPanel.generationJobs}
+      pipelineRuns={controller.srsPanel.pipelineRuns}
       srsTools={
         <div id="srs">
           <SrsPanel {...controller.srsPanel} />
@@ -348,6 +321,10 @@ export function App() {
   )
 
   function renderActiveSection() {
+    if (activeSection === 'generate-srs') {
+      return generateSrsSection
+    }
+
     if (activeSection === 'ai-settings') {
       return (
         <section className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_23.75rem]">
@@ -369,16 +346,14 @@ export function App() {
             user={currentUser}
             activeWorkspace={activeWorkspace}
             generationJobs={controller.srsPanel.generationJobs}
+            projects={controller.projectsPanel.projects}
+            pipelineRuns={controller.srsPanel.pipelineRuns}
           />
         )
       }
 
       if (activeSection === 'prompt-templates') {
-        return <PromptTemplatesPage />
-      }
-
-      if (activeSection === 'generate-srs') {
-        return generateSrsSection
+        return <PromptTemplatesPage accessToken={session?.access_token ?? ''} />
       }
 
       return (
@@ -398,10 +373,6 @@ export function App() {
     if (!isSuperAdmin && canAccessAdmin) {
       const adminPlatformSection = superAdminSectionFrom(activeSection)
 
-      if (activeSection === 'generate-srs') {
-        return generateSrsSection
-      }
-
       if (adminPlatformSection) {
         return (
           <SuperAdminPlatformPage
@@ -409,6 +380,8 @@ export function App() {
             user={currentUser}
             activeWorkspace={activeWorkspace}
             generationJobs={controller.srsPanel.generationJobs}
+            projects={controller.projectsPanel.projects}
+            pipelineRuns={controller.srsPanel.pipelineRuns}
           />
         )
       }
@@ -462,6 +435,7 @@ export function App() {
         <AiGenerationJobs
           generationJobs={controller.srsPanel.generationJobs}
           projects={controller.projectsPanel.projects}
+          pipelineRuns={controller.srsPanel.pipelineRuns}
         />
       )
     }
@@ -475,33 +449,12 @@ export function App() {
       )
     }
 
-    if (['subscription', 'usage', 'invoices', 'billing'].includes(activeSection)) {
-      if (isOrganizationAdmin) {
-        return (
-          <OrganizationBillingSettings
-            activeWorkspace={activeWorkspace}
-            subscription={subscription}
-            usage={controller.billingPanel.usage}
-          />
-        )
-      }
-
-      return (
-        <section className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_23.75rem]">
-          <div className="min-w-0">
-            <BillingPanel {...controller.billingPanel} />
-          </div>
-          {workspaceTools}
-        </section>
-      )
-    }
-
     if (activeSection === 'members' && isOrganizationAdmin) {
       return <OrganizationMembersRoles user={currentUser} activeWorkspace={activeWorkspace} subscription={subscription} />
     }
 
     if (activeSection === 'prompt-templates' && isOrganizationAdmin) {
-      return <PromptTemplatesPage />
+      return <PromptTemplatesPage accessToken={session?.access_token ?? ''} />
     }
 
     if (['profile', 'settings', 'ai-settings', 'admin', 'members'].includes(activeSection)) {
@@ -552,6 +505,7 @@ export function App() {
         srsDocuments={controller.srsPanel.srsDocuments}
         diagrams={controller.diagramsPanel.diagrams}
         generationJobs={controller.srsPanel.generationJobs}
+        pipelineRuns={controller.srsPanel.pipelineRuns}
         subscription={subscription}
         usage={controller.billingPanel.usage}
       />

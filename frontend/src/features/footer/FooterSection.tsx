@@ -7,7 +7,7 @@ export function FooterSection() {
             <path d="M4 6h12M4 10h8M4 14h10" />
           </svg>
         </span>
-        <span className="font-display font-bold text-fg-2">SPL-3</span>
+        <span className="font-display font-bold text-fg-2">SpecTwin</span>
         <span>· Software Requirements Platform</span>
       </div>
       <span>&copy; {new Date().getFullYear()} IIT, University of Dhaka</span>

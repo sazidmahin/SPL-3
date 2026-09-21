@@ -32,6 +32,7 @@ class OllamaClient:
         timeout_seconds: int | None = None,
         keep_alive: str | None = None,
         num_ctx: int | None = None,
+        num_predict: int | None = None,
     ) -> None:
         self.base_url = (base_url or _base_url()).rstrip("/")
         self.model_name = (model_name or settings.ollama_model).strip()
@@ -39,6 +40,11 @@ class OllamaClient:
         self.timeout_seconds = timeout_seconds or settings.ollama_timeout_seconds
         self.keep_alive = keep_alive or settings.ollama_keep_alive
         self.num_ctx_max = num_ctx or settings.ollama_num_ctx
+        # Cap output length: without this, a small local model asked to do a task
+        # beyond its ability can ramble/repeat indefinitely instead of naturally
+        # stopping, turning a call that should take seconds into one that takes
+        # minutes and often still fails to produce usable JSON.
+        self.num_predict = num_predict or settings.ollama_num_predict
         if not self.model_name:
             raise LlmConfigurationError("OLLAMA_MODEL is required for local Ollama generation")
 
@@ -134,7 +140,7 @@ class OllamaClient:
             "prompt": request.prompt,
             "stream": False,
             "keep_alive": self.keep_alive,
-            "options": {"temperature": self.temperature, "num_ctx": num_ctx},
+            "options": {"temperature": self.temperature, "num_ctx": num_ctx, "num_predict": self.num_predict},
         }
         try:
             data = self._post("/api/generate", body)
@@ -172,6 +178,7 @@ class OllamaClient:
             client_kwargs={"timeout": self.timeout_seconds},
             keep_alive=self.keep_alive,
             num_ctx=num_ctx,
+            num_predict=self.num_predict,
         )
 
 

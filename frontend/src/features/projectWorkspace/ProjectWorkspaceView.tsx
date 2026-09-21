@@ -3,6 +3,7 @@ import { FileText } from 'lucide-react'
 import type { Diagram } from '../../domains/diagram/types'
 import type { Project } from '../../domains/project/types'
 import type { GenerationJob, SrsDocument } from '../../domains/srs/types'
+import type { PipelineRun } from '../../domains/generationPipeline/types'
 import { Card, CompactList, EmptyState, PageHeader } from '../../shared/ui'
 import type { Tone } from '../../shared/ui'
 
@@ -11,8 +12,25 @@ type ProjectWorkspaceViewProps = {
   srsDocuments: SrsDocument[]
   diagrams: Diagram[]
   generationJobs: GenerationJob[]
+  pipelineRuns: PipelineRun[]
   srsTools: ReactNode
   diagramTools: ReactNode
+}
+
+type PlainRequirement = { id: string; type: string; statement: string }
+
+function pipelineRequirements(run: PipelineRun): PlainRequirement[] {
+  const revision = run.stages.find((stage) => stage.stage_name === 'requirements')
+  const list = revision?.payload.requirements
+  if (!Array.isArray(list)) return []
+  return list
+    .filter((item): item is Record<string, unknown> => typeof item === 'object' && item !== null)
+    .filter((item) => item.enabled !== false)
+    .map((item, index) => ({
+      id: String(item.requirementId ?? item.id ?? `${run.id}-${index}`),
+      type: String(item.requirementType ?? 'functional').replaceAll('_', ' '),
+      statement: String(item.statement ?? ''),
+    }))
 }
 
 export function ProjectWorkspaceView({
@@ -20,6 +38,7 @@ export function ProjectWorkspaceView({
   srsDocuments,
   diagrams,
   generationJobs,
+  pipelineRuns,
   srsTools,
   diagramTools,
 }: ProjectWorkspaceViewProps) {
@@ -27,39 +46,71 @@ export function ProjectWorkspaceView({
   const projectDescription =
     activeProject?.description ?? 'Requirements, SRS documents, diagrams, and activity appear here.'
 
+  const requirements: PlainRequirement[] = [
+    ...srsDocuments.flatMap((document) =>
+      (document.extracted_requirements ?? []).map((requirement) => ({
+        id: requirement.id,
+        type: requirement.requirement_type.replaceAll('_', ' '),
+        statement: requirement.requirement_text,
+      })),
+    ),
+    ...pipelineRuns.flatMap(pipelineRequirements),
+  ]
+
+  const recentDocs = [
+    ...srsDocuments.map((document) => ({
+      id: document.id,
+      title: document.title,
+      meta: new Date(document.created_at).toLocaleDateString(),
+      value: document.status,
+      tone: 'sky' as const,
+      createdAt: document.created_at,
+    })),
+    ...pipelineRuns.map((run) => ({
+      id: run.id,
+      title: run.title,
+      meta: new Date(run.created_at).toLocaleDateString(),
+      value: run.status.replaceAll('_', ' '),
+      tone: 'ai' as const,
+      createdAt: run.created_at,
+    })),
+  ]
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .slice(0, 4)
+
   return (
     <section className="grid gap-4" id="project-workspace">
       <Card className="grid gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
         <PageHeader eyebrow="Project workspace" title={projectTitle} description={projectDescription} />
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3" aria-label="Project summary">
-          <SummaryPill label="SRS docs" value={srsDocuments.length} />
+          <SummaryPill label="SRS docs" value={srsDocuments.length + pipelineRuns.length} />
           <SummaryPill label="Diagrams" value={diagrams.length} />
-          <SummaryPill label="AI jobs" value={generationJobs.length} />
+          <SummaryPill label="AI jobs" value={generationJobs.length + pipelineRuns.length} />
         </div>
       </Card>
 
       <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_20.5rem]">
         <Card className="grid gap-4 p-5">
           <PageHeader size="section" eyebrow="Requirements" title="Traceable requirements" />
-          <EmptyState
-            icon={FileText}
-            title="No requirements captured yet"
-            description="Run the SRS generation pipeline to extract and review requirements for this project."
-          />
+          {requirements.length === 0 ? (
+            <EmptyState
+              icon={FileText}
+              title="No requirements captured yet"
+              description="Run the SRS generation pipeline to extract and review requirements for this project."
+            />
+          ) : (
+            <div className="grid gap-2 sm:grid-cols-2">
+              {requirements.slice(0, 8).map((requirement) => (
+                <div key={requirement.id} className="grid gap-1 rounded-lg border border-border bg-surface-2 p-3">
+                  <span className="text-[11px] font-bold uppercase tracking-wide text-fg-3">{requirement.type}</span>
+                  <p className="text-[13px] leading-6 text-fg-2">{requirement.statement}</p>
+                </div>
+              ))}
+            </div>
+          )}
         </Card>
         <aside className="grid gap-4">
-          <RecentCard
-            label="SRS documents"
-            title="Recent docs"
-            items={srsDocuments.slice(0, 4).map((document) => ({
-              id: document.id,
-              title: document.title,
-              meta: new Date(document.created_at).toLocaleDateString(),
-              value: document.status,
-              tone: 'sky' as const,
-            }))}
-            emptyText="No SRS documents yet."
-          />
+          <RecentCard label="SRS documents" title="Recent docs" items={recentDocs} emptyText="No SRS documents yet." />
           <RecentCard
             label="Diagrams"
             title="Diagram library"

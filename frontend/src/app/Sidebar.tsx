@@ -49,7 +49,7 @@ export function Sidebar({
           </svg>
         </span>
         <div>
-          <div className="font-display text-base font-extrabold tracking-tight text-sidebar-fg-active">SPL-3</div>
+          <div className="font-display text-base font-extrabold tracking-tight text-sidebar-fg-active">SpecTwin</div>
           <div className="text-[10px] text-sidebar-fg">by IIT, University of Dhaka</div>
         </div>
       </div>

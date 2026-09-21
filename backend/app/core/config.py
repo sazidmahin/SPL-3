@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     ollama_timeout_seconds: int = 600
     ollama_keep_alive: str = "5m"
     ollama_num_ctx: int = 16384
+    ollama_num_predict: int = 1024
     ai_credential_encryption_key: str = "change-this-development-ai-credential-key"
     srsgen_base_model: str = "Qwen/Qwen1.5-1.8B-Chat"
     srsgen_artifact_path: str = "model_artifacts/srsgen-qwen1.5"

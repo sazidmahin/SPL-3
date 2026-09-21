@@ -5,6 +5,7 @@ import type { Subscription, Usage } from '../../domains/billing/types'
 import type { Diagram } from '../../domains/diagram/types'
 import type { Project } from '../../domains/project/types'
 import type { GenerationJob, SrsDocument } from '../../domains/srs/types'
+import type { PipelineRun } from '../../domains/generationPipeline/types'
 import type { AuthUser } from '../../domains/auth/types'
 import type { WorkspaceMembership } from '../../domains/workspace/types'
 import { Card, Chip, EmptyState, LinkButton, PageHeader, ProgressBar, StatTile } from '../../shared/ui'
@@ -17,6 +18,7 @@ type MemberDashboardProps = {
   srsDocuments: SrsDocument[]
   diagrams: Diagram[]
   generationJobs: GenerationJob[]
+  pipelineRuns: PipelineRun[]
   subscription: Subscription | null
   usage: Usage | null
 }
@@ -29,12 +31,27 @@ const JOB_STATUS_COLORS: Record<string, string> = {
   failed: '#f87171',
 }
 
+function pipelineDonutStatus(status: string) {
+  if (status === 'running') return 'running'
+  if (status === 'failed') return 'failed'
+  if (status === 'completed' || status === 'approved') return 'completed'
+  return 'pending'
+}
+
+function pipelineRequirementCount(run: PipelineRun) {
+  const revision = run.stages.find((stage) => stage.stage_name === 'requirements')
+  const list = revision?.payload.requirements
+  if (!Array.isArray(list)) return 0
+  return list.filter((item) => typeof item === 'object' && item !== null && (item as Record<string, unknown>).enabled !== false).length
+}
+
 export function MemberDashboard({
   user,
   projects,
   srsDocuments,
   diagrams,
   generationJobs,
+  pipelineRuns,
   subscription,
   usage,
 }: MemberDashboardProps) {
@@ -44,19 +61,36 @@ export function MemberDashboard({
   const creditPercent = creditLimit > 0 ? Math.min(100, Math.round((creditsUsed / creditLimit) * 100)) : 0
 
   const jobsByStatus = groupBy(generationJobs, (job) => job.status)
-  const donutData = Object.entries(jobsByStatus).map(([status, items]) => ({
+  const pipelineByStatus = groupBy(pipelineRuns, (run) => pipelineDonutStatus(run.status))
+  const donutStatuses = new Set([...Object.keys(jobsByStatus), ...Object.keys(pipelineByStatus)])
+  const donutData = Array.from(donutStatuses, (status) => ({
     name: status.replaceAll('_', ' '),
-    value: items.length,
+    value: (jobsByStatus[status]?.length ?? 0) + (pipelineByStatus[status]?.length ?? 0),
     color: JOB_STATUS_COLORS[status] ?? '#94a3b8',
   }))
 
   const recentProjects = [...projects]
     .sort((a, b) => b.updated_at.localeCompare(a.updated_at))
     .slice(0, 5)
-  const recentDocs = [...srsDocuments]
-    .sort((a, b) => b.created_at.localeCompare(a.created_at))
+  const recentDocs = [
+    ...srsDocuments.map((document) => ({
+      id: document.id,
+      title: document.title,
+      status: document.status,
+      requirementCount: document.extracted_requirements?.length ?? 0,
+      createdAt: document.created_at,
+    })),
+    ...pipelineRuns.map((run) => ({
+      id: run.id,
+      title: run.title,
+      status: run.status,
+      requirementCount: pipelineRequirementCount(run),
+      createdAt: run.created_at,
+    })),
+  ]
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     .slice(0, 4)
-  const activity = buildActivity(srsDocuments, diagrams, generationJobs)
+  const activity = buildActivity(srsDocuments, diagrams, generationJobs, pipelineRuns)
 
   return (
     <section className="grid min-w-0 gap-6" id="overview">
@@ -72,9 +106,9 @@ export function MemberDashboard({
 
       <div className="grid gap-3.5 sm:grid-cols-2 xl:grid-cols-5">
         <StatTile label="Projects" value={projects.length} icon={Folder} />
-        <StatTile label="SRS Documents" value={srsDocuments.length} icon={FileText} />
+        <StatTile label="SRS Documents" value={srsDocuments.length + pipelineRuns.length} icon={FileText} />
         <StatTile label="Diagrams" value={diagrams.length} icon={Network} />
-        <StatTile label="AI Jobs" value={generationJobs.length} icon={WandSparkles} />
+        <StatTile label="AI Jobs" value={generationJobs.length + pipelineRuns.length} icon={WandSparkles} />
         <StatTile label="SRS credits" value={`${creditPercent}%`}>
           <ProgressBar className="mt-2" value={creditPercent} />
           <div className="mt-1 font-mono text-[11px] text-fg-3">
@@ -174,12 +208,10 @@ export function MemberDashboard({
                   <FileText className="size-4 shrink-0 text-fg-3" />
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-[13px] font-medium text-fg">{document.title}</div>
-                    <div className="font-mono text-[11px] text-fg-3">
-                      {document.extracted_requirements?.length ?? 0} requirements
-                    </div>
+                    <div className="font-mono text-[11px] text-fg-3">{document.requirementCount} requirements</div>
                   </div>
                   <Chip tone="muted">{formatStatus(document.status)}</Chip>
-                  <span className="whitespace-nowrap text-[11px] text-fg-3">{relativeTime(document.created_at)}</span>
+                  <span className="whitespace-nowrap text-[11px] text-fg-3">{relativeTime(document.createdAt)}</span>
                 </div>
               ))}
             </div>
@@ -277,7 +309,12 @@ function PlanCard({
 
 type ActivityItem = { id: string; title: ReactNode; time: string; icon: typeof FileText }
 
-function buildActivity(srsDocuments: SrsDocument[], diagrams: Diagram[], jobs: GenerationJob[]): ActivityItem[] {
+function buildActivity(
+  srsDocuments: SrsDocument[],
+  diagrams: Diagram[],
+  jobs: GenerationJob[],
+  pipelineRuns: PipelineRun[],
+): ActivityItem[] {
   const entries: ActivityItem[] = [
     ...srsDocuments.map((document) => ({
       id: `doc-${document.id}`,
@@ -307,6 +344,16 @@ function buildActivity(srsDocuments: SrsDocument[], diagrams: Diagram[], jobs: G
         </>
       ),
       time: job.updated_at,
+      icon: WandSparkles,
+    })),
+    ...pipelineRuns.map((run) => ({
+      id: `pipeline-${run.id}`,
+      title: (
+        <>
+          SRS pipeline <strong>{run.title}</strong> {run.status.replaceAll('_', ' ')}
+        </>
+      ),
+      time: run.updated_at,
       icon: WandSparkles,
     })),
   ]
