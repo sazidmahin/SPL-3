@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>New SRS · Clarify · SPL-3</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/lucide@latest"></script>
+<style>
+/* ── TOKENS ─────────────────────────────── */
+:root {
+  --accent:#00d4aa; --accent-dim:#009e7e; --accent-glow:rgba(0,212,170,.15);
+  --accent2:#818cf8; --accent2-dim:#6366f1; --accent2-glow:rgba(129,140,248,.15);
+  --danger:#f87171; --warning:#fbbf24; --success:#34d399;
+  --bg:#f0f4fa; --surface:#fff; --surface2:#f7f9fd; --surface3:#edf0f7;
+  --border:rgba(0,0,0,.08); --border2:rgba(0,0,0,.14);
+  --tx:#0d1117; --tx2:#4a5568; --tx3:#8896aa; --tx-inv:#fff;
+  --sb-bg:#0c1220; --sb-tx:#6b7f98; --sb-tx-act:#e8edf5;
+  --sb-active:rgba(0,212,170,.1); --sb-hover:rgba(255,255,255,.04); --sb-bd:#16213a;
+  --shadow-sm:0 1px 3px rgba(0,0,0,.06),0 1px 2px rgba(0,0,0,.04);
+  --shadow-md:0 4px 16px rgba(0,0,0,.08);
+  --shadow-lg:0 20px 60px rgba(0,0,0,.1);
+  --r-sm:6px; --r-md:10px; --r-lg:14px; --r-xl:20px; --r-full:9999px;
+}
+[data-theme="dark"] {
+  --bg:#060b14; --surface:#0c1220; --surface2:#111c2e; --surface3:#162035;
+  --border:rgba(255,255,255,.07); --border2:rgba(255,255,255,.12);
+  --tx:#dde6f0; --tx2:#7a90aa; --tx3:#3d5060; --tx-inv:#060b14;
+  --shadow-sm:0 1px 3px rgba(0,0,0,.5); --shadow-md:0 4px 16px rgba(0,0,0,.5);
+  --shadow-lg:0 20px 60px rgba(0,0,0,.6);
+}
+
+/* ── RESET / BASE ───────────────────────── */
+*,*::before,*::after { box-sizing:border-box; margin:0; padding:0; }
+html { scroll-behavior:smooth; }
+body {
+  font-family:'Inter',system-ui,sans-serif; font-size:14px; line-height:1.5;
+  background:var(--bg); color:var(--tx); -webkit-font-smoothing:antialiased;
+  transition:background .2s,color .2s;
+}
+.syne { font-family:'Syne',system-ui,sans-serif; }
+.mono { font-family:'JetBrains Mono',monospace; }
+a { text-decoration:none; color:inherit; }
+button { cursor:pointer; border:none; background:none; font-family:inherit; color:inherit; }
+input,textarea,select { font-family:inherit; font-size:14px; }
+
+/* ── LAYOUT ─────────────────────────────── */
+.shell { display:flex; min-height:100svh; }
+.sidebar {
+  width:240px; flex-shrink:0; background:var(--sb-bg); display:flex;
+  flex-direction:column; position:sticky; top:0; height:100svh; overflow:hidden;
+  border-right:1px solid var(--sb-bd); z-index:30;
+}
+.main { flex:1; display:flex; flex-direction:column; min-width:0; }
+.topbar {
+  height:58px; background:var(--surface); border-bottom:1px solid var(--border);
+  display:flex; align-items:center; gap:16px; padding:0 24px;
+  position:sticky; top:0; z-index:20; backdrop-filter:blur(12px);
+}
+.page { flex:1; padding:28px 32px; max-width:1440px; width:100%; margin:0 auto; }
+
+/* ── SIDEBAR INTERNALS ───────────────────── */
+.sb-logo { padding:20px 18px 14px; display:flex; align-items:center; gap:10px; border-bottom:1px solid var(--sb-bd); }
+.sb-logo-mark {
+  width:32px; height:32px; border-radius:var(--r-md); background:var(--accent);
+  display:flex; align-items:center; justify-content:center; flex-shrink:0;
+}
+.sb-logo-mark svg { width:18px; height:18px; color:var(--tx-inv); }
+.sb-logo-text { font-family:'Syne',sans-serif; font-weight:800; font-size:16px; color:var(--sb-tx-act); letter-spacing:-.3px; }
+.sb-logo-sub { font-size:10px; color:var(--sb-tx); font-weight:400; margin-top:1px; }
+.sb-ws {
+  margin:12px 12px 8px; padding:10px 12px; border-radius:var(--r-md); cursor:pointer;
+  background:var(--sb-hover); border:1px solid var(--sb-bd); display:flex; align-items:center; gap:8px;
+  transition:background .15s;
+}
+.sb-ws:hover { background:rgba(255,255,255,.07); }
+.sb-ws-icon {
+  width:28px; height:28px; border-radius:var(--r-sm); background:var(--accent);
+  font-size:11px; font-weight:800; color:var(--tx-inv); display:flex; align-items:center; justify-content:center; flex-shrink:0;
+}
+.sb-ws-name { font-size:13px; font-weight:600; color:var(--sb-tx-act); flex:1; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+.sb-ws-badge { font-size:10px; font-weight:700; padding:2px 7px; border-radius:var(--r-full); background:rgba(129,140,248,.2); color:var(--accent2); }
+.sb-nav { flex:1; padding:6px 10px; overflow-y:auto; display:flex; flex-direction:column; gap:1px; }
+.sb-section { font-size:10px; font-weight:600; letter-spacing:.08em; color:var(--sb-tx); padding:12px 8px 4px; text-transform:uppercase; }
+.nav-item {
+  display:flex; align-items:center; gap:9px; padding:8px 10px; border-radius:var(--r-md);
+  font-size:13px; font-weight:500; color:var(--sb-tx); transition:background .12s, color .12s;
+}
+.nav-item:hover { background:var(--sb-hover); color:var(--sb-tx-act); }
+.nav-item.active { background:var(--sb-active); color:var(--accent); }
+.nav-item.active svg { color:var(--accent); }
+.nav-item svg { width:15px; height:15px; flex-shrink:0; }
+.nav-badge { margin-left:auto; font-size:10px; font-weight:700; padding:1px 6px; border-radius:var(--r-full); background:var(--accent-glow); color:var(--accent); }
+.sb-footer { padding:12px; border-top:1px solid var(--sb-bd); }
+.sb-new-btn {
+  display:flex; align-items:center; justify-content:center; gap:7px;
+  width:100%; padding:9px; border-radius:var(--r-md); border:1px dashed rgba(0,212,170,.3);
+  color:var(--accent); font-size:13px; font-weight:600; background:var(--accent-glow);
+  transition:background .15s, border-color .15s;
+}
+.sb-new-btn:hover { background:rgba(0,212,170,.2); border-color:var(--accent); }
+.sb-user { display:flex; align-items:center; gap:9px; padding:10px 10px 0; }
+.sb-avatar { width:30px; height:30px; border-radius:50%; background:linear-gradient(135deg,var(--accent2),var(--accent)); font-size:11px; font-weight:700; color:#fff; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+.sb-user-name { font-size:12px; font-weight:600; color:var(--sb-tx-act); }
+.sb-user-role { font-size:11px; color:var(--sb-tx); }
+
+/* ── TOPBAR ─────────────────────────────── */
+.tb-breadcrumb { display:flex; align-items:center; gap:6px; font-size:13px; }
+.tb-breadcrumb .sep { color:var(--tx3); }
+.tb-breadcrumb .cur { font-weight:600; color:var(--tx); }
+.tb-breadcrumb a { color:var(--tx3); }
+.tb-breadcrumb a:hover { color:var(--tx2); }
+.tb-search { flex:1; max-width:320px; position:relative; }
+.tb-search input {
+  width:100%; padding:7px 12px 7px 34px; border-radius:var(--r-full);
+  background:var(--surface2); border:1px solid var(--border); color:var(--tx);
+  font-size:13px; outline:none; transition:border-color .15s, box-shadow .15s;
+}
+.tb-search input:focus { border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-glow); }
+.tb-search input::placeholder { color:var(--tx3); }
+.tb-search-icon { position:absolute; left:11px; top:50%; transform:translateY(-50%); width:14px; height:14px; color:var(--tx3); pointer-events:none; }
+.tb-right { display:flex; align-items:center; gap:8px; margin-left:auto; }
+.tb-icon-btn {
+  width:34px; height:34px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+  color:var(--tx2); transition:background .12s;
+}
+.tb-icon-btn:hover { background:var(--surface3); }
+.tb-icon-btn svg { width:17px; height:17px; }
+.tb-notif { position:relative; }
+.tb-notif::after { content:''; position:absolute; top:7px; right:7px; width:7px; height:7px; border-radius:50%; background:var(--danger); border:1.5px solid var(--surface); }
+.theme-toggle { width:34px; height:34px; border-radius:50%; display:flex; align-items:center; justify-content:center; color:var(--tx2); background:var(--surface3); border:1px solid var(--border); transition:background .12s; }
+.theme-toggle:hover { background:var(--surface2); }
+.tb-avatar-btn { display:flex; align-items:center; gap:6px; padding:4px 8px; border-radius:var(--r-full); transition:background .12s; }
+.tb-avatar-btn:hover { background:var(--surface3); }
+.tb-avatar { width:28px; height:28px; border-radius:50%; background:linear-gradient(135deg,var(--accent2),var(--accent)); font-size:10px; font-weight:700; color:#fff; display:flex; align-items:center; justify-content:center; }
+
+/* ── CARDS / SURFACES ───────────────────── */
+.card { background:var(--surface); border:1px solid var(--border); border-radius:var(--r-lg); box-shadow:var(--shadow-sm); }
+.card-inner { background:var(--surface2); border:1px solid var(--border); border-radius:var(--r-md); }
+
+/* ── BUTTONS ─────────────────────────────── */
+.btn { display:inline-flex; align-items:center; gap:6px; font-size:13px; font-weight:600; border-radius:var(--r-md); padding:8px 14px; transition:all .15s; outline:none; }
+.btn:focus-visible { box-shadow:0 0 0 3px var(--accent-glow); }
+.btn svg { width:14px; height:14px; flex-shrink:0; }
+.btn-primary { background:var(--accent); color:var(--tx-inv); }
+.btn-primary:hover { background:var(--accent-dim); box-shadow:0 0 18px var(--accent-glow); }
+.btn-secondary { background:var(--surface3); color:var(--tx2); border:1px solid var(--border); }
+.btn-secondary:hover { background:var(--surface2); border-color:var(--border2); color:var(--tx); }
+.btn-ghost { color:var(--tx2); padding:8px 10px; }
+.btn-ghost:hover { background:var(--surface3); color:var(--tx); }
+.btn-danger { background:rgba(248,113,113,.1); color:var(--danger); border:1px solid rgba(248,113,113,.2); }
+.btn-danger:hover { background:rgba(248,113,113,.15); }
+.btn-ai { background:linear-gradient(135deg,var(--accent2-dim),var(--accent-dim)); color:#fff; }
+.btn-ai:hover { box-shadow:0 0 20px var(--accent2-glow); }
+.btn-sm { padding:5px 10px; font-size:12px; }
+.btn-lg { padding:11px 20px; font-size:14px; }
+
+/* ── CHIPS / BADGES ─────────────────────── */
+.chip {
+  display:inline-flex; align-items:center; gap:4px; font-size:11px; font-weight:600;
+  padding:3px 9px; border-radius:var(--r-full); border:1px solid transparent;
+}
+.chip-active { background:rgba(52,211,153,.1); color:#34d399; border-color:rgba(52,211,153,.2); }
+.chip-pending { background:rgba(251,191,36,.1); color:#fbbf24; border-color:rgba(251,191,36,.2); }
+.chip-danger { background:rgba(248,113,113,.1); color:#f87171; border-color:rgba(248,113,113,.2); }
+.chip-muted { background:var(--surface3); color:var(--tx2); border-color:var(--border); }
+.chip-accent { background:var(--accent-glow); color:var(--accent); border-color:rgba(0,212,170,.2); }
+.chip-ai { background:var(--accent2-glow); color:var(--accent2); border-color:rgba(129,140,248,.2); }
+.chip-sky { background:rgba(56,189,248,.1); color:#38bdf8; border-color:rgba(56,189,248,.2); }
+
+/* ── INPUTS ─────────────────────────────── */
+.input {
+  width:100%; padding:9px 13px; border-radius:var(--r-md); border:1px solid var(--border);
+  background:var(--surface); color:var(--tx); font-size:13.5px; outline:none;
+  transition:border-color .15s, box-shadow .15s;
+}
+.input:focus { border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-glow); }
+.input::placeholder { color:var(--tx3); }
+.input-sm { padding:6px 10px; font-size:12.5px; }
+textarea.input { resize:vertical; }
+select.input { cursor:pointer; }
+
+/* ── STAT TILE ───────────────────────────── */
+.stat-tile { background:var(--surface); border:1px solid var(--border); border-radius:var(--r-lg); padding:18px 20px; box-shadow:var(--shadow-sm); }
+.stat-value { font-family:'Syne',sans-serif; font-size:26px; font-weight:800; line-height:1; margin:6px 0 4px; }
+.stat-label { font-size:12px; font-weight:500; color:var(--tx3); text-transform:uppercase; letter-spacing:.06em; }
+.stat-delta { font-size:11.5px; font-weight:600; }
+.stat-delta.up { color:var(--success); }
+.stat-delta.dn { color:var(--danger); }
+
+/* ── TOGGLE ─────────────────────────────── */
+.toggle-track { width:38px; height:22px; border-radius:var(--r-full); background:var(--surface3); border:1px solid var(--border); position:relative; cursor:pointer; transition:background .2s; flex-shrink:0; }
+.toggle-track.on { background:var(--accent); border-color:var(--accent); }
+.toggle-thumb { position:absolute; top:2px; left:2px; width:16px; height:16px; border-radius:50%; background:#fff; box-shadow:0 1px 3px rgba(0,0,0,.2); transition:left .2s; }
+.toggle-track.on .toggle-thumb { left:18px; }
+
+/* ── PROGRESS BAR ───────────────────────── */
+.progress-bar { height:6px; background:var(--surface3); border-radius:var(--r-full); overflow:hidden; }
+.progress-fill { height:100%; border-radius:var(--r-full); background:linear-gradient(90deg,var(--accent),var(--accent2)); transition:width .3s; }
+
+/* ── PAGE HEADER ─────────────────────────── */
+.page-header { margin-bottom:24px; }
+.page-title { font-family:'Syne',sans-serif; font-size:24px; font-weight:800; color:var(--tx); letter-spacing:-.4px; }
+.page-sub { font-size:13.5px; color:var(--tx2); margin-top:3px; }
+
+/* ── DIVIDER ─────────────────────────────── */
+.divider { height:1px; background:var(--border); }
+
+/* ── SCROLLBAR ───────────────────────────── */
+::-webkit-scrollbar { width:5px; height:5px; }
+::-webkit-scrollbar-thumb { background:var(--border2); border-radius:var(--r-full); }
+::-webkit-scrollbar-track { background:transparent; }
+
+/* ── FOCUS RING ──────────────────────────── */
+:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+
+/* ── TOOLTIP ─────────────────────────────── */
+[data-tip] { position:relative; }
+[data-tip]:hover::after {
+  content:attr(data-tip); position:absolute; bottom:calc(100% + 6px); left:50%; transform:translateX(-50%);
+  white-space:nowrap; font-size:11px; padding:4px 8px; border-radius:var(--r-sm);
+  background:var(--tx); color:var(--tx-inv); pointer-events:none; z-index:99;
+}
+
+/* ── ANIMATIONS ─────────────────────────── */
+@keyframes spin { to { transform:rotate(360deg); } }
+@keyframes pulse-ring { 0%,100%{opacity:.6;transform:scale(1)}50%{opacity:1;transform:scale(1.04)} }
+@keyframes slide-in-right { from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1} }
+@keyframes fade-in { from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)} }
+@keyframes progress-fill { from{width:0}to{width:var(--pct,42%)} }
+@keyframes stream-in { from{opacity:0;transform:translateX(-4px)}to{opacity:1;transform:none} }
+.spin { animation:spin 1s linear infinite; }
+.pulse-ring { animation:pulse-ring 1.8s ease-in-out infinite; }
+.fade-in { animation:fade-in .25s ease both; }
+.animate-progress { animation:progress-fill 2.8s cubic-bezier(.4,0,.2,1) both; }
+.stream-in { animation:stream-in .3s ease both; }
+
+/* ── TABLE ───────────────────────────────── */
+.data-table { width:100%; border-collapse:separate; border-spacing:0; }
+.data-table th { font-size:11px; font-weight:600; color:var(--tx3); text-transform:uppercase; letter-spacing:.07em; padding:10px 14px; background:var(--surface2); border-bottom:1px solid var(--border); text-align:left; }
+.data-table th:first-child { border-radius:var(--r-md) 0 0 0; }
+.data-table th:last-child { border-radius:0 var(--r-md) 0 0; }
+.data-table td { padding:12px 14px; border-bottom:1px solid var(--border); font-size:13px; color:var(--tx2); vertical-align:middle; }
+.data-table tbody tr:last-child td { border-bottom:none; }
+.data-table tbody tr { transition:background .1s; }
+.data-table tbody tr:hover td { background:var(--surface2); }
+
+/* ── RADIO CARD ──────────────────────────── */
+.radio-card { border:1.5px solid var(--border); border-radius:var(--r-lg); padding:14px 16px; cursor:pointer; transition:border-color .15s, background .15s; }
+.radio-card:hover { border-color:var(--border2); background:var(--surface2); }
+.radio-card.selected { border-color:var(--accent); background:var(--accent-glow); }
+
+/* ── STEP PROGRESS ───────────────────────── */
+.step-track { display:flex; align-items:center; gap:0; margin-bottom:28px; }
+.step-node { display:flex; flex-direction:column; align-items:center; gap:5px; position:relative; z-index:1; }
+.step-circle {
+  width:32px; height:32px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+  font-size:12px; font-weight:700; border:2px solid var(--border); background:var(--surface2); color:var(--tx3);
+  transition:all .2s;
+}
+.step-circle.done { background:var(--accent); border-color:var(--accent); color:var(--tx-inv); }
+.step-circle.active { background:var(--surface); border-color:var(--accent); color:var(--accent); box-shadow:0 0 0 4px var(--accent-glow); }
+.step-label { font-size:11px; font-weight:600; color:var(--tx3); white-space:nowrap; }
+.step-label.done,.step-label.active { color:var(--tx2); }
+.step-label.active { color:var(--accent); }
+.step-line { flex:1; height:2px; background:var(--border); margin-bottom:17px; }
+.step-line.done { background:var(--accent); }
+
+/* ── GLASS PANEL ─────────────────────────── */
+.glass { background:rgba(255,255,255,.06); backdrop-filter:blur(20px); border:1px solid rgba(255,255,255,.12); }
+[data-theme="dark"] .glass { background:rgba(12,18,32,.7); }
+</style>
+
+
+</head>
+<body>
+<div class="shell">
+
+<aside class="sidebar" role="navigation" aria-label="Main navigation">
+  <div class="sb-logo">
+    <div class="sb-logo-mark">
+      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h12M4 10h8M4 14h10"/></svg>
+    </div>
+    <div>
+      <div class="sb-logo-text">SPL-3</div>
+      <div class="sb-logo-sub">by IIT, University of Dhaka</div>
+    </div>
+  </div>
+  
+        <button class="sb-ws" onclick="void(0)">
+          <span class="sb-ws-icon">AC</span>
+          <span class="sb-ws-name">Acme Corp</span>
+          <span class="sb-ws-badge">Pro</span>
+        </button>
+  <nav class="sb-nav">
+    <a href="02-user-dashboard.html" class="nav-item" aria-current="false"><i data-lucide="layout-dashboard"></i><span>Dashboard</span></a>
+<a href="03-projects.html" class="nav-item" aria-current="false"><i data-lucide="folder-open"></i><span>Projects</span></a>
+<a href="04-srs-step1-input.html" class="nav-item active" aria-current="page"><i data-lucide="file-text"></i><span>SRS Generation</span></a>
+<a href="09-diagram-editor.html" class="nav-item" aria-current="false"><i data-lucide="network"></i><span>Diagrams</span></a>
+<a href="#" class="nav-item" aria-current="false"><i data-lucide="cpu"></i><span>AI Jobs</span></a>
+<a href="08-srs-compare.html" class="nav-item" aria-current="false"><i data-lucide="git-compare"></i><span>Compare</span></a>
+<a href="10-user-settings.html" class="nav-item" aria-current="false"><i data-lucide="settings"></i><span>Settings</span></a>
+
+  </nav>
+  <div class="sb-footer">
+    
+        <button class="sb-new-btn">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          New Project
+        </button>
+        <div class="sb-user" style="margin-top:10px;">
+          <div class="sb-avatar">RA</div>
+          <div>
+            <div class="sb-user-name">Rahul Ahmed</div>
+            <div class="sb-user-role">Pro Plan</div>
+          </div>
+          <a href="10-user-settings.html" class="nav-item" style="margin-left:auto;padding:6px;"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></a>
+        </div>
+  </div>
+</aside>
+<div class="main">
+
+<header class="topbar" role="banner">
+  <nav class="tb-breadcrumb" aria-label="Breadcrumb"><a href="#">Acme Corp</a><svg class="sep" xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="9 18 15 12 9 6"/></svg><span class="cur">SRS Generation</span></nav>
+  <div class="tb-search" role="search">
+    <svg class="tb-search-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+    <input type="search" placeholder="Search… ⌘K" aria-label="Global search">
+  </div>
+  <div class="tb-right">
+    <button class="tb-icon-btn tb-notif" aria-label="Notifications (3 unread)">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+    </button>
+    <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle dark mode">
+      <svg id="icon-sun" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+      <svg id="icon-moon" style="display:none" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+    </button>
+    <button class="tb-avatar-btn" aria-label="User menu" aria-haspopup="true">
+      <div class="tb-avatar">RA</div>
+      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
+    </button>
+  </div>
+</header>
+<main class="page" id="main-content">
+<div class="step-track" role="list" aria-label="Generation progress"><div class="step-node" role="listitem"><div class="step-circle done"><i data-lucide="check" style="width:13px;height:13px;"></i></div><div class="step-label done">Input</div></div><div class="step-line done"> </div><div class="step-node" role="listitem"><div class="step-circle active">2</div><div class="step-label active">Clarify</div></div><div class="step-line "> </div><div class="step-node" role="listitem"><div class="step-circle ">3</div><div class="step-label ">Generating</div></div><div class="step-line "> </div><div class="step-node" role="listitem"><div class="step-circle ">4</div><div class="step-label ">Results</div></div></div>
+<div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:20px;">
+  <div class="page-header" style="margin-bottom:0;">
+    <h1 class="page-title">Clarifying Questions</h1>
+    <p class="page-sub">Step 2 of 4 — Answer these to improve output quality</p>
+  </div>
+</div>
+<div style="display:flex;align-items:center;gap:10px;background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.2);border-radius:var(--r-lg);padding:12px 16px;margin-bottom:20px;" role="status">
+  <i data-lucide="triangle-alert" style="width:16px;height:16px;color:var(--warning);flex-shrink:0;"></i>
+  <p style="font-size:13px;color:var(--tx2);">8 questions identified. You can skip any or all and generate anyway.</p>
+  <div style="flex:1;height:6px;background:rgba(251,191,36,.15);border-radius:var(--r-full);overflow:hidden;"><div style="width:62.5%;height:100%;background:var(--warning);border-radius:var(--r-full);"></div></div>
+  <span style="font-size:13px;font-weight:700;color:var(--tx);white-space:nowrap;">5 / 8</span>
+</div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;padding-bottom:80px;">
+  
+    <div class="card" style="padding:18px;" role="group" aria-labelledby="q1-title">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:11px;font-weight:700;color:var(--tx3);font-family:monospace;">Q1</span>
+          <span class="chip chip-pending" style="font-size:10px;">Missing Actor</span>
+        </div>
+        <button class="btn btn-ghost btn-sm" style="font-size:11px;color:var(--tx3);">Skip</button>
+      </div>
+      <p id="q1-title" style="font-size:14px;font-weight:600;color:var(--tx);margin-bottom:10px;">"Who can view the order history?"</p>
+      <div style="display:flex;align-items:flex-start;gap:8px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-md);padding:10px 12px;margin-bottom:12px;">
+        <i data-lucide="quote" style="width:13px;height:13px;color:var(--warning);flex-shrink:0;margin-top:2px;"></i>
+        <p style="font-size:12px;color:var(--tx2);font-style:italic;">Source: "...view the order history of all users..."</p>
+      </div>
+      <label style="display:block;font-size:11.5px;font-weight:600;color:var(--tx3);margin-bottom:6px;" for="qa1">Your answer</label>
+      <input class="input" id="qa1" type="text" value="Registered users and admin staff" placeholder="Type your answer…" aria-required="false">
+    </div>
+    <div class="card" style="padding:18px;" role="group" aria-labelledby="q2-title">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:11px;font-weight:700;color:var(--tx3);font-family:monospace;">Q2</span>
+          <span class="chip chip-ai" style="font-size:10px;">Missing Object</span>
+        </div>
+        <button class="btn btn-ghost btn-sm" style="font-size:11px;color:var(--tx3);">Skip</button>
+      </div>
+      <p id="q2-title" style="font-size:14px;font-weight:600;color:var(--tx);margin-bottom:10px;">"What payment methods should checkout support?"</p>
+      <div style="display:flex;align-items:flex-start;gap:8px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-md);padding:10px 12px;margin-bottom:12px;">
+        <i data-lucide="quote" style="width:13px;height:13px;color:var(--warning);flex-shrink:0;margin-top:2px;"></i>
+        <p style="font-size:12px;color:var(--tx2);font-style:italic;">Source: "...check out with a saved payment method..."</p>
+      </div>
+      <label style="display:block;font-size:11.5px;font-weight:600;color:var(--tx3);margin-bottom:6px;" for="qa2">Your answer</label>
+      <input class="input" id="qa2" type="text" value="Credit card, debit card, and mobile wallet" placeholder="Type your answer…" aria-required="false">
+    </div>
+    <div class="card" style="padding:18px;" role="group" aria-labelledby="q3-title">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:11px;font-weight:700;color:var(--tx3);font-family:monospace;">Q3</span>
+          <span class="chip chip-danger" style="font-size:10px;">Vague Metric</span>
+        </div>
+        <button class="btn btn-ghost btn-sm" style="font-size:11px;color:var(--tx3);">Skip</button>
+      </div>
+      <p id="q3-title" style="font-size:14px;font-weight:600;color:var(--tx);margin-bottom:10px;">"What is the expected search response time?"</p>
+      <div style="display:flex;align-items:flex-start;gap:8px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-md);padding:10px 12px;margin-bottom:12px;">
+        <i data-lucide="quote" style="width:13px;height:13px;color:var(--warning);flex-shrink:0;margin-top:2px;"></i>
+        <p style="font-size:12px;color:var(--tx2);font-style:italic;">Source: "...search should return results quickly..."</p>
+      </div>
+      <label style="display:block;font-size:11.5px;font-weight:600;color:var(--tx3);margin-bottom:6px;" for="qa3">Your answer</label>
+      <input class="input" id="qa3" type="text" value="Under 500ms for 95% of queries" placeholder="Type your answer…" aria-required="false">
+    </div>
+    <div class="card" style="padding:18px;" role="group" aria-labelledby="q4-title">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:11px;font-weight:700;color:var(--tx3);font-family:monospace;">Q4</span>
+          <span class="chip chip-muted" style="font-size:10px;">Unknown Action</span>
+        </div>
+        <button class="btn btn-ghost btn-sm" style="font-size:11px;color:var(--tx3);">Skip</button>
+      </div>
+      <p id="q4-title" style="font-size:14px;font-weight:600;color:var(--tx);margin-bottom:10px;">"What happens to inventory when an order is cancelled?"</p>
+      <div style="display:flex;align-items:flex-start;gap:8px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-md);padding:10px 12px;margin-bottom:12px;">
+        <i data-lucide="quote" style="width:13px;height:13px;color:var(--warning);flex-shrink:0;margin-top:2px;"></i>
+        <p style="font-size:12px;color:var(--tx2);font-style:italic;">Source: "...admins can manage inventory..."</p>
+      </div>
+      <label style="display:block;font-size:11.5px;font-weight:600;color:var(--tx3);margin-bottom:6px;" for="qa4">Your answer</label>
+      <input class="input" id="qa4" type="text" value="" placeholder="Type your answer…" aria-required="false">
+    </div>
+    <div class="card" style="padding:18px;" role="group" aria-labelledby="q5-title">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:11px;font-weight:700;color:var(--tx3);font-family:monospace;">Q5</span>
+          <span class="chip chip-pending" style="font-size:10px;">Missing Actor</span>
+        </div>
+        <button class="btn btn-ghost btn-sm" style="font-size:11px;color:var(--tx3);">Skip</button>
+      </div>
+      <p id="q5-title" style="font-size:14px;font-weight:600;color:var(--tx);margin-bottom:10px;">"Who approves refund requests over $500?"</p>
+      <div style="display:flex;align-items:flex-start;gap:8px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-md);padding:10px 12px;margin-bottom:12px;">
+        <i data-lucide="quote" style="width:13px;height:13px;color:var(--warning);flex-shrink:0;margin-top:2px;"></i>
+        <p style="font-size:12px;color:var(--tx2);font-style:italic;">Source: "...support refunds within 30 days..."</p>
+      </div>
+      <label style="display:block;font-size:11.5px;font-weight:600;color:var(--tx3);margin-bottom:6px;" for="qa5">Your answer</label>
+      <input class="input" id="qa5" type="text" value="Store manager role" placeholder="Type your answer…" aria-required="false">
+    </div>
+    <div class="card" style="padding:18px;" role="group" aria-labelledby="q6-title">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:11px;font-weight:700;color:var(--tx3);font-family:monospace;">Q6</span>
+          <span class="chip chip-danger" style="font-size:10px;">Vague Metric</span>
+        </div>
+        <button class="btn btn-ghost btn-sm" style="font-size:11px;color:var(--tx3);">Skip</button>
+      </div>
+      <p id="q6-title" style="font-size:14px;font-weight:600;color:var(--tx);margin-bottom:10px;">"How many failed login attempts trigger a lockout?"</p>
+      <div style="display:flex;align-items:flex-start;gap:8px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-md);padding:10px 12px;margin-bottom:12px;">
+        <i data-lucide="quote" style="width:13px;height:13px;color:var(--warning);flex-shrink:0;margin-top:2px;"></i>
+        <p style="font-size:12px;color:var(--tx2);font-style:italic;">Source: "...system should be secure..."</p>
+      </div>
+      <label style="display:block;font-size:11.5px;font-weight:600;color:var(--tx3);margin-bottom:6px;" for="qa6">Your answer</label>
+      <input class="input" id="qa6" type="text" value="" placeholder="Type your answer…" aria-required="false">
+    </div>
+    <div class="card" style="padding:18px;" role="group" aria-labelledby="q7-title">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:11px;font-weight:700;color:var(--tx3);font-family:monospace;">Q7</span>
+          <span class="chip chip-ai" style="font-size:10px;">Missing Object</span>
+        </div>
+        <button class="btn btn-ghost btn-sm" style="font-size:11px;color:var(--tx3);">Skip</button>
+      </div>
+      <p id="q7-title" style="font-size:14px;font-weight:600;color:var(--tx);margin-bottom:10px;">"What format should sales reports be exported in?"</p>
+      <div style="display:flex;align-items:flex-start;gap:8px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-md);padding:10px 12px;margin-bottom:12px;">
+        <i data-lucide="quote" style="width:13px;height:13px;color:var(--warning);flex-shrink:0;margin-top:2px;"></i>
+        <p style="font-size:12px;color:var(--tx2);font-style:italic;">Source: "...view sales reports..."</p>
+      </div>
+      <label style="display:block;font-size:11.5px;font-weight:600;color:var(--tx3);margin-bottom:6px;" for="qa7">Your answer</label>
+      <input class="input" id="qa7" type="text" value="CSV and PDF" placeholder="Type your answer…" aria-required="false">
+    </div>
+    <div class="card" style="padding:18px;" role="group" aria-labelledby="q8-title">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:11px;font-weight:700;color:var(--tx3);font-family:monospace;">Q8</span>
+          <span class="chip chip-muted" style="font-size:10px;">Unknown Action</span>
+        </div>
+        <button class="btn btn-ghost btn-sm" style="font-size:11px;color:var(--tx3);">Skip</button>
+      </div>
+      <p id="q8-title" style="font-size:14px;font-weight:600;color:var(--tx);margin-bottom:10px;">"Should guest browsing be allowed without an account?"</p>
+      <div style="display:flex;align-items:flex-start;gap:8px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-md);padding:10px 12px;margin-bottom:12px;">
+        <i data-lucide="quote" style="width:13px;height:13px;color:var(--warning);flex-shrink:0;margin-top:2px;"></i>
+        <p style="font-size:12px;color:var(--tx2);font-style:italic;">Source: "...only registered users can place orders..."</p>
+      </div>
+      <label style="display:block;font-size:11.5px;font-weight:600;color:var(--tx3);margin-bottom:6px;" for="qa8">Your answer</label>
+      <input class="input" id="qa8" type="text" value="Yes, browsing only; checkout requires login" placeholder="Type your answer…" aria-required="false">
+    </div>
+</div>
+<div style="position:fixed;bottom:0;left:240px;right:0;background:var(--surface);border-top:1px solid var(--border);padding:14px 32px;display:flex;align-items:center;justify-content:space-between;z-index:20;backdrop-filter:blur(12px);" role="status" aria-live="polite">
+  <span style="font-size:13px;color:var(--tx2);">8 questions &nbsp;·&nbsp; <strong style="color:var(--tx);">5 answered</strong></span>
+  <div style="display:flex;gap:10px;">
+    <button class="btn btn-secondary">Skip All</button>
+    <a href="06-srs-step3-progress.html" class="btn btn-primary"><i data-lucide="zap"></i>Generate Now</a>
+  </div>
+</div>
+</main>
+</div>
+</div>
+<script>lucide.createIcons();</script>
+
+<script>
+(function(){
+  const saved = localStorage.getItem('spl3-theme') || 'light';
+  document.documentElement.setAttribute('data-theme', saved);
+  if(saved==='dark'){ document.getElementById('icon-sun').style.display='none'; document.getElementById('icon-moon').style.display=''; }
+})();
+function toggleTheme(){
+  const current = document.documentElement.getAttribute('data-theme');
+  const next = current==='dark'?'light':'dark';
+  document.documentElement.setAttribute('data-theme',next);
+  localStorage.setItem('spl3-theme',next);
+  document.getElementById('icon-sun').style.display = next==='dark'?'none':'';
+  document.getElementById('icon-moon').style.display = next==='dark'?'':'none';
+}
+</script>
+
+</body>
+</html>
