@@ -97,7 +97,15 @@ def singularize(value: str) -> str:
         return cleaned[:-3] + "y"
     if lowered.endswith("sses"):
         return cleaned[:-2]
-    if lowered.endswith("s") and not lowered.endswith("ss") and len(lowered) > 3:
+    if lowered.endswith("uses") and len(lowered) > 4:
+        # "statuses" -> "status", "buses" -> "bus", "viruses" -> "virus" - the
+        # singular itself ends in "-us", so only the plural "-es" comes off.
+        return cleaned[:-2]
+    if lowered.endswith(("us", "is", "ss")):
+        # Already singular: "status", "campus", "virus", "analysis", "basis",
+        # "crisis" - the trailing "s" is part of the word, not a plural marker.
+        return cleaned
+    if lowered.endswith("s") and len(lowered) > 3:
         return cleaned[:-1]
     return cleaned
 
@@ -431,10 +439,18 @@ def split_sentences(normalized_text: str) -> list[dict[str, Any]]:
 def _split_clause_text(text: str) -> list[str]:
     """Split a sentence into clauses without shredding noun lists.
 
-    Splits on semicolons and on coordinating conjunctions, but only when the
-    following fragment looks like a new predicate (starts with a modal or a known
-    action verb). This keeps "name, email, and phone number" together while still
-    separating "the user can log in and the admin can approve".
+    Splits on semicolons, "then", and "but" (adversative coordinators almost
+    always join two full independent clauses), and on coordinating conjunctions
+    when the following fragment looks like a new predicate (starts with a modal
+    or a known action verb). This keeps "name, email, and phone number" together
+    while still separating "the user can log in and the admin can approve".
+
+    A bare verb with nothing after it ("reject") or a buffer that already ends in
+    one ("The manager can approve") is a different case: English states the
+    object once, at the end of a coordinated verb list ("approve, reject, or
+    forward the request"), so those pieces are merged with "and" instead of
+    split - which lets _expand_action_object / the dedicated and-joined-verbs
+    match in extract_facts distribute the shared object across every verb.
     """
     action_vocab = set(_action_aliases())
     modal_words = {
@@ -447,14 +463,38 @@ def _split_clause_text(text: str) -> list[str]:
         for word in phrase.lower().split()
     }
 
+    def _words(fragment: str) -> list[str]:
+        return re.findall(r"[a-zA-Z']+", fragment.lower())
+
+    def has_modal(fragment: str) -> bool:
+        return any(word in modal_words for word in _words(fragment)[:4])
+
+    def _is_action_word(word: str) -> bool:
+        return word in action_vocab or singularize(word) in action_vocab
+
+    def is_bare_verb_tail(fragment: str) -> bool:
+        """True when `fragment` ends in a known action verb with nothing stated
+        after it - it is still waiting for the object a later coordinated verb
+        will supply."""
+        words = _words(fragment)
+        return bool(words) and _is_action_word(words[-1])
+
     def looks_like_predicate(fragment: str) -> bool:
-        head = re.findall(r"[a-zA-Z']+", fragment.lower())[:4]
-        return any(
-            word in modal_words
-            or word in action_vocab
-            or singularize(word) in action_vocab
-            for word in head
-        )
+        head = _words(fragment)[:4]
+        return any(word in modal_words or _is_action_word(word) for word in head)
+
+    def _looks_like_bare_noun_phrase(fragment: str) -> bool:
+        """True for a short, plain noun phrase like "due date" or "phone
+        number" - even when its head word ("return" in "return date") is
+        coincidentally also a recognized action verb elsewhere. A genuine new
+        clause always has an article/determiner somewhere before its object
+        ("update the status"); a bare 2-3 word compound noun never does."""
+        candidate = re.sub(r"^(?:a|an|the)\s+", "", fragment.strip(), flags=re.IGNORECASE)
+        if not candidate or len(candidate.split()) > 3:
+            return False
+        if re.search(r"\b(?:a|an|the)\b", candidate, flags=re.IGNORECASE):
+            return False
+        return _is_attribute_like(candidate)
 
     # A relative / subordinate clause ("books that are damaged or lost") modifies
     # the noun before it and must never be split on its internal and/or/comma.
@@ -477,7 +517,7 @@ def _split_clause_text(text: str) -> list[str]:
         return value
 
     # Hard breaks first.
-    segments = [segment.strip() for segment in re.split(r"\s*;\s*|\s+\bthen\b\s+", text) if segment.strip()]
+    segments = [segment.strip() for segment in re.split(r"\s*;\s*|\s*,?\s+\b(?:then|but)\b\s*,?\s*", text) if segment.strip()]
     result: list[str] = []
     for segment in segments:
         segment = _protect_quantity(segment)
@@ -489,16 +529,54 @@ def _split_clause_text(text: str) -> list[str]:
         pieces = re.split(r"\s*,?\s+\b(?:and|or)\b\s+|\s*,\s+", segment) if segment else []
         buffer = pieces[0].strip() if pieces else segment
         segment_result: list[str] = []
+        pending_bare_verbs: list[str] = []
         for piece in pieces[1:]:
             piece = piece.strip()
             if not piece:
                 continue
-            if looks_like_predicate(piece):
+            if _looks_like_bare_noun_phrase(piece):
+                # A short, plain noun phrase ("return date", "phone number") -
+                # even when its head word ("return") is coincidentally also a
+                # recognized action verb elsewhere. Never a new clause with an
+                # elided subject; keep it in the current object/attribute list.
+                buffer = f"{buffer}, {piece}" if buffer else piece
+                continue
+            piece_words = _words(piece)
+            piece_is_bare_verb = len(piece_words) == 1 and _is_action_word(piece_words[0])
+            if has_modal(piece):
+                # A genuine new clause: flush anything still waiting for a
+                # shared object first (best effort - none ever arrived).
+                if buffer and is_bare_verb_tail(buffer) and pending_bare_verbs:
+                    pending_bare_verbs.insert(0, buffer)
+                    buffer = ""
+                if pending_bare_verbs:
+                    segment_result.extend(pending_bare_verbs)
+                    pending_bare_verbs = []
+                if buffer:
+                    segment_result.append(buffer)
+                buffer = piece
+                continue
+            if piece_is_bare_verb:
+                pending_bare_verbs.append(piece)
+                continue
+            if pending_bare_verbs or (buffer and is_bare_verb_tail(buffer)):
+                # This piece states the object the accumulated bare verbs (or
+                # the buffer's own trailing bare verb) were sharing.
+                buffer = " and ".join([buffer, *pending_bare_verbs, piece]) if buffer else " and ".join([*pending_bare_verbs, piece])
+                pending_bare_verbs = []
+            elif looks_like_predicate(piece):
                 if buffer:
                     segment_result.append(buffer)
                 buffer = piece
             else:
                 buffer = f"{buffer}, {piece}" if buffer else piece
+        if pending_bare_verbs:
+            # Bare verbs with no object ever supplied - keep them as their own
+            # minimal clauses rather than silently dropping them.
+            if buffer:
+                segment_result.append(buffer)
+            segment_result.extend(pending_bare_verbs)
+            buffer = ""
         if buffer:
             segment_result.append(buffer)
         if relative_tail:
@@ -664,7 +742,43 @@ def _action_aliases() -> dict[str, str]:
         for dictionary_name in ("action_aliases", "action_aliases_extra")
         for key, value in dictionaries.get(dictionary_name, {}).items()
     }
+    # irregular_verbs.json ("made" -> "make", "sent" -> "send", ...) was loaded
+    # nowhere - every irregular past tense fell through as an "Unknown action".
+    # Wire it in, self-mapping the base form too so "make"/"leave"/"run"/"build"
+    # resolve as canonical actions in their own right.
+    for inflected, base in dictionaries.get("irregular_verbs", {}).items():
+        base_lower = str(base).strip().lower()
+        if not base_lower:
+            continue
+        aliases.setdefault(base_lower, base_lower)
+        aliases[str(inflected).strip().lower()] = aliases[base_lower]
     return aliases
+
+
+def _regular_verb_bases(word: str) -> list[str]:
+    """Candidate base forms for a possibly-inflected regular verb, tried in
+    order: "generated" -> ["generat", "generate"], "processes" -> ["process",
+    "processe"], "stopped" -> ["stopp", "stoppe", "stop"]. Cheap suffix
+    stripping, not a full morphological analyzer - just enough to recover a
+    base form already present as an action dictionary key, so a verb that's
+    listed in only one tense (e.g. action_aliases.json has "generate" but not
+    "generated"/"generating") still resolves instead of being flagged unknown.
+    """
+    candidates: list[str] = []
+    if word.endswith("ied") and len(word) > 4:
+        candidates.append(word[:-3] + "y")
+    for suffix in ("ing", "ed"):
+        if word.endswith(suffix) and len(word) > len(suffix) + 2:
+            stem = word[: -len(suffix)]
+            candidates.append(stem)
+            candidates.append(stem + "e")
+            if len(stem) > 2 and stem[-1] == stem[-2] and stem[-1] not in "aeiou":
+                candidates.append(stem[:-1])
+    if word.endswith("es") and len(word) > 4:
+        candidates.append(word[:-2])
+    if word.endswith("s") and not word.endswith("ss") and len(word) > 3:
+        candidates.append(word[:-1])
+    return candidates
 
 
 def _relationship_phrases() -> dict[str, str]:
@@ -696,14 +810,49 @@ def _modal_pattern() -> str:
     return r"(?:" + "|".join(ordered) + r")"
 
 
+def _is_recognized_action_word(word: str) -> bool:
+    """True when `word` (in any inflection) resolves to a known action -
+    the same recognition _canonical_action ends up using, exposed separately
+    so the various "does this look like a verb" gates before it agree with
+    what it can actually canonicalize."""
+    aliases = _action_aliases()
+    if word in aliases or singularize(word) in aliases:
+        return True
+    return any(candidate in aliases for candidate in _regular_verb_bases(word))
+
+
 def _canonical_action(raw_action: str | None) -> tuple[str | None, str, list[str]]:
     if raw_action is None:
         return None, "EXT_NO_ACTION_001", []
     lowered = raw_action.strip().lower()
-    canonical = _action_aliases().get(lowered)
+    aliases = _action_aliases()
+    canonical = aliases.get(lowered)
     if canonical:
         return canonical, "EXT_ACTION_ALIAS_001", []
+    for candidate in _regular_verb_bases(lowered):
+        canonical = aliases.get(candidate)
+        if canonical:
+            return canonical, "EXT_ACTION_ALIAS_001", []
     return lowered, "EXT_UNKNOWN_ACTION_001", [f'Unknown action "{raw_action}".']
+
+
+def _absorb_phrasal_particle(raw_action: str, object_group: str | None) -> tuple[str, str | None]:
+    """"log" + "in to the system" -> "log in" + "to the system".
+
+    The action/object regexes capture a single bare verb, so a phrasal verb's
+    particle ("log in", "sign up", "check out", "back up") is mistaken for the
+    start of the object and the verb itself is left unrecognized. Recombine the
+    verb with the next word whenever that pair is itself a known action; falls
+    back unchanged when it isn't.
+    """
+    object_words = (object_group or "").split()
+    if not object_words or " " in raw_action.strip():
+        return raw_action, object_group
+    particle = object_words[0].lower()
+    combined = f"{raw_action.strip().lower()} {particle}"
+    if combined in _action_aliases():
+        return combined, " ".join(object_words[1:])
+    return raw_action, object_group
 
 
 def _split_coordinated(phrase: str) -> list[str]:
@@ -730,12 +879,59 @@ def _expand_action_object(raw_action: str | None, raw_object: str | None) -> lis
     return [(actions[0], objects[0])]
 
 
+_CONDITION_TRIGGERS = r"(?:if|when|whenever|unless|once|after|before|while|as soon as)"
+_CONDITION_SPECIFIC_STATE_RE = re.compile(
+    r"\b(?:if|when|unless)\s+(?:the\s+|a\s+|an\s+)?(?P<subject>[a-zA-Z][\w -]*?)\s+"
+    r"(?P<verb>fails|failed|is failed|succeeds|expires|is invalid|is valid)\b",
+    re.IGNORECASE,
+)
+
+
+def _condition_state_pattern() -> str:
+    words = {str(item).lower() for item in load_dictionaries().get("state_words", [])}
+    return "|".join(re.escape(word) for word in sorted(words, key=len, reverse=True))
+
+
+def _condition_match(text: str) -> re.Match[str] | None:
+    """Find a subordinate condition clause ("if payment fails", "once the order
+    is shipped") anywhere in `text`. Tries the original narrow if/when/unless +
+    specific-verb wording first (unchanged, so existing phrasing is untouched),
+    then falls back to a broader trigger set ("once", "after", "before",
+    "while", "whenever", "as soon as") paired with a generic "is/are/was/were/
+    has been/have been <state>" pattern, where <state> is a known state word
+    (confirmed, shipped, approved, cancelled, ...). Without this, a clause like
+    "once the payment is confirmed" fell through to the plain fact parser, which
+    has no way to represent a subordinate condition and produced a bogus
+    standalone fact instead (e.g. actor "PaymentIs").
+    """
+    specific = _CONDITION_SPECIFIC_STATE_RE.search(text)
+    if specific:
+        return specific
+    state_pattern = _condition_state_pattern()
+    if not state_pattern:
+        return None
+    return re.search(
+        rf"\b{_CONDITION_TRIGGERS}\s+(?:the\s+|a\s+|an\s+)?(?P<subject>[a-zA-Z][\w -]*?)\s+"
+        rf"(?:is|are|was|were|has been|have been)\s+(?P<state>{state_pattern})\b",
+        text,
+        re.IGNORECASE,
+    )
+
+
 def _condition_from_text(text: str) -> dict[str, Any] | None:
-    match = re.search(r"\b(?:if|when|unless)\s+(?:the\s+|a\s+|an\s+)?(?P<subject>[a-zA-Z][\w -]*?)\s+(?P<verb>fails|failed|is failed|succeeds|expires|is invalid|is valid)\b", text, re.IGNORECASE)
+    match = _condition_match(text)
     if not match:
         return None
-    verb = match.group("verb").lower().replace("is ", "")
-    return {"subject": normalize_entity(match.group("subject")), "operator": "is", "value": "failed" if verb in {"fails", "failed"} else verb}
+    groups = match.groupdict()
+    if groups.get("verb"):
+        verb = groups["verb"].lower().replace("is ", "")
+        value = "failed" if verb in {"fails", "failed"} else verb
+    else:
+        # "is confirmed"/"is shipped" (kept together, unlike the plain-verb
+        # branch above) so condition_to_text's simple "<subject> <value>" join
+        # reads as "the Payment is confirmed" rather than "Payment confirmed".
+        value = f"is {groups['state'].lower()}"
+    return {"subject": normalize_entity(match.group("subject")), "operator": "is", "value": value}
 
 
 def _quantity_from_text(text: str) -> tuple[str | None, str | None]:
@@ -886,6 +1082,19 @@ def extract_facts(sentences: list[dict[str, Any]], clauses: list[dict[str, Any]]
         lowered = text.lower()
         fact_index = len(facts) + 1
         condition = _condition_from_text(sentence["normalizedText"])
+        # A clause that is itself entirely the subordinate condition trigger
+        # ("once the payment is confirmed") has already been captured above and
+        # attached to every clause of this sentence via `condition` - it is not
+        # a requirement of its own. Emitting a second, standalone fact from its
+        # leftover words (after denarrate_clause strips the trigger word) would
+        # just mangle the same condition into a bogus fact (e.g. actor
+        # "PaymentIs"), so skip it here instead.
+        clause_source = clause["normalizedText"].strip()
+        clause_condition_match = _condition_match(clause_source)
+        if clause_condition_match and clause_condition_match.start() == 0:
+            trailing = clause_source[clause_condition_match.end():].strip(" ,;:.")
+            if not trailing:
+                continue
         nfr = _nfr_from_sentence(sentence)
 
         if nfr and ("system" in lowered or nfr["category"]):
@@ -905,6 +1114,44 @@ def extract_facts(sentences: list[dict[str, Any]], clauses: list[dict[str, Any]]
                 )
             )
             known_entities.extend(["System", nfr["category"]])
+            continue
+
+        # Passive voice with an explicit agent ("An email shall be sent by the
+        # system to the customer") - the bare passive_match below requires
+        # nothing at all after the verb, so this construction used to fall
+        # through to active_match, which mis-parsed the "by ... to ..." tail
+        # into a bogus actor/action/object triple.
+        passive_agent_match = re.match(
+            rf"^(?:{article})?(?P<direct_object>[a-zA-Z][\w -]*?)\s+{modal_pattern}\s+be\s+(?P<action>[a-zA-Z]+)\s+by\s+"
+            rf"(?:{article})?(?P<actor>[a-zA-Z][\w -]*?)(?:\s+to\s+(?:{article})?(?P<recipient>[a-zA-Z][\w -]*))?$",
+            text,
+            flags=re.IGNORECASE,
+        )
+        if passive_agent_match:
+            raw_action = passive_agent_match.group("action")
+            actor = resolve_actor(passive_agent_match.group("actor"))
+            recipient = passive_agent_match.group("recipient")
+            # The recipient of a communication verb ("send an email to the
+            # customer") is the actionable relationship target, matching how
+            # "notify the customer" is modeled elsewhere in this file; fall
+            # back to the passive subject itself when there is no recipient.
+            object_name = normalize_entity(recipient) if recipient else normalize_entity(passive_agent_match.group("direct_object"))
+            action, _, warnings = _canonical_action(raw_action)
+            facts.append(
+                _fact_template(
+                    fact_index=fact_index,
+                    sentence=sentence,
+                    clause=clause,
+                    actor=actor,
+                    action=action,
+                    object_name=object_name,
+                    raw_action=raw_action,
+                    matched_rule_id="EXT_PASSIVE_WITH_AGENT_001",
+                    extraction_type="PASSIVE_PATTERN",
+                    warnings=warnings,
+                )
+            )
+            known_entities.extend([item for item in [actor, object_name] if item])
             continue
 
         passive_match = re.match(
@@ -945,36 +1192,43 @@ def extract_facts(sentences: list[dict[str, Any]], clauses: list[dict[str, Any]]
                 break
         if relationship_match and relationship_type:
             actor = resolve_actor(relationship_match.group("source"))
-            object_name = normalize_entity(relationship_match.group("object"))
             action, _, action_warnings = _canonical_action(raw_action)
-            warnings = action_warnings
-            source_multiplicity = None
-            target_multiplicity = None
-            multiplicity_rule = None
-            if relationship_type in CARDINALITY_RELATIONSHIP_TYPES:
-                target_multiplicity, multiplicity_rule = _quantity_from_text(text)
-                source_multiplicity = "1"
-                if target_multiplicity is None:
-                    target_multiplicity = "0..*"
-                    warnings.append("Default multiplicity applied.")
-            facts.append(
-                _fact_template(
-                    fact_index=fact_index,
-                    sentence=sentence,
-                    clause=clause,
-                    actor=actor,
-                    action=action,
-                    object_name=object_name,
-                    raw_action=raw_action,
-                    matched_rule_id="REL_PHRASE_DICTIONARY_001" if multiplicity_rule is None else multiplicity_rule,
-                    extraction_type="PHRASE_PATTERN",
-                    relationship_type=relationship_type,
-                    source_multiplicity=source_multiplicity,
-                    target_multiplicity=target_multiplicity,
-                    warnings=warnings,
+            # "a member has a full name, an email address and a membership
+            # status" names three separate fields, not one combined object -
+            # split the coordinated list so each becomes its own fact instead
+            # of being mashed into a single, mangled entity name.
+            for object_text in _split_coordinated(relationship_match.group("object")):
+                object_name = normalize_entity(object_text)
+                if not object_name:
+                    continue
+                warnings = list(action_warnings)
+                source_multiplicity = None
+                target_multiplicity = None
+                multiplicity_rule = None
+                if relationship_type in CARDINALITY_RELATIONSHIP_TYPES:
+                    target_multiplicity, multiplicity_rule = _quantity_from_text(text)
+                    source_multiplicity = "1"
+                    if target_multiplicity is None:
+                        target_multiplicity = "0..*"
+                        warnings.append("Default multiplicity applied.")
+                facts.append(
+                    _fact_template(
+                        fact_index=len(facts) + 1,
+                        sentence=sentence,
+                        clause=clause,
+                        actor=actor,
+                        action=action,
+                        object_name=object_name,
+                        raw_action=raw_action,
+                        matched_rule_id="REL_PHRASE_DICTIONARY_001" if multiplicity_rule is None else multiplicity_rule,
+                        extraction_type="PHRASE_PATTERN",
+                        relationship_type=relationship_type,
+                        source_multiplicity=source_multiplicity,
+                        target_multiplicity=target_multiplicity,
+                        warnings=warnings,
+                    )
                 )
-            )
-            known_entities.extend([item for item in [actor, object_name] if item])
+                known_entities.extend([item for item in [actor, object_name] if item])
             continue
 
         # "The system shall allow/enable/permit/let <actor> to <action> <object>"
@@ -1006,6 +1260,47 @@ def extract_facts(sentences: list[dict[str, Any]], clauses: list[dict[str, Any]]
                 known_entities.extend([item for item in [actor, normalized_object] if item])
             continue
 
+        # "<actor> <modal> <verb1> and <verb2> (and <verb3> ...) <object>" - a
+        # coordinated verb list sharing one trailing object ("approve, reject, or
+        # forward the request", already normalized to "and" by _split_clause_text,
+        # or a sentence written that way directly: "generate and email an
+        # invoice"). The generic active_match below can't parse this: its action
+        # and object groups are both permissive, so a lazy engine always picks the
+        # shortest possible action and dumps every other verb into the object.
+        # Each candidate verb is validated against the action dictionary so this
+        # never misfires on an ordinary "<actor> <modal> <verb> <object>" clause.
+        and_verb_list_match = re.match(
+            rf"^(?:{article})?(?P<actor>[a-zA-Z][\w -]*?)\s+{modal_pattern}\s+"
+            rf"(?P<verbs>[a-zA-Z]+(?:\s+and\s+[a-zA-Z]+)+)\s+(?:{article})?(?P<object>[a-zA-Z][\w -]*)$",
+            text,
+            flags=re.IGNORECASE,
+        )
+        if and_verb_list_match:
+            verb_tokens = [token.strip() for token in and_verb_list_match.group("verbs").split(" and ")]
+            if verb_tokens and all(_is_recognized_action_word(token.lower()) for token in verb_tokens):
+                actor = resolve_actor(and_verb_list_match.group("actor"))
+                object_group = _strip_relative_clause(and_verb_list_match.group("object"))
+                for action_name, object_name in _expand_action_object(" and ".join(verb_tokens), object_group):
+                    action, action_rule_id, warnings = _canonical_action(action_name)
+                    normalized_object = normalize_entity(object_name)
+                    facts.append(
+                        _fact_template(
+                            fact_index=len(facts) + 1,
+                            sentence=sentence,
+                            clause=clause,
+                            actor=actor,
+                            action=action,
+                            object_name=normalized_object,
+                            raw_action=action_name,
+                            matched_rule_id="EXT_AND_JOINED_VERB_LIST_001",
+                            extraction_type="EXACT_PATTERN" if action_rule_id != "EXT_UNKNOWN_ACTION_001" else "POSITIONAL_GUESS",
+                            condition=condition,
+                            warnings=warnings,
+                        )
+                    )
+                    known_entities.extend([item for item in [actor, normalized_object] if item])
+                continue
+
         only_match = re.match(
             rf"^only\s+(?:{article})?(?P<actor>[a-zA-Z][\w -]*?)\s+{modal_pattern}\s+(?P<action>[a-zA-Z][\w ]*?)\s+(?:{article})?(?P<object>[a-zA-Z][\w -]*)$",
             text,
@@ -1026,7 +1321,7 @@ def extract_facts(sentences: list[dict[str, Any]], clauses: list[dict[str, Any]]
             )
             if candidate:
                 head_action = candidate.group("action").strip().lower()
-                if head_action in _action_aliases() or singularize(head_action) in _action_aliases():
+                if _is_recognized_action_word(head_action):
                     present_match = candidate
 
         match = only_match or active_match or present_match
@@ -1036,6 +1331,7 @@ def extract_facts(sentences: list[dict[str, Any]], clauses: list[dict[str, Any]]
             # "remove books that are damaged or lost" — the object is just "books";
             # the relative clause is a filter, not a second object.
             object_group = _strip_relative_clause(match.group("object"))
+            raw_action, object_group = _absorb_phrasal_particle(raw_action, object_group)
             for action_name, object_name in _expand_action_object(raw_action, object_group):
                 action, action_rule_id, warnings = _canonical_action(action_name)
                 normalized_object = normalize_entity(object_name)
@@ -1129,6 +1425,27 @@ def extract_facts(sentences: list[dict[str, Any]], clauses: list[dict[str, Any]]
                     warnings=warnings,
                 )
             )
+
+    # An elided subject in a coordinated clause ("...shall notify the warehouse
+    # and update the inventory") leaves the second clause with no actor of its
+    # own - it shares the previous clause's subject. Fill it in per sentence, in
+    # textual order, but only for a genuine action+object predicate - never for
+    # a passive-voice fact, where a missing actor is a deliberate, separate
+    # clarification question, not an ellipsis to resolve here.
+    last_actor_by_sentence: dict[int, str] = {}
+    for fact in facts:
+        sentence_index = fact.get("sentenceIndex")
+        if fact.get("actor"):
+            last_actor_by_sentence[sentence_index] = fact["actor"]
+        elif (
+            fact.get("extractionType") != "PASSIVE_PATTERN"
+            and fact.get("action")
+            and fact.get("object")
+            and sentence_index in last_actor_by_sentence
+        ):
+            fact["actor"] = last_actor_by_sentence[sentence_index]
+            fact["missingFields"] = [field for field in fact.get("missingFields", []) if field != "actor"]
+            fact.setdefault("warnings", []).append("Actor inferred from the preceding clause in this sentence.")
     return facts
 
 
@@ -1577,11 +1894,17 @@ def generate_requirements(final_story: dict[str, Any], facts: list[dict[str, Any
         object_name = section.get("object") or "UnknownObject"
         fr_count += 1
         req_id = f"FR-{fr_count:03d}"
-        actor_phrase = "an unspecified actor" if actor == "UnknownActor" else f"the {actor}"
         condition = section.get("condition")
-        statement = f"The system shall allow {actor_phrase} to {action} the {object_name}."
+        if actor == "System":
+            # "The system shall allow the System to generate the Invoice" is
+            # nonsensical - the system doesn't need its own permission to act.
+            core = f"the system shall {action} the {object_name}"
+        else:
+            actor_phrase = "an unspecified actor" if actor == "UnknownActor" else f"the {actor}"
+            core = f"the system shall allow {actor_phrase} to {action} the {object_name}"
+        statement = f"{core[0].upper()}{core[1:]}."
         if condition:
-            statement = f"If {condition}, the system shall allow {actor_phrase} to {action} the {object_name}."
+            statement = f"If {condition}, {core}."
         requirements.append(
             {
                 "id": req_id,
