@@ -3,14 +3,15 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import Diagram, DiagramRequirementLink, DiagramVersion, WorkspaceMember
-from app.services.billing_service import record_feature_usage
+from app.db.models import Diagram, DiagramVersion, Project, WorkspaceMember
 from app.services.project_service import ProjectNotFoundError, get_active_project
 from app.services.workspace_service import require_workspace_role
 
 DIAGRAM_MUTATION_ROLES = {"owner", "admin", "member"}
 ACTIVE_DIAGRAM_STATUS = "active"
+ARCHIVED_DIAGRAM_STATUS = "archived"
 MANUAL_DIAGRAM_SOURCE = "manual"
+GENERATED_DIAGRAM_SOURCE = "generated"
 
 
 class DiagramError(Exception):
@@ -50,17 +51,17 @@ def create_manual_diagram(
     diagram_type: str,
     drawio_xml: str,
     diagram_json: str | None,
+    source: str = MANUAL_DIAGRAM_SOURCE,
 ) -> Diagram:
     require_workspace_role(membership, allowed_roles=DIAGRAM_MUTATION_ROLES)
     _ensure_project_access(db, membership=membership, project_id=project_id)
-    record_feature_usage(db, workspace_id=membership.workspace_id, feature="manual_diagram_save")
 
     diagram = Diagram(
         workspace_id=membership.workspace_id,
         project_id=project_id,
         title=_clean_required(title, "Diagram title is required"),
         diagram_type=_clean_required(diagram_type, "Diagram type is required"),
-        source=MANUAL_DIAGRAM_SOURCE,
+        source=source,
         status=ACTIVE_DIAGRAM_STATUS,
         current_version=1,
         created_by_user_id=membership.user_id,
@@ -96,6 +97,21 @@ def list_active_diagrams(
                 Diagram.status == ACTIVE_DIAGRAM_STATUS,
             )
             .order_by(Diagram.created_at.desc())
+        )
+    )
+
+
+def list_workspace_diagrams(db: Session, *, membership: WorkspaceMember) -> list[Diagram]:
+    return list(
+        db.scalars(
+            select(Diagram)
+            .join(Project, Project.id == Diagram.project_id)
+            .where(
+                Diagram.workspace_id == membership.workspace_id,
+                Diagram.status == ACTIVE_DIAGRAM_STATUS,
+                Project.status == "active",
+            )
+            .order_by(Diagram.updated_at.desc())
         )
     )
 
@@ -143,22 +159,6 @@ def get_diagram_detail(
 
 
 
-def list_diagram_requirement_links(
-    db: Session, *, membership: WorkspaceMember, project_id: UUID, diagram_id: UUID
-) -> list[DiagramRequirementLink]:
-    get_active_diagram(db, membership=membership, project_id=project_id, diagram_id=diagram_id)
-    return list(
-        db.scalars(
-            select(DiagramRequirementLink)
-            .where(
-                DiagramRequirementLink.workspace_id == membership.workspace_id,
-                DiagramRequirementLink.project_id == project_id,
-                DiagramRequirementLink.diagram_id == diagram_id,
-            )
-            .order_by(DiagramRequirementLink.requirement_code.asc())
-        )
-    )
-
 def save_diagram_version(
     db: Session,
     *,
@@ -172,7 +172,6 @@ def save_diagram_version(
     diagram = get_active_diagram(
         db, membership=membership, project_id=project_id, diagram_id=diagram_id
     )
-    record_feature_usage(db, workspace_id=membership.workspace_id, feature="manual_diagram_save")
     next_version = diagram.current_version + 1
     version = DiagramVersion(
         workspace_id=membership.workspace_id,
@@ -205,3 +204,28 @@ def list_diagram_versions(
             .order_by(DiagramVersion.version_number.asc())
         )
     )
+
+def update_diagram(
+    db: Session,
+    *,
+    membership: WorkspaceMember,
+    project_id: UUID,
+    diagram_id: UUID,
+    title: str | None,
+) -> Diagram:
+    require_workspace_role(membership, allowed_roles=DIAGRAM_MUTATION_ROLES)
+    diagram = get_active_diagram(db, membership=membership, project_id=project_id, diagram_id=diagram_id)
+    if title is not None:
+        diagram.title = _clean_required(title, "Diagram title is required")
+    db.commit()
+    db.refresh(diagram)
+    return diagram
+
+
+def archive_diagram(
+    db: Session, *, membership: WorkspaceMember, project_id: UUID, diagram_id: UUID
+) -> None:
+    require_workspace_role(membership, allowed_roles=DIAGRAM_MUTATION_ROLES)
+    diagram = get_active_diagram(db, membership=membership, project_id=project_id, diagram_id=diagram_id)
+    diagram.status = ARCHIVED_DIAGRAM_STATUS
+    db.commit()

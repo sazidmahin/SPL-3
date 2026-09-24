@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_workspace_membership, get_db
@@ -9,6 +9,8 @@ from app.schemas.generation_pipeline import (
     PipelineClassMutationRequest,
     PipelineRunCreateRequest,
     PipelineRunRead,
+    PipelineRunSummaryRead,
+    PipelineRunUpdateRequest,
     PipelineStageApproveRequest,
     PipelineStageRevisionCreateRequest,
     PipelineStageRevisionRead,
@@ -22,14 +24,17 @@ from app.services.generation_pipeline_service import (
     add_relationship,
     approve_stage,
     create_pipeline_run,
+    delete_pipeline_run,
     delete_class,
     delete_relationship,
     generate_next_stage,
     get_pipeline_run,
     list_pipeline_runs,
+    list_workspace_pipeline_runs,
     mutate_class_model,
     patch_class,
     patch_relationship,
+    rename_pipeline_run,
     reopen_stage,
     save_stage_revision,
 )
@@ -41,6 +46,7 @@ router = APIRouter(
     prefix="/workspaces/{workspace_id}/projects/{project_id}/generation-pipelines",
     tags=["generation-pipelines"],
 )
+workspace_router = APIRouter(prefix="/workspaces/{workspace_id}/generation-pipelines", tags=["generation-pipelines"])
 
 
 def _http_error(exc: Exception) -> HTTPException:
@@ -76,7 +82,15 @@ def create_run(
         raise _http_error(exc) from exc
 
 
-@router.get("", response_model=list[PipelineRunRead])
+@workspace_router.get("", response_model=list[PipelineRunSummaryRead])
+def get_workspace_runs(
+    membership: WorkspaceMember = Depends(get_current_workspace_membership),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    return list_workspace_pipeline_runs(db, membership=membership)
+
+
+@router.get("", response_model=list[PipelineRunSummaryRead])
 def get_runs(
     project_id: UUID,
     membership: WorkspaceMember = Depends(get_current_workspace_membership),
@@ -99,6 +113,34 @@ def get_run(
         return get_pipeline_run(db, membership=membership, project_id=project_id, run_id=run_id)
     except EXPECTED_ERRORS as exc:
         raise _http_error(exc) from exc
+
+
+@router.patch("/{run_id}", response_model=PipelineRunRead)
+def patch_run(
+    project_id: UUID,
+    run_id: UUID,
+    payload: PipelineRunUpdateRequest,
+    membership: WorkspaceMember = Depends(get_current_workspace_membership),
+    db: Session = Depends(get_db),
+) -> dict:
+    try:
+        return rename_pipeline_run(db, membership=membership, project_id=project_id, run_id=run_id, title=payload.title)
+    except EXPECTED_ERRORS as exc:
+        raise _http_error(exc) from exc
+
+
+@router.delete("/{run_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_run(
+    project_id: UUID,
+    run_id: UUID,
+    membership: WorkspaceMember = Depends(get_current_workspace_membership),
+    db: Session = Depends(get_db),
+) -> Response:
+    try:
+        delete_pipeline_run(db, membership=membership, project_id=project_id, run_id=run_id)
+    except EXPECTED_ERRORS as exc:
+        raise _http_error(exc) from exc
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/{run_id}/next", response_model=PipelineRunRead)

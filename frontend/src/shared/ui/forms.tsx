@@ -33,12 +33,12 @@ type FieldProps = {
 export function Field({ label, htmlFor, hint, required, children, className }: FieldProps) {
   return (
     <div className={cn('grid gap-1.5', className)}>
-      <label htmlFor={htmlFor} className="text-[12.5px] font-semibold text-fg-2">
+      <label htmlFor={htmlFor} className="text-[12.5px] font-semibold text-fg">
         {label}
         {required ? <span className="text-danger"> *</span> : null}
       </label>
       {children}
-      {hint ? <p className="text-[11px] text-fg-3">{hint}</p> : null}
+      {hint ? <p className="text-[11.5px] text-fg-3">{hint}</p> : null}
     </div>
   )
 }

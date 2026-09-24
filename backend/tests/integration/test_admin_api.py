@@ -112,9 +112,9 @@ def test_super_admin_can_view_platform_resources_and_audit_reads(
     endpoints = {
         "users": "/api/v1/admin/users",
         "workspaces": "/api/v1/admin/workspaces",
-        "subscriptions": "/api/v1/admin/subscriptions",
+        "overview": "/api/v1/admin/overview",
         "projects": "/api/v1/admin/projects",
-        "generation_jobs": "/api/v1/admin/generation-jobs",
+        "pipeline_runs": "/api/v1/admin/pipeline-runs",
         "llm_calls": "/api/v1/admin/llm-calls",
     }
     responses = {
@@ -129,8 +129,9 @@ def test_super_admin_can_view_platform_resources_and_audit_reads(
     assert any(user["platform_role"] == "super_admin" for user in responses["users"].json())
     assert any(workspace["id"] == workspace_id for workspace in responses["workspaces"].json())
     assert any(project["name"] == "Admin Visible Project" for project in responses["projects"].json())
-    assert len(responses["subscriptions"].json()) >= 1
-    assert responses["generation_jobs"].json() == []
+    assert responses["overview"].json()["users"] == 2
+    assert responses["overview"].json()["projects"] == 1
+    assert responses["pipeline_runs"].json() == []
     assert responses["llm_calls"].json() == []
 
     audit_logs = list(db_session.scalars(select(AdminAuditLog).order_by(AdminAuditLog.created_at.asc())))
@@ -138,9 +139,8 @@ def test_super_admin_can_view_platform_resources_and_audit_reads(
         {
             "admin.users.list",
             "admin.workspaces.list",
-            "admin.subscriptions.list",
             "admin.projects.list",
-            "admin.generation_jobs.list",
+            "admin.pipeline_runs.list",
             "admin.llm_calls.list",
         }
     )

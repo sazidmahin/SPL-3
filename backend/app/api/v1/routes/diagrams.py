@@ -4,31 +4,26 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_workspace_membership, get_db
-from app.db.models import Diagram, DiagramRequirementLink, DiagramVersion, WorkspaceMember
+from app.db.models import Diagram, DiagramVersion, WorkspaceMember
 from app.schemas.diagram import (
-    ClassDiagramGenerateRequest,
     DiagramCreateRequest,
     DiagramDetailRead,
     DiagramRead,
+    DiagramUpdateRequest,
     DiagramVersionCreateRequest,
     DiagramVersionRead,
-)
-from app.services.billing_service import BillingError, require_feature_access
-from app.services.diagram_generation_service import (
-    DiagramGenerationError,
-    DiagramGenerationSourceNotFoundError,
-    InvalidDiagramGenerationRequestError,
-    generate_class_diagram,
 )
 from app.services.diagram_service import (
     DiagramNotFoundError,
     InvalidDiagramError,
+    archive_diagram,
     create_manual_diagram,
     get_diagram_detail,
     list_active_diagrams,
-    list_diagram_requirement_links,
     list_diagram_versions,
+    list_workspace_diagrams,
     save_diagram_version,
+    update_diagram,
 )
 from app.services.workspace_service import WorkspacePermissionError
 
@@ -36,14 +31,19 @@ router = APIRouter(
     prefix="/workspaces/{workspace_id}/projects/{project_id}/diagrams",
     tags=["diagrams"],
 )
+workspace_router = APIRouter(prefix="/workspaces/{workspace_id}/diagrams", tags=["diagrams"])
 
 
-def _detail_response(
-    diagram: Diagram, current: DiagramVersion, links: list[DiagramRequirementLink] | None = None
-) -> DiagramDetailRead:
-    return DiagramDetailRead.model_validate(
-        {**diagram.__dict__, "current": current, "requirement_links": links or []}
-    )
+@workspace_router.get("", response_model=list[DiagramRead])
+def list_workspace_diagrams_route(
+    membership: WorkspaceMember = Depends(get_current_workspace_membership),
+    db: Session = Depends(get_db),
+) -> list[Diagram]:
+    return list_workspace_diagrams(db, membership=membership)
+
+
+def _detail_response(diagram: Diagram, current: DiagramVersion) -> DiagramDetailRead:
+    return DiagramDetailRead.model_validate({**diagram.__dict__, "current": current})
 
 
 def _load_detail_response(
@@ -52,10 +52,17 @@ def _load_detail_response(
     diagram, current = get_diagram_detail(
         db, membership=membership, project_id=project_id, diagram_id=diagram_id
     )
-    links = list_diagram_requirement_links(
-        db, membership=membership, project_id=project_id, diagram_id=diagram.id
-    )
-    return _detail_response(diagram, current, links)
+    return _detail_response(diagram, current)
+
+
+def _raise_http(exc: Exception) -> None:
+    if isinstance(exc, WorkspacePermissionError):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    if isinstance(exc, DiagramNotFoundError):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    if isinstance(exc, InvalidDiagramError):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
+    raise exc
 
 
 @router.post("", response_model=DiagramDetailRead, status_code=status.HTTP_201_CREATED)
@@ -76,41 +83,9 @@ def create_diagram(
             diagram_json=payload.diagram_json,
         )
         return _load_detail_response(db, membership=membership, project_id=project_id, diagram_id=diagram.id)
-    except WorkspacePermissionError as exc:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
-    except BillingError as exc:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
-    except DiagramNotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    except InvalidDiagramError as exc:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
-
-
-@router.post("/class/generate", response_model=DiagramDetailRead, status_code=status.HTTP_201_CREATED)
-def generate_class_diagram_route(
-    project_id: UUID,
-    payload: ClassDiagramGenerateRequest,
-    membership: WorkspaceMember = Depends(get_current_workspace_membership),
-    db: Session = Depends(get_db),
-) -> DiagramDetailRead:
-    try:
-        diagram = generate_class_diagram(
-            db,
-            membership=membership,
-            project_id=project_id,
-            requirement_input_id=payload.requirement_input_id,
-            srs_document_id=payload.srs_document_id,
-            methods=payload.methods,
-        )
-        return _load_detail_response(db, membership=membership, project_id=project_id, diagram_id=diagram.id)
-    except WorkspacePermissionError as exc:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
-    except BillingError as exc:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
-    except DiagramGenerationSourceNotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    except (DiagramGenerationError, InvalidDiagramGenerationRequestError) as exc:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
+    except (WorkspacePermissionError, DiagramNotFoundError, InvalidDiagramError) as exc:
+        _raise_http(exc)
+        raise
 
 
 @router.get("", response_model=list[DiagramRead])
@@ -121,10 +96,9 @@ def list_diagrams(
 ) -> list[Diagram]:
     try:
         return list_active_diagrams(db, membership=membership, project_id=project_id)
-    except BillingError as exc:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
     except DiagramNotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        _raise_http(exc)
+        raise
 
 
 @router.get("/{diagram_id}/export", response_class=Response)
@@ -135,14 +109,12 @@ def export_diagram(
     db: Session = Depends(get_db),
 ) -> Response:
     try:
-        require_feature_access(db, workspace_id=membership.workspace_id, feature="export_diagrams")
         diagram, current = get_diagram_detail(
             db, membership=membership, project_id=project_id, diagram_id=diagram_id
         )
-    except BillingError as exc:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
     except DiagramNotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        _raise_http(exc)
+        raise
 
     filename = f"{diagram.title.strip().replace(' ', '-') or 'diagram'}.drawio"
     return Response(
@@ -161,10 +133,41 @@ def get_diagram(
 ) -> DiagramDetailRead:
     try:
         return _load_detail_response(db, membership=membership, project_id=project_id, diagram_id=diagram_id)
-    except BillingError as exc:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
     except DiagramNotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        _raise_http(exc)
+        raise
+
+
+@router.patch("/{diagram_id}", response_model=DiagramRead)
+def patch_diagram(
+    project_id: UUID,
+    diagram_id: UUID,
+    payload: DiagramUpdateRequest,
+    membership: WorkspaceMember = Depends(get_current_workspace_membership),
+    db: Session = Depends(get_db),
+) -> Diagram:
+    try:
+        return update_diagram(
+            db, membership=membership, project_id=project_id, diagram_id=diagram_id, title=payload.title
+        )
+    except (WorkspacePermissionError, DiagramNotFoundError, InvalidDiagramError) as exc:
+        _raise_http(exc)
+        raise
+
+
+@router.delete("/{diagram_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_diagram(
+    project_id: UUID,
+    diagram_id: UUID,
+    membership: WorkspaceMember = Depends(get_current_workspace_membership),
+    db: Session = Depends(get_db),
+) -> Response:
+    try:
+        archive_diagram(db, membership=membership, project_id=project_id, diagram_id=diagram_id)
+    except (WorkspacePermissionError, DiagramNotFoundError) as exc:
+        _raise_http(exc)
+        raise
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post(
@@ -188,14 +191,9 @@ def create_diagram_version(
             drawio_xml=payload.drawio_xml,
             diagram_json=payload.diagram_json,
         )
-    except WorkspacePermissionError as exc:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
-    except BillingError as exc:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
-    except DiagramNotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    except InvalidDiagramError as exc:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
+    except (WorkspacePermissionError, DiagramNotFoundError, InvalidDiagramError) as exc:
+        _raise_http(exc)
+        raise
 
 
 @router.get("/{diagram_id}/versions", response_model=list[DiagramVersionRead])
@@ -209,7 +207,6 @@ def get_versions(
         return list_diagram_versions(
             db, membership=membership, project_id=project_id, diagram_id=diagram_id
         )
-    except BillingError as exc:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
     except DiagramNotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        _raise_http(exc)
+        raise
