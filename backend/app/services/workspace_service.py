@@ -174,6 +174,19 @@ def invite_workspace_member(
     if existing_membership is not None:
         raise DuplicateWorkspaceMemberError("User is already a workspace member")
 
+    removed_membership = db.scalar(
+        select(WorkspaceMember).where(
+            WorkspaceMember.workspace_id == workspace_id, WorkspaceMember.user_id == user.id
+        )
+    )
+    if removed_membership is not None:
+        removed_membership.status = "active"
+        removed_membership.role = role
+        removed_membership.invited_by = requester_membership.user_id
+        db.commit()
+        db.refresh(removed_membership)
+        return removed_membership
+
     membership = WorkspaceMember(
         workspace_id=workspace_id,
         user_id=user.id,
@@ -185,3 +198,45 @@ def invite_workspace_member(
     db.commit()
     db.refresh(membership)
     return membership
+
+
+def _managed_member(
+    db: Session, *, workspace_id: UUID, requester_membership: WorkspaceMember, member_id: UUID
+) -> WorkspaceMember:
+    require_workspace_role(requester_membership, allowed_roles=MANAGER_ROLES)
+    member = db.scalar(
+        select(WorkspaceMember).where(
+            WorkspaceMember.id == member_id,
+            WorkspaceMember.workspace_id == workspace_id,
+            WorkspaceMember.status == "active",
+        )
+    )
+    if member is None:
+        raise UserNotFoundError("Workspace member not found")
+    if member.role == "owner":
+        raise InvalidWorkspaceError("The workspace owner cannot be changed or removed")
+    return member
+
+
+def update_workspace_member_role(
+    db: Session, *, workspace_id: UUID, requester_membership: WorkspaceMember, member_id: UUID, role: str
+) -> WorkspaceMember:
+    member = _managed_member(
+        db, workspace_id=workspace_id, requester_membership=requester_membership, member_id=member_id
+    )
+    if role not in INVITABLE_ROLES:
+        raise InvalidWorkspaceError("Invalid workspace role")
+    member.role = role
+    db.commit()
+    db.refresh(member)
+    return member
+
+
+def remove_workspace_member(
+    db: Session, *, workspace_id: UUID, requester_membership: WorkspaceMember, member_id: UUID
+) -> None:
+    member = _managed_member(
+        db, workspace_id=workspace_id, requester_membership=requester_membership, member_id=member_id
+    )
+    member.status = "removed"
+    db.commit()

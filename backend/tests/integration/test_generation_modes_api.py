@@ -577,6 +577,9 @@ def test_completed_pipeline_publishes_srs_document_and_diagram(client: TestClien
     assert diagram.json()["source"] == "generated"
     assert "<mxfile" in diagram.json()["current"]["drawio_xml"]
 
+    workspace_diagrams = client.get(f"/api/v1/workspaces/{workspace_id}/diagrams", headers=auth_header(token)).json()
+    assert [item["id"] for item in workspace_diagrams] == [document["diagram_id"]]
+
     workspace_docs = client.get(f"/api/v1/workspaces/{workspace_id}/srs-documents", headers=auth_header(token)).json()
     assert [item["id"] for item in workspace_docs] == [document_id]
 
