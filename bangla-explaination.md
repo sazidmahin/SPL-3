@@ -406,9 +406,9 @@ UI-এর sidebar-এ **Class Diagram Generation** নামে নতুন tab
 | Mode | কী করে | লাগে |
 |---|---|---|
 | **Rule-based** | `backend/app/rule_engine/oop_modeler.py`। Offline, deterministic, প্রতিটা সিদ্ধান্তের কারণ দেখায় | কিছু না (project-ও না) |
-| **LLM-based** | ইউজারের নিজের active AI provider (AI Settings), না থাকলে local Ollama। একই noun/verb analysis JSON-এ করতে বলা হয় | একটা project select করা (LLM call project-এ log হয়)। নিজের key বা Ollama, তাই platform-এর plan quota লাগে না |
+| **LLM-based** | দুটো provider থেকে বেছে নেওয়া যায়: **Ollama (local)**, মানে নিজের মেশিনের model (dropdown-এ installed model, যেমন `llama3.2:1b`, `qwen2.5:7b`), আর **My AI provider**, মানে AI Settings-এ add করা OpenAI/Claude/Gemini। একই noun/verb analysis JSON-এ করতে বলা হয়। ছোট Ollama model-এর জন্য ছোট JSON format দেওয়া হয় | একটা project select করা (LLM call project-এ log হয়)। Ollama হলে server চালু আর model pull করা (`ollama pull llama3.2`)। নিজের key বা Ollama, তাই platform-এর plan quota লাগে না |
 
-API: `POST /api/v1/workspaces/{workspace_id}/class-modeler/generate`। Body `{text, mode: "rule_based"|"llm", project_id?}`। দুই mode-এর response একই shape: `model {classes, relationships, enums}`, `drawioXml`, `analysis {sentences, nouns, verbs, generalisation, warnings}`।
+API: `POST /api/v1/workspaces/{workspace_id}/class-modeler/generate`। Body `{text, mode: "rule_based"|"llm", project_id?, llm_provider?: "ollama"|"byok", model_name?}`। Installed Ollama model-এর list: `GET …/class-modeler/ollama-models`। দুই mode-এর response একই shape: `model {classes, relationships, enums}`, `drawioXml`, `analysis {sentences, nouns, verbs, generalisation, warnings}`।
 
 Engine তিনটা: **Rule-based**, **LLM-based**, **Compare both** (দুটো একসাথে চালিয়ে পাশাপাশি)।
 
@@ -484,36 +484,42 @@ Bank, online shop, university, এই তিনটা task-ও test-এ আছ�
 | সব subclass-এ একই attribute বা method থাকলে | parent-এ উঠে যায়। Interface-এ attribute ওঠে না |
 
 ### Generic কিনা: মাপা ফল
-Rule গুলো বাক্যের গঠন দেখে কাজ করে, কোনো domain-এর শব্দ code-এ hardcode নেই। এটা যাচাই করতে দুটো আলাদা test set আছে:
+Rule গুলো বাক্যের গঠন দেখে কাজ করে, কোনো domain-এর শব্দ code-এ hardcode নেই। তিনটা আলাদা test set দিয়ে মাপা হয় (`cd backend && python -m tests.unit.oop_eval [-v] [--blind | --precision]`):
 
-- `backend/tests/unit/oop_eval_cases.py`: ১২টা নতুন domain (hospital, parking, restaurant, airline, school, social media, hotel, inventory, rental, zoo, event, ATM)। প্রথমবার চালিয়েই **৯৪%** মিলেছিল। তারপর failure গুলোর **general** কারণ fix করার পর **১০০%** (223/223)।
-- `backend/tests/unit/oop_eval_cases_blind.py`: আরও ১০টা task, যেগুলো দেখে **কোনো fix করা হয়নি**। এটাই আসল মাপ: **৭৯%** (117/148)।
+| Set | কী মাপে | ফল |
+|---|---|---|
+| `oop_eval_cases.py` (১২টা domain) | class, attribute, method, inheritance, multiplicity ঠিক এসেছে কিনা | ১০০% (223/223) |
+| `oop_eval_cases_precision.py` (১২টা easy/medium) | প্রতিটা task-এর **পুরো** class list দেওয়া, তাই বাইরে যা আসে তা ভুল class | checks ১০০% (144/144), **class precision ১০০% (45/45), ভুল class ০টা** |
+| `oop_eval_cases_blind.py` (১০টা, ২টা ইচ্ছা করে কঠিন) | এই set দেখে modeler tune করা হয়নি | ৭৯% → **৯০%** (134/148)। অন্য set-এর general fix-এ বেড়েছে |
 
-চালাতে: `cd backend && python -m tests.unit.oop_eval -v` (প্রথম set) বা `--blind` (দ্বিতীয় set)।
+### Precision: ভুল class যেন না আসে
+যেসব rule false class আটকায়:
+- **Junk নাম বাতিল:** parsing-এর ভুলে verb ঢুকে যাওয়া নাম (`MonthlyProducesPayslip`, `Headed`, `EmployeesWork`) কখনো class হয় না।
+- **Mass/value noun:** article ছাড়া একবার বলা (`"Customers order food"`, `"Stock is updated"`) → value, class না। `money`, `points` → method parameter (`deposit(amount: Decimal)`)।
+- **`its/their …`:** `"calculate its perimeter"` → subject-এর নিজের value, আলাদা class না।
+- **Field list-এর plural:** `"An exercise has a name, sets and repetitions"` → `sets: Integer`, `repetitions: Integer`। অন্যদিকে `"many exercises"` (গোনা) → class।
+- **Generic শব্দ** (`page`, `section`, `data` …): OOP প্রমাণ না থাকলে বাতিল। কিন্তু নিজের data আছে, কাজ করে, বা একাধিক বাক্যে এসেছে (যেমন course-এর `Section`) → class।
+- **System নিজে**, আর কোনো attribute/method/link নেই এমন box → বাদ।
 
-### কোনগুলো ঠিকঠাক পারে (blind set-এ ৮৮–১০০%)
-প্রতিটা বাক্যে একটা ধারণা, সোজা গঠন, OOP course-এর task যেভাবে লেখা হয়:
-- `"A X has a …, a … and a …"`: attribute (type অনুমানসহ: date → Date, price → Decimal, count → Integer …)
-- `"A X can <verb> Ys"`, `"X <verb>s Ys"`, `"Ys are <verb>ed by X"`: method + association
-- `"X is a kind of Y"`, `"A and B are Ys"`, interface / implements / abstract
-- `"can be A, B or C"`, `"The status of X can be …"`: enum
-- `"up to five"`, `"at least one"`, `"exactly one"`, `"200 rooms"`: multiplicity
-- বুলেট (`-`) বা নম্বর (`1.`) দেওয়া list
-- Dictionary-তে নেই এমন verb-ও চলে (৩৬৮টা সাধারণ English verb-এর offline list: `common_verbs.json`)
+### "Proper" class diagram: attribute + method সহ
+- `"A cinema has several halls"` → `Cinema.halls: List<Hall>` (whole তার part-এর list রাখে)।
+- `"Each rental belongs to one customer"`, `"tickets for a show"`, `"A show is scheduled in a hall"` → `customer: Customer`, `show: Show`, `hall: Hall` reference field + association।
+- `"A show … and plays a movie"`: এক subject-এর দুটো predicate আলাদা fact → `Show.playMovie(movie: Movie)`।
+- `"A premium listener can download songs"` (Listener class থাকলে) → `PremiumListener ▷ Listener`।
+- `"A manager is also an employee"` → inheritance (`also` বাধা দেয় না)।
+- CamelCase নাম (`PaymentMethod`) আর possessive (`"employee's salary"`) ঠিক থাকে।
 
-উদাহরণ (blind): gym ৮৮%, notification interface ১০০%, shapes ৮৮%, food delivery ১০০%, project tracker ৯৪%, music streaming ১০০%।
+### কোনগুলো ঠিকঠাক পারে
+প্রতিটা বাক্যে একটা ধারণা, OOP course-এর task যেভাবে লেখা হয়:
+- `"A X has a …, a … and a …"` → typed attribute
+- `"A X can <verb> Ys"`, `"X <verb>s Ys"`, `"Ys are <verb>ed by X"`, `"X is <verb>ed in Y"` → method + association
+- `"X is a kind of Y"`, `"A and B are Ys"`, interface / implements / abstract → hierarchy
+- `"can be A, B or C"` → enum
+- `"up to five"`, `"one or more"`, `"exactly one"`, `"200 rooms"` → multiplicity
+- phrasal verb (`"checks out guests"` → `checkOutGuest`), বুলেট বা নম্বর দেওয়া list, dictionary-তে নেই এমন verb (৩৯০টার বেশি সাধারণ verb-এর offline list)
 
-### কোনগুলো পারে না (কঠিন, blind set-এ ৯–১১%)
-- **লম্বা, জটিল বাক্য:** `"When a patient arrives at the clinic, the receptionist, who also handles billing, registers the patient and assigns them to…"`। মাঝখানে relative clause, শুরুতে "when …" clause, আর "them"। প্রায় কিছুই ধরতে পারে না (৯%)।
-- **Implicit তথ্য:** `"Each employee's salary depends on their grade."` (possessive `'s` থেকে attribute), `"departments headed by a manager"` (participle phrase), `"Payroll runs monthly"`। ১১%।
-- **Blind set-এ আরও কিছু general ফাঁক:**
-  - `"sets and repetitions"`-এর মতো plural noun attribute হয় না
-  - `"calculate its area and its perimeter"`-এ দ্বিতীয় object হারায়
-  - `"A manager is also an employee"`-এর `also` inheritance ভাঙে
-  - `"Define an interface called X that declares pay"` চেনে না
-  - নম্বর-দেওয়া list-এ `"belongs to a course and has a room"` একসাথে থাকলে ভুল হয়
-
-**পরামর্শ:** কঠিন বাক্য ভেঙে এক বাক্যে এক তথ্য লিখলে ফল ভালো হয়। নইলে LLM mode ব্যবহার করো, কারণ এই ধরনের বাক্যে LLM ভালো পারে।
+### কঠিন বাক্য (দরকার নেই, শুধু জানিয়ে রাখা)
+`"When a patient arrives …, the receptionist, who also handles billing, registers …"` বা `"Payroll runs monthly and produces payslips"`-এর মতো বাক্যে recall কম (৩৬% ও ১১%)। তবে precision rule-এর কারণে এখানেও junk class কম আসে। এমন বাক্য ভেঙে লিখলে, বা LLM mode ব্যবহার করলে ভালো ফল আসে।
 
 ### যা এখনও পারে না (সাধারণ)
 - যে বাক্য বোঝা যায়নি সেটা "Not modelled" দেখায়, UI-তে লাল chip-এ।

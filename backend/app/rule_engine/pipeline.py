@@ -479,9 +479,15 @@ def _split_clause_text(text: str) -> list[str]:
     def is_bare_verb_tail(fragment: str) -> bool:
         """True when `fragment` ends in a known action verb with nothing stated
         after it - it is still waiting for the object a later coordinated verb
-        will supply."""
+        will supply. After a modal only the first word is the verb, so in "can
+        borrow books" the "books" is the object even though "book" is a verb."""
         words = _words(fragment)
-        return bool(words) and _is_action_word(words[-1])
+        if not words or not _is_action_word(words[-1]):
+            return False
+        modal_positions = [index for index, word in enumerate(words) if word in modal_words]
+        if modal_positions:
+            return modal_positions[-1] == len(words) - 2
+        return len(words) == 1
 
     determiners = {
         "a", "an", "the", "their", "his", "her", "its", "my", "our", "your", "each", "every", "all",
@@ -894,7 +900,18 @@ def _canonical_action(raw_action: str | None) -> tuple[str | None, str, list[str
     base = common_verb_base(lowered)
     if base:
         return base, "EXT_ACTION_COMMON_VERB_001", []
+    head, _, particle = lowered.partition(" ")
+    if particle and (head in aliases or common_verb_base(head)):
+        head_base = verb_lemma(head) or head
+        return f"{head_base} {particle}", "EXT_ACTION_PHRASAL_VERB_001", []
     return lowered, "EXT_UNKNOWN_ACTION_001", [f'Unknown action "{raw_action}".']
+
+
+_PHRASAL_PARTICLES = {"out", "up", "off", "down", "back", "over", "away"}
+_PHRASAL_IN_ON = {
+    "check in", "log in", "sign in", "fill in", "hand in", "turn in", "check on", "log on", "sign on",
+    "turn on", "switch on", "try on", "take on", "put on", "drop in", "plug in", "clock in",
+}
 
 
 def _absorb_phrasal_particle(raw_action: str, object_group: str | None) -> tuple[str, str | None]:
@@ -913,6 +930,18 @@ def _absorb_phrasal_particle(raw_action: str, object_group: str | None) -> tuple
     combined = f"{raw_action.strip().lower()} {particle}"
     if combined in _action_aliases():
         return combined, " ".join(object_words[1:])
+    # A general phrasal verb: the particle directly follows a known verb and an
+    # object still follows it ("checks out guests"). "in"/"on" double as plain
+    # prepositions ("enroll in courses"), so they only count for known pairs.
+    base = verb_lemma(raw_action) or raw_action.strip().lower()
+    phrasal = particle in _PHRASAL_PARTICLES or f"{base} {particle}" in _PHRASAL_IN_ON
+    # "up to five", "out of stock", "over 100": a quantity or preposition
+    # follows, so the word is not a particle.
+    follows = object_words[1].lower() if len(object_words) > 1 else ""
+    if follows in {"to", "of", "from", "than", "with"} or re.fullmatch(r"\d+", follows) or follows in NUMBER_WORDS:
+        phrasal = False
+    if phrasal and len(object_words) > 1 and _is_recognized_action_word(raw_action.strip().lower()):
+        return f"{raw_action.strip()} {particle}", " ".join(object_words[1:])
     return raw_action, object_group
 
 
@@ -1331,7 +1360,7 @@ def extract_facts(sentences: list[dict[str, Any]], clauses: list[dict[str, Any]]
 
         # "The system shall allow/enable/permit/let <actor> to <action> <object>"
         grant_match = re.match(
-            rf"^(?:{article})?[a-zA-Z][\w -]*?\s+(?:{modal_pattern}\s+)?(?:allow|allows|enable|enables|permit|permits|let|lets|give|gives|grant|grants)\s+(?:{article})?(?P<actor>[a-zA-Z][\w -]*?)\s+(?:to\s+|the\s+ability\s+to\s+|permission\s+to\s+)(?P<action>[a-zA-Z][\w ]*?)\s+(?:{article})?(?P<object>[a-zA-Z][\w -]*)$",
+            rf"^(?:{article})?[a-zA-Z][\w -]*?\s+(?:{modal_pattern}\s+)?(?:allow|allows|enable|enables|permit|permits|let|lets|give|gives|grant|grants)\s+(?:{article})?(?P<actor>[a-zA-Z][\w -]*?)\s+(?:to\s+|the\s+ability\s+to\s+|permission\s+to\s+)(?P<action>[a-zA-Z][\w ]*?)\s+(?:{article})?(?P<object>[a-zA-Z][\w ,-]*)$",
             text,
             flags=re.IGNORECASE,
         )
@@ -1369,7 +1398,7 @@ def extract_facts(sentences: list[dict[str, Any]], clauses: list[dict[str, Any]]
         # never misfires on an ordinary "<actor> <modal> <verb> <object>" clause.
         and_verb_list_match = re.match(
             rf"^(?:{article})?(?P<actor>[a-zA-Z][\w -]*?)\s+{modal_pattern}\s+"
-            rf"(?P<verbs>[a-zA-Z]+(?:\s+and\s+[a-zA-Z]+)+)\s+(?:{article})?(?P<object>[a-zA-Z][\w -]*)$",
+            rf"(?P<verbs>[a-zA-Z]+(?:\s+and\s+[a-zA-Z]+)+)\s+(?:{article})?(?P<object>[a-zA-Z][\w ,-]*)$",
             text,
             flags=re.IGNORECASE,
         )
@@ -1400,20 +1429,24 @@ def extract_facts(sentences: list[dict[str, Any]], clauses: list[dict[str, Any]]
                 continue
 
         only_match = re.match(
-            rf"^only\s+(?:{article})?(?P<actor>[a-zA-Z][\w -]*?)\s+{modal_pattern}\s+(?P<action>[a-zA-Z][\w ]*?)\s+(?:{article})?(?P<object>[a-zA-Z][\w -]*)$",
+            rf"^only\s+(?:{article})?(?P<actor>[a-zA-Z][\w -]*?)\s+{modal_pattern}\s+(?P<action>[a-zA-Z][\w ]*?)\s+(?:{article})?(?P<object>[a-zA-Z][\w ,-]*)$",
             text,
             flags=re.IGNORECASE,
         )
         active_match = re.match(
-            rf"^(?:{article})?(?P<actor>[a-zA-Z][\w -]*?)\s+{modal_pattern}\s+(?P<action>[a-zA-Z][\w ]*?)\s+(?:{article})?(?P<object>[a-zA-Z][\w -]*)$",
+            rf"^(?:{article})?(?P<actor>[a-zA-Z][\w -]*?)\s+{modal_pattern}\s+(?P<action>[a-zA-Z][\w ]*?)\s+(?:{article})?(?P<object>[a-zA-Z][\w ,-]*)$",
             text,
             flags=re.IGNORECASE,
         )
         # Declarative present tense without a modal: "The system sends a confirmation email".
         present_match = None
-        if not (only_match or active_match):
+        first_word = (re.findall(r"[a-zA-Z]+", text) or [""])[0].lower()
+        opens_with_verb = bool(first_word) and (
+            common_verb_base(first_word) == first_word or first_word in _action_aliases()
+        ) and first_word not in {"a", "an", "the"}
+        if not (only_match or active_match) and not opens_with_verb:
             candidate = re.match(
-                rf"^(?:{article})?(?P<actor>[a-zA-Z][\w -]*?)\s+(?P<action>[a-zA-Z]+(?:e?s)?)\s+(?:{article})?(?P<object>[a-zA-Z][\w -]*)$",
+                rf"^(?:{article})?(?P<actor>[a-zA-Z][\w -]*?)\s+(?P<action>[a-zA-Z]+(?:e?s)?)\s+(?:{article})?(?P<object>[a-zA-Z][\w ,-]*)$",
                 text,
                 flags=re.IGNORECASE,
             )
@@ -1511,27 +1544,28 @@ def extract_facts(sentences: list[dict[str, Any]], clauses: list[dict[str, Any]]
         has_modal = re.search(rf"\b{modal_pattern}\b", text, flags=re.IGNORECASE) is not None
         if action_token and (has_modal or len(tokens) <= 6):
             before = " ".join(token["text"] for token in tokens[: action_token["index"] - 1])
-            after = " ".join(token["text"] for token in tokens[action_token["index"] :])
+            after = text[action_token["endOffset"]:].strip(" .")
             # Drop a trailing modal so "the librarian can" resolves to "Librarian".
             before = re.sub(rf"\s+{modal_pattern}\s*$", "", before, flags=re.IGNORECASE).strip()
-            action, _, warnings = _canonical_action(action_token["text"])
+            raw_action, after = _absorb_phrasal_particle(action_token["text"], after)
             actor = resolve_actor(before) or None
-            object_name = normalize_entity(after) or None
-            facts.append(
-                _fact_template(
-                    fact_index=fact_index,
-                    sentence=sentence,
-                    clause=clause,
-                    actor=actor,
-                    action=action,
-                    object_name=object_name,
-                    raw_action=action_token["text"],
-                    matched_rule_id="EXT_POSITIONAL_ACTION_001",
-                    extraction_type="POSITIONAL_GUESS",
-                    condition=condition,
-                    warnings=warnings,
+            for action_name, object_text in _expand_action_object(raw_action, _strip_relative_clause(after)):
+                action, _, warnings = _canonical_action(action_name)
+                facts.append(
+                    _fact_template(
+                        fact_index=len(facts) + 1,
+                        sentence=sentence,
+                        clause=clause,
+                        actor=actor,
+                        action=action,
+                        object_name=normalize_entity(object_text) or None,
+                        raw_action=action_name,
+                        matched_rule_id="EXT_POSITIONAL_ACTION_001",
+                        extraction_type="POSITIONAL_GUESS",
+                        condition=condition,
+                        warnings=warnings,
+                    )
                 )
-            )
 
     # An elided subject in a coordinated clause ("...shall notify the warehouse
     # and update the inventory") leaves the second clause with no actor of its

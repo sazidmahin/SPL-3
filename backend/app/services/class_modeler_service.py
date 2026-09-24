@@ -4,8 +4,10 @@
 Two engines share one response shape so the UI can show them side by side:
 - rule_based: app.rule_engine.oop_modeler (offline, deterministic, explains
   every decision)
-- llm: the user's own active AI provider (or local Ollama), asked to do the same
-  noun/verb analysis and return JSON
+- llm: an LLM asked to do the same noun/verb analysis and return JSON, on
+  either a local Ollama model (llm_provider="ollama") or the user's own AI
+  provider from AI Settings (llm_provider="byok"); with no choice given it
+  prefers the user's provider and falls back to Ollama.
 """
 
 from __future__ import annotations
@@ -32,13 +34,17 @@ from app.services.ai_settings_service import (
     mark_credential_used,
 )
 from app.services.generation_pipeline_service import _parse_json_response
-from app.services.llm_service import LlmClient, execute_llm_call, get_or_create_prompt_template
-from app.services.ollama_service import OllamaClient
+from app.services.llm_service import LlmClient, LlmConfigurationError, execute_llm_call, get_or_create_prompt_template
+from app.services.ollama_service import OllamaClient, ollama_models
 from app.services.project_service import get_active_project
 from app.services.workspace_service import require_workspace_role
 
 CLASS_MODELER_ROLES = {"owner", "admin", "member"}
 CLASS_MODELER_MODES = {"rule_based", "llm"}
+LLM_PROVIDERS = {"ollama", "byok"}
+# The class model is long JSON; the default Ollama output budget is sized for
+# short answers and would cut it off mid-object.
+OLLAMA_NUM_PREDICT = 4096
 MAX_INPUT_CHARS = 20000
 CARDINALITY_TYPES = {"association", "aggregation", "composition"}
 
@@ -54,6 +60,18 @@ LLM_CONTRACT = (
     "For inheritance, from is the subclass and to is the parent, with null multiplicities; for realization, from is "
     "the implementing class and to is the interface (interface: true). For composition and "
     "aggregation, from is the whole and to is the part."
+)
+# Small local models follow a short, concrete shape far more reliably than the
+# full contract (the same lesson as the generation pipeline's Ollama stages);
+# normalize_llm_class_model accepts both shapes.
+OLLAMA_CONTRACT = (
+    'Return JSON only, exactly this shape: {"classes": [{"name": "Book", "interface": false, "abstract": false, '
+    '"attributes": ["title: String", "price: Decimal"], "methods": ["borrow(member: Member): void"]}], '
+    '"relationships": [{"from": "Member", "to": "Book", "type": "association", "label": "borrows", '
+    '"targetMultiplicity": "0..5"}], "enums": [{"name": "BookStatus", "literals": ["AVAILABLE", "LOST"]}]}. '
+    "type is one of association, aggregation, composition, inheritance, realization, dependency. "
+    "For inheritance/realization, from is the child and to is the parent or interface. "
+    "Only list classes the text really describes; put simple values as attributes, not classes."
 )
 LLM_INSTRUCTION = (
     "You are an experienced object-oriented design instructor solving an OOP course exercise. Apply noun/verb "
@@ -79,6 +97,8 @@ def generate_class_model_from_text(
     text: str,
     mode: str,
     project_id: UUID | None = None,
+    llm_provider: str | None = None,
+    model_name: str | None = None,
 ) -> dict[str, Any]:
     require_workspace_role(membership, allowed_roles=CLASS_MODELER_ROLES)
     cleaned = (text or "").strip()
@@ -99,7 +119,8 @@ def generate_class_model_from_text(
     get_active_project(db, workspace_id=membership.workspace_id, project_id=project_id)
     # Runs on the user's own provider key or a local Ollama model, like the
     # BYOK/Ollama generation pipeline - so no platform AI quota is consumed.
-    client, credential = _llm_client(db, membership)
+    client, credential = _llm_client(db, membership, llm_provider, model_name)
+    is_ollama = isinstance(client, OllamaClient)
     template = get_or_create_prompt_template(
         db,
         name="class_modeler_llm",
@@ -117,7 +138,7 @@ def generate_class_model_from_text(
         project_id=project_id,
         generation_job_id=None,
         template=template,
-        variables={"contract": LLM_CONTRACT, "requirements": safe_text},
+        variables={"contract": OLLAMA_CONTRACT if is_ollama else LLM_CONTRACT, "requirements": safe_text},
         client=client,
         response_format="json",
     )
@@ -126,7 +147,16 @@ def generate_class_model_from_text(
     content = (call.response_payload or {}).get("content")
     payload = _parse_json_response(content) if isinstance(content, str) else None
     if not payload:
-        raise ClassModelerError("The AI model did not return a valid class model. Try again or use rule-based mode.")
+        if is_ollama and call.completion_tokens >= client.num_predict:
+            raise ClassModelerError(
+                f"The Ollama model's answer was cut off at {client.num_predict} tokens before the JSON was complete. "
+                "Try a shorter task or a larger model."
+            )
+        raise ClassModelerError(
+            "The AI model did not return a valid class model. Try again"
+            + (", pick a larger Ollama model," if is_ollama else "")
+            + " or use rule-based mode."
+        )
     model, analysis = normalize_llm_class_model(payload)
     if not model["classes"]:
         raise ClassModelerError("The AI model returned no classes. Try again or use rule-based mode.")
@@ -143,22 +173,59 @@ def generate_class_model_from_text(
     }
 
 
-def _llm_client(db: Session, membership: WorkspaceMember) -> tuple[LlmClient, UserAiProviderCredential | None]:
-    """The user's active, tested AI provider; otherwise a configured local
-    Ollama model."""
+def _ollama_client(model_name: str | None) -> OllamaClient:
+    try:
+        client = OllamaClient(model_name=model_name or None, num_predict=OLLAMA_NUM_PREDICT)
+        client.validate_configuration()
+    except LlmConfigurationError as exc:
+        raise ClassModelerError(str(exc)) from exc
+    return client
+
+
+def _llm_client(
+    db: Session, membership: WorkspaceMember, llm_provider: str | None, model_name: str | None
+) -> tuple[LlmClient, UserAiProviderCredential | None]:
+    """The client for the chosen LLM provider.
+
+    ollama - a local Ollama model (the chosen one, else OLLAMA_MODEL).
+    byok   - the user's active, tested provider from AI Settings.
+    None   - byok when configured, otherwise Ollama.
+    """
+    provider = (llm_provider or "").strip().lower() or None
+    if provider is not None and provider not in LLM_PROVIDERS:
+        raise ClassModelerError("LLM provider must be ollama or byok.")
+    if provider == "ollama":
+        return _ollama_client(model_name), None
     try:
         credential = get_active_ai_credential(db, user_id=membership.user_id)
-        return build_client_for_credential(credential), credential
+        return build_client_for_credential(credential, model_name=model_name or None), credential
     except AiSettingsError as provider_error:
+        if provider == "byok":
+            raise ClassModelerError(f"{provider_error}. Add and test a provider in AI Settings, or pick Ollama.") from provider_error
         try:
-            client = OllamaClient(num_predict=4096)
-            client.validate_configuration()
-            return client, None
-        except Exception as ollama_error:  # noqa: BLE001 - Ollama down/unreachable/misconfigured, reported below
+            return _ollama_client(model_name), None
+        except ClassModelerError as ollama_error:
             raise ClassModelerError(
                 f"No AI provider is available ({provider_error}). Add and test a provider in AI Settings, "
                 f"or run a local Ollama model ({ollama_error})."
             ) from ollama_error
+
+
+def ollama_status() -> dict[str, Any]:
+    """Which Ollama models can be picked: the installed ones when the server
+    answers, plus the configured default and catalogue."""
+    try:
+        default_client = OllamaClient()
+        default_model = default_client.model_name
+    except LlmConfigurationError as exc:
+        return {"reachable": False, "installed": [], "suggested": ollama_models(), "defaultModel": None, "error": str(exc)}
+    try:
+        names = default_client.available_models()
+    except LlmConfigurationError as exc:
+        return {"reachable": False, "installed": [], "suggested": ollama_models(), "defaultModel": default_model, "error": str(exc)}
+    # available_models lists both "llama3.2:1b" and "llama3.2"; keep the full tags.
+    installed = [name for name in names if ":" in name] or names
+    return {"reachable": True, "installed": installed, "suggested": ollama_models(), "defaultModel": default_model, "error": None}
 
 
 def _type_name(value: Any, default: str = "String") -> str:

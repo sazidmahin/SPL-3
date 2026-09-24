@@ -63,3 +63,13 @@ export type ClassModelerResult = {
     warnings: string[]
   }
 }
+
+export type LlmProvider = 'ollama' | 'byok'
+
+export type OllamaModels = {
+  reachable: boolean
+  installed: string[]
+  suggested: string[]
+  defaultModel: string | null
+  error: string | null
+}
