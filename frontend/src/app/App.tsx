@@ -4,6 +4,7 @@ import {
   BarChart3,
   Bell,
   Bot,
+  Boxes,
   Building2,
   FileClock,
   FileText,
@@ -27,6 +28,7 @@ import {
 import { AiGenerationJobs } from '../features/aiJobs/AiGenerationJobs'
 import { AuthView } from '../features/auth/AuthView'
 import { BillingPanel } from '../features/billing/BillingPanel'
+import { ClassModelerPage } from '../features/classModeler/ClassModelerPage'
 import { CreateDiagramPanel, DiagramsPanel } from '../features/diagram/DiagramPanels'
 import { MemberDashboard } from '../features/dashboard/MemberDashboard'
 import { ProjectDirectory } from '../features/project/ProjectDirectory'
@@ -57,6 +59,7 @@ type SectionId =
   | 'generate-srs'
   | 'srs'
   | 'diagram-editor'
+  | 'class-diagram-generation'
   | 'ai-jobs'
   | 'requirements'
   | 'exports'
@@ -89,6 +92,7 @@ const validSections = new Set<SectionId>([
   'generate-srs',
   'srs',
   'diagram-editor',
+  'class-diagram-generation',
   'ai-jobs',
   'requirements',
   'exports',
@@ -122,6 +126,7 @@ const sectionLabels: Partial<Record<SectionId, string>> = {
   'generate-srs': 'Generate SRS',
   srs: 'SRS Documents',
   'diagram-editor': 'Diagrams',
+  'class-diagram-generation': 'Class Diagram Generation',
   'ai-jobs': 'AI Generation Jobs',
   requirements: 'Requirements',
   exports: 'Exports',
@@ -194,6 +199,7 @@ export function App() {
     { id: 'generate-srs', label: 'Generate SRS', icon: WandSparkles },
     { id: 'srs', label: 'SRS Documents', icon: FileText },
     { id: 'diagram-editor', label: 'Diagrams', icon: Network },
+    { id: 'class-diagram-generation', label: 'Class Diagram Generation', icon: Boxes },
     { id: 'ai-jobs', label: 'AI Generation Jobs', icon: WandSparkles },
   ]
   const organizationMemberNavItems: NavItem[] = [
@@ -202,6 +208,7 @@ export function App() {
     { id: 'generate-srs', label: 'Generate SRS', icon: WandSparkles },
     { id: 'srs', label: 'SRS Documents', icon: FileText },
     { id: 'diagram-editor', label: 'Diagrams', icon: Network },
+    { id: 'class-diagram-generation', label: 'Class Diagram Generation', icon: Boxes },
     { id: 'ai-jobs', label: 'AI Generation Jobs', icon: WandSparkles },
   ]
   const superAdminNavGroups: NavGroup[] = [
@@ -210,6 +217,7 @@ export function App() {
       items: [
         { id: 'overview', label: 'Dashboard', icon: LayoutDashboard },
         { id: 'generate-srs', label: 'Generate SRS', icon: WandSparkles },
+        { id: 'class-diagram-generation', label: 'Class Diagram Generation', icon: Boxes },
         { id: 'users', label: 'Users', icon: Users },
         { id: 'workspaces', label: 'Workspaces', icon: Building2 },
         { id: 'subscriptions', label: 'Subscriptions', icon: RefreshCcw },
@@ -258,6 +266,7 @@ export function App() {
     { id: 'generate-srs', label: 'Generate SRS', icon: WandSparkles },
     { id: 'srs', label: 'SRS Documents', icon: FileText },
     { id: 'diagram-editor', label: 'Diagrams', icon: Network },
+    { id: 'class-diagram-generation', label: 'Class Diagram Generation', icon: Boxes },
     { id: 'ai-jobs', label: 'AI Generation Jobs', icon: WandSparkles },
     { id: 'ai-settings', label: 'AI Settings', icon: Bot },
     { id: 'members', label: 'Members', icon: UserCircle },
@@ -323,6 +332,17 @@ export function App() {
   function renderActiveSection() {
     if (activeSection === 'generate-srs') {
       return generateSrsSection
+    }
+
+    if (activeSection === 'class-diagram-generation') {
+      return (
+        <ClassModelerPage
+          accessToken={session?.access_token ?? ''}
+          activeWorkspace={activeWorkspace}
+          activeProject={activeProject}
+          onDiagramSaved={controller.diagramsPanel.onReload}
+        />
+      )
     }
 
     if (activeSection === 'ai-settings') {

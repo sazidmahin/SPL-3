@@ -1,3 +1,4 @@
+import json
 from collections.abc import Generator
 
 import pytest
@@ -170,13 +171,17 @@ _OLLAMA_NON_JSON_RESPONSES = {
 }
 
 
-def test_ollama_pipeline_falls_back_to_text_extraction_when_model_skips_json(
+def test_ollama_pipeline_falls_back_to_text_extraction_except_class_model(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Every content stage must still produce a renderable payload even when the
-    local model ignores the JSON contract and answers in plain prose - this is the
-    normal case for small local models, not an edge case.
+    """Freeform-text stages (clarifications/final-story/requirements) still produce
+    a usable payload verbatim from the model's own prose when it ignores the JSON
+    contract - this is the normal case for small local models, not an edge case.
+    class-model is different: attributes/methods/relationships cannot be honestly
+    recovered from flat text, so guessing classes via a capitalized-word regex
+    would fabricate wrong entities. That stage must fail loudly instead so the run
+    surfaces as failed and can be regenerated (see _fallback_stage_payload).
     """
     monkeypatch.setattr(OllamaClient, "validate_configuration", lambda self: None)
 
@@ -243,28 +248,202 @@ def test_ollama_pipeline_falls_back_to_text_extraction_when_model_skips_json(
         assert isinstance(requirement["statement"], str) and requirement["statement"]
         assert requirement["enabled"] is True
 
-    # --- approve requirements: generates class-model ---
-    run = approve_and_proceed(client, token, base_url, run)
+    # --- approve requirements: class-model generation must fail loudly instead of
+    # fabricating classes from a capitalized-word regex over free text ---
+    current = next(stage for stage in run["stages"] if stage["stage_name"] == run["current_stage"])
+    response = client.post(
+        f"{base_url}/{run['id']}/stages/{run['current_stage']}/approve",
+        headers=auth_header(token),
+        json={"version_number": current["version_number"], "proceed": True},
+    )
+    assert response.status_code == 409, response.text
+    assert "class-model" in response.json()["detail"].lower()
+
+    run_after = client.get(f"{base_url}/{run['id']}", headers=auth_header(token)).json()
+    assert run_after["status"] == "failed"
+    assert run_after["current_stage"] == "requirements"
+
+
+_OLLAMA_CLASS_MODEL_RESPONSES = {
+    "pipeline_clarifications_ollama_questions": '{"clarificationQuestions": []}',
+    "pipeline_final-story_ollama_independent": (
+        '{"atomicStorySections": [{"id": "s1", "normalizedSentence": "stub"}]}'
+    ),
+    "pipeline_requirements_ollama_independent": (
+        '{"requirements": [{"requirementId": "REQ-1", "requirementType": "functional", '
+        '"statement": "stub", "actor": "User", "action": "act", "object": "Thing", "enabled": true}]}'
+    ),
+    # A small model restarting the JSON object per class instead of accumulating
+    # into one array - the exact shape that made json.loads silently keep only
+    # the last "classes" key and discard the other two (see _merge_duplicate_json_keys).
+    "pipeline_class-model_ollama_classes": (
+        '{"classes": [{"name": "Patient", "fields": ["age"], "methods": ["register"]}], '
+        '"classes": [{"name": "Doctor", "fields": ["specialty"], "methods": ["viewSchedule"]}], '
+        '"classes": [{"name": "Receptionist", "fields": [], "methods": ["checkIn"]}]}'
+    ),
+    "pipeline_class-model_ollama_relationships": (
+        '{"relationships": [{"from": "Patient", "to": "Doctor", "type": "has many", "label": "books with"}]}'
+    ),
+}
+
+
+def test_ollama_class_model_recovers_duplicate_keys_and_gets_own_relationships_call(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """class-model is generated as two focused Ollama calls (classes, then
+    relationships against that settled class list) instead of one combined ask -
+    see _generate_ollama_class_model. This proves both halves of that fix: (1) a
+    response that restarts the JSON object per class (three separate top-level
+    "classes" keys) must not silently lose two of the three classes to Python's
+    default last-key-wins JSON parsing, and (2) relationships come from their own
+    dedicated call and reference the classes that were actually kept.
+    """
+    monkeypatch.setattr(OllamaClient, "validate_configuration", lambda self: None)
+
+    def fake_generate(self: OllamaClient, request):
+        content = _OLLAMA_CLASS_MODEL_RESPONSES.get(request.purpose, "{}")
+        return LlmResponse(content=content, response_payload={"content": content}, prompt_tokens=1, completion_tokens=1)
+
+    monkeypatch.setattr(OllamaClient, "generate", fake_generate)
+
+    token = register(client, "ollama-classmodel@example.com")
+    workspace_id, project_id = setup_project(client, token)
+    base_url = pipeline_url(workspace_id, project_id)
+
+    created = client.post(
+        base_url,
+        headers=auth_header(token),
+        json={
+            "title": "Hospital",
+            "raw_text": "Patients book appointments with doctors. Receptionists check patients in.",
+            "generation_mode": "ollama",
+        },
+    )
+    assert created.status_code == 201, created.text
+    run = created.json()
+
+    run = approve_and_proceed(client, token, base_url, run)  # -> clarifications
+    run = approve_and_proceed(client, token, base_url, run)  # -> final-story
+    run = approve_and_proceed(client, token, base_url, run)  # -> requirements
+    run = approve_and_proceed(client, token, base_url, run)  # -> class-model
+
     assert run["current_stage"] == "class-model"
     class_model_stage = next(stage for stage in run["stages"] if stage["stage_name"] == "class-model")
     classes = class_model_stage["payload"]["classes"]
     class_names = {item["name"] for item in classes}
-    assert {"Customer", "Order", "OrderItem", "Admin"}.issubset(class_names)
+    assert class_names == {"Patient", "Doctor", "Receptionist"}, (
+        "all three classes must survive, not just the last duplicate 'classes' key"
+    )
     for item in classes:
         assert isinstance(item["id"], str) and item["id"]
         assert isinstance(item["attributes"], list)
         assert isinstance(item["methods"], list)
-        assert isinstance(item["warnings"], list) and item["warnings"]
-    assert class_model_stage["payload"]["relationships"] == []
 
-    # --- approve class-model: generates xml via the deterministic renderer, even
-    # though the class model itself was AI-authored ---
+    relationships = class_model_stage["payload"]["relationships"]
+    assert len(relationships) == 1
+    relationship = relationships[0]
+    patient_id = next(item["id"] for item in classes if item["name"] == "Patient")
+    doctor_id = next(item["id"] for item in classes if item["name"] == "Doctor")
+    assert relationship["sourceClassId"] == patient_id
+    assert relationship["targetClassId"] == doctor_id
+    assert relationship["label"] == "books with"
+    assert relationship["type"] == "association"  # "has many" isn't a canonical type - safe default, not a guess
+
+    # --- approve class-model: xml renders successfully from this data ---
     run = approve_and_proceed(client, token, base_url, run)
     assert run["current_stage"] == "xml"
     xml_stage = next(stage for stage in run["stages"] if stage["stage_name"] == "xml")
     assert xml_stage["payload"]["validation"]["valid"] is True
     for name in class_names:
         assert name in xml_stage["payload"]["xml"]
+
+
+def test_rag_correction_memory_feeds_past_mistakes_back_into_the_prompt(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Correcting an Ollama-authored final-story draft on one run should surface
+    that correction as pastCorrections context the next time final-story is
+    generated for a similar input - and must not appear before any correction
+    exists yet. Gated entirely by RAG_ENABLED; embeddings are mocked to a fixed
+    vector so retrieval is deterministic regardless of exact wording.
+    """
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "rag_enabled", True)
+    monkeypatch.setattr(OllamaClient, "validate_configuration", lambda self: None)
+    monkeypatch.setattr(OllamaClient, "embed", lambda self, text, model=None: [1.0, 0.0, 0.0])
+
+    final_story_prompts: list[str] = []
+    original_final_story = {
+        "originalText": "x",
+        "normalizedSentences": [],
+        "atomicStorySections": [{"id": "s1", "normalizedSentence": "Original bad content."}],
+        "appliedClarificationAnswers": [],
+        "unresolvedFields": [],
+        "warnings": [],
+        "extractionMetadata": {},
+    }
+
+    def fake_generate(self: OllamaClient, request):
+        if request.purpose == "pipeline_clarifications_ollama_questions":
+            content = '{"clarificationQuestions": []}'
+        elif request.purpose == "pipeline_final-story_ollama_independent":
+            final_story_prompts.append(request.prompt)
+            content = json.dumps(original_final_story)
+        else:
+            content = "{}"
+        return LlmResponse(content=content, response_payload={"content": content}, prompt_tokens=1, completion_tokens=1)
+
+    monkeypatch.setattr(OllamaClient, "generate", fake_generate)
+
+    token = register(client, "rag@example.com")
+    workspace_id, _ = setup_project(client, token)
+
+    def run_through_final_story(raw_text: str) -> dict:
+        project = client.post(
+            f"/api/v1/workspaces/{workspace_id}/projects",
+            headers=auth_header(token),
+            json={"name": f"RAG project {raw_text[:10]}", "description": None},
+        )
+        assert project.status_code == 201, project.text
+        project_id = project.json()["id"]
+        base_url = pipeline_url(workspace_id, project_id)
+        created = client.post(
+            base_url,
+            headers=auth_header(token),
+            json={"title": "RAG test", "raw_text": raw_text, "generation_mode": "ollama"},
+        )
+        assert created.status_code == 201, created.text
+        run = created.json()
+        run = approve_and_proceed(client, token, base_url, run)  # input -> clarifications
+        run = approve_and_proceed(client, token, base_url, run)  # clarifications -> final-story
+        assert run["current_stage"] == "final-story"
+        return {"token": token, "base_url": base_url, "run": run}
+
+    # --- Run A: no correction exists yet, so no pastCorrections should appear ---
+    ctx_a = run_through_final_story("A customer can place an order.")
+    assert len(final_story_prompts) == 1
+    # The static instruction text always mentions the word "pastCorrections" (explaining
+    # what it means if present); what must NOT appear yet is actual correction data.
+    assert '"pastCorrections":' not in final_story_prompts[0]
+
+    final_story_a = next(stage for stage in ctx_a["run"]["stages"] if stage["stage_name"] == "final-story")
+    corrected_payload = {**original_final_story, "atomicStorySections": [{"id": "s1", "normalizedSentence": "Corrected content."}]}
+    save = client.post(
+        f"{ctx_a['base_url']}/{ctx_a['run']['id']}/stages/final-story/revisions",
+        headers=auth_header(ctx_a["token"]),
+        json={"payload": corrected_payload, "expected_version": final_story_a["version_number"]},
+    )
+    assert save.status_code == 200, save.text
+
+    # --- Run B: a correction now exists and should surface as pastCorrections ---
+    run_through_final_story("An admin can approve an order.")
+    assert len(final_story_prompts) == 2
+    assert '"pastCorrections":' in final_story_prompts[1]
+    assert "Original bad content." in final_story_prompts[1]
+    assert "Corrected content." in final_story_prompts[1]
 
 
 def test_ai_settings_encrypt_key_and_gate_ai_gen(

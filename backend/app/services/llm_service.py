@@ -35,6 +35,10 @@ class LlmConfigurationError(LlmServiceError):
 class LlmRequest:
     prompt: str
     purpose: str
+    # Optional hint for providers that can natively constrain generation to valid
+    # JSON (e.g. Ollama's "format": "json"). None means the provider's default
+    # free-text behavior; providers that don't support this simply ignore it.
+    response_format: str | None = None
 
 
 @dataclass(frozen=True)
@@ -421,13 +425,16 @@ def execute_llm_call(
     template: PromptTemplate,
     variables: dict[str, str],
     client: LlmClient | None = None,
+    response_format: str | None = None,
 ) -> LlmCall:
     active_client = client
     prompt = render_prompt(template, variables)
     try:
         if active_client is None:
             active_client = build_default_llm_client()
-        response = active_client.generate(LlmRequest(prompt=prompt, purpose=template.purpose))
+        response = active_client.generate(
+            LlmRequest(prompt=prompt, purpose=template.purpose, response_format=response_format)
+        )
     except Exception as exc:
         provider = getattr(active_client, "provider", "openai")
         model_name = getattr(active_client, "model_name", configured_llm_model_name())

@@ -6,6 +6,7 @@ from app.db.models.generation import GenerationJob, RequirementInput
 from app.db.models.generation_pipeline import GenerationPipelineRun, GenerationStageRevision
 from app.db.models.llm import LlmCall, PromptTemplate
 from app.db.models.project import Project
+from app.db.models.rag import GenerationCorrection
 from app.db.models import rule_system as rule_system
 from app.db.models.srs import ExtractedRequirement, SrsDocument
 from app.db.models.user import User
@@ -18,6 +19,7 @@ __all__ = [
     "DiagramRequirementLink",
     "DiagramVersion",
     "ExtractedRequirement",
+    "GenerationCorrection",
     "GenerationJob",
     "GenerationPipelineRun",
     "GenerationStageRevision",
