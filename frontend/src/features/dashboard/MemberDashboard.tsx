@@ -8,7 +8,7 @@ import type { GenerationJob, SrsDocument } from '../../domains/srs/types'
 import type { PipelineRun } from '../../domains/generationPipeline/types'
 import type { AuthUser } from '../../domains/auth/types'
 import type { WorkspaceMembership } from '../../domains/workspace/types'
-import { Card, Chip, EmptyState, LinkButton, PageHeader, ProgressBar, StatTile } from '../../shared/ui'
+import { Card, FALLBACK_CHART_COLOR, Chip, EmptyState, LinkButton, PageHeader, ProgressBar, StatTile, STATUS_CHART_COLORS } from '../../shared/ui'
 
 type MemberDashboardProps = {
   user: AuthUser
@@ -21,14 +21,6 @@ type MemberDashboardProps = {
   pipelineRuns: PipelineRun[]
   subscription: Subscription | null
   usage: Usage | null
-}
-
-const JOB_STATUS_COLORS: Record<string, string> = {
-  completed: '#00d4aa',
-  running: '#38bdf8',
-  pending: '#818cf8',
-  partially_completed: '#fbbf24',
-  failed: '#f87171',
 }
 
 function pipelineDonutStatus(status: string) {
@@ -66,7 +58,7 @@ export function MemberDashboard({
   const donutData = Array.from(donutStatuses, (status) => ({
     name: status.replaceAll('_', ' '),
     value: (jobsByStatus[status]?.length ?? 0) + (pipelineByStatus[status]?.length ?? 0),
-    color: JOB_STATUS_COLORS[status] ?? '#94a3b8',
+    color: STATUS_CHART_COLORS[status] ?? FALLBACK_CHART_COLOR,
   }))
 
   const recentProjects = [...projects]
@@ -93,7 +85,7 @@ export function MemberDashboard({
   const activity = buildActivity(srsDocuments, diagrams, generationJobs, pipelineRuns)
 
   return (
-    <section className="grid min-w-0 gap-6" id="overview">
+    <section className="grid min-w-0 grid-cols-1 gap-6" id="overview">
       <PageHeader
         title="Dashboard"
         description={`Good to see you, ${firstName} — here's your workspace at a glance.`}
@@ -104,12 +96,12 @@ export function MemberDashboard({
         }
       />
 
-      <div className="grid gap-3.5 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 sm:gap-3.5 lg:grid-cols-3 xl:grid-cols-5">
         <StatTile label="Projects" value={projects.length} icon={Folder} />
         <StatTile label="SRS Documents" value={srsDocuments.length + pipelineRuns.length} icon={FileText} />
         <StatTile label="Diagrams" value={diagrams.length} icon={Network} />
         <StatTile label="AI Jobs" value={generationJobs.length + pipelineRuns.length} icon={WandSparkles} />
-        <StatTile label="SRS credits" value={`${creditPercent}%`}>
+        <StatTile label="SRS credits" value={`${creditPercent}%`} className="col-span-2 lg:col-span-1">
           <ProgressBar className="mt-2" value={creditPercent} />
           <div className="mt-1 font-mono text-[11px] text-fg-3">
             {creditsUsed.toLocaleString()} / {creditLimit.toLocaleString()}
@@ -117,13 +109,13 @@ export function MemberDashboard({
         </StatTile>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
         <Card className="p-5">
           <PageHeader
             size="section"
             title="Recent Projects"
             actions={
-              <a href="#projects" className="text-xs font-semibold text-fg-2 hover:text-fg">
+              <a href="#projects" className="text-xs font-semibold text-accent hover:text-accent-dim">
                 View all →
               </a>
             }
@@ -145,10 +137,10 @@ export function MemberDashboard({
               {recentProjects.map((project) => (
                 <div
                   key={project.id}
-                  className="flex items-center gap-3 rounded-md px-2 py-2.5 transition hover:bg-surface-2"
+                  className="flex items-center gap-3 rounded-lg px-2.5 py-2.5 transition hover:bg-surface-2"
                 >
-                  <span className="grid size-8 shrink-0 place-items-center rounded-md bg-accent/15 text-accent">
-                    <Folder className="size-3.5" />
+                  <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-accent/10 text-accent ring-1 ring-inset ring-accent/15">
+                    <Folder className="size-4" />
                   </span>
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-[13px] font-semibold text-fg">{project.name}</div>
@@ -196,7 +188,7 @@ export function MemberDashboard({
         </Card>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
         <Card className="p-5">
           <PageHeader size="section" title="Recent SRS Documents" />
           {recentDocs.length === 0 ? (
@@ -268,29 +260,30 @@ function PlanCard({
   ].filter((value): value is string => Boolean(value))
 
   return (
-    <div className="relative overflow-hidden rounded-lg border border-accent2/20 bg-gradient-to-br from-[#1a1040] to-[#0d1f3c] p-5.5">
+    <div className="relative overflow-hidden rounded-xl bg-[#14123a] p-5.5 shadow-[var(--elev-2)]">
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(320px_220px_at_100%_0%,rgba(139,92,246,0.55),transparent_65%),radial-gradient(300px_240px_at_0%_100%,rgba(79,70,229,0.55),transparent_65%)]" />
       <div className="relative z-10">
         <div className="flex items-center justify-between">
           <span className="font-display text-lg font-extrabold text-white">{plan?.name ?? 'Free Plan'}</span>
-          <Chip tone={subscription?.status === 'active' ? 'active' : 'muted'}>{subscription?.status ?? 'free'}</Chip>
+          <span className="rounded-full border border-white/15 bg-white/10 px-2 py-0.5 text-[11px] font-semibold capitalize text-emerald-200">{subscription?.status ?? 'free'}</span>
         </div>
-        {renews ? <div className="mt-1 text-xs text-white/40">Renews {renews}</div> : null}
+        {renews ? <div className="mt-1 text-xs text-white/55">Renews {renews}</div> : null}
         <div className="mt-4">
-          <div className="flex justify-between text-xs text-white/50">
+          <div className="flex justify-between text-xs text-white/60">
             <span>SRS credits</span>
             <span className="font-semibold text-white">
               {used.toLocaleString()} / {limit.toLocaleString()}
             </span>
           </div>
-          <div className="mt-1 h-1 overflow-hidden rounded-full bg-white/10">
-            <div className="h-full rounded-full bg-gradient-to-r from-accent2 to-accent" style={{ width: `${percent}%` }} />
+          <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-white/15">
+            <div className="h-full rounded-full bg-gradient-to-r from-indigo-300 to-violet-300" style={{ width: `${percent}%` }} />
           </div>
         </div>
         {features.length > 0 ? (
           <div className="mt-4 grid gap-2">
             {features.map((feature) => (
-              <div key={feature} className="flex items-center gap-2 text-[12.5px] text-white/70">
-                <Check className="size-3.5 text-success" />
+              <div key={feature} className="flex items-center gap-2 text-[12.5px] text-white/80">
+                <Check className="size-3.5 text-emerald-300" />
                 {feature}
               </div>
             ))}
@@ -298,7 +291,7 @@ function PlanCard({
         ) : null}
         <a
           href="#subscription"
-          className="mt-5 block rounded-md border border-white/15 bg-white/10 py-2 text-center text-[13px] font-semibold text-white transition hover:bg-white/20"
+          className="mt-5 block rounded-lg bg-white py-2 text-center text-[13px] font-semibold text-[#14123a] transition hover:bg-white/90"
         >
           Manage subscription
         </a>
