@@ -99,7 +99,10 @@ def test_bank_task_generalisation_pulls_shared_attributes_up() -> None:
     classes = _classes(result)
 
     assert classes["Account"]["stereotype"] == "abstract"
-    assert set(_attributes(classes["Account"])) == {"accountNumber", "balance"}
+    # Shared fields moved up, plus the reference to its parts.
+    assert _attributes(classes["Account"]) == {
+        "accountNumber": "String", "balance": "Decimal", "transactions": "List<Transaction>",
+    }
     assert set(_attributes(classes["SavingsAccount"])) == {"interestRate", "interest"}
     assert set(_attributes(classes["CurrentAccount"])) == {"overdraftLimit"}
     assert _relationship(result, "CurrentAccount", "Account")["type"] == "inheritance"
@@ -198,3 +201,45 @@ def test_held_out_tasks_score() -> None:
         ok += passed
         total += count
     assert ok / total >= 0.95, f"held-out score dropped to {ok}/{total}"
+
+
+def test_precision_no_false_classes_and_proper_boxes() -> None:
+    """Easy/medium tasks: every class is a real one, wholes list their parts,
+    subtypes named by an adjective inherit, and junk/value nouns are not classes."""
+    from tests.unit.oop_eval import precision_counts, score_case
+    from tests.unit.oop_eval_cases_precision import PRECISION_CASES
+
+    correct = predicted = ok = total = 0
+    for case in PRECISION_CASES:
+        result = analyze_oop_text(case["text"])
+        hit, made, false_classes, _ = precision_counts(case, result)
+        assert not false_classes, f"{case['name']}: false classes {false_classes}"
+        correct += hit
+        predicted += made
+        passed, count, _ = score_case(case)
+        ok += passed
+        total += count
+    assert correct == predicted
+    assert ok / total >= 0.97
+
+    shop = analyze_oop_text(
+        "A cinema has several halls. Each hall has a hall number and a capacity. Customers order food. "
+        "Stock is updated by the manager. An exercise has a name, sets and repetitions. "
+        "A listener can play songs. A premium listener can download songs. A song has a title."
+    )
+    classes = _classes(shop)
+    assert _attributes(classes["Cinema"])["halls"] == "List<Hall>"
+    assert _attributes(classes["Exercise"]) == {"name": "String", "sets": "Integer", "repetitions": "Integer"}
+    assert not {"Food", "Stock", "Set", "Repetition"} & set(classes)
+    assert _relationship(shop, "PremiumListener", "Listener")["type"] == "inheritance"
+
+
+def test_camel_case_names_and_possessives() -> None:
+    result = analyze_oop_text(
+        "Define an interface called PaymentMethod that declares pay. Coins and cards implement PaymentMethod. "
+        "Each employee's salary is paid monthly. An employee has a name."
+    )
+    classes = _classes(result)
+    assert classes["PaymentMethod"]["stereotype"] == "interface"
+    assert _relationship(result, "Coin", "PaymentMethod")["type"] == "realization"
+    assert not [name for name in classes if "SSalary" in name or name.endswith("Salary")]

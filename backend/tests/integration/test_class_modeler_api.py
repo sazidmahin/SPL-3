@@ -163,3 +163,78 @@ def test_llm_mode_requires_project_then_normalizes_model(
     assert body["validation"]["valid"] is True
     assert body["analysis"]["nouns"][0]["decision"] == "rejected"
     assert db_session.scalar(select(LlmCall).where(LlmCall.project_id == UUID(project_id))) is not None
+
+
+def test_explicit_ollama_provider_model_choice_and_model_list(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    token = register(client, "ollama-modeler@example.com")
+    workspace_id, project_id = setup_project(client, token)
+    base = f"/api/v1/workspaces/{workspace_id}/class-modeler"
+    monkeypatch.setattr(OllamaClient, "available_models", lambda self: ["llama3.2:1b", "llama3.2", "qwen2.5:7b", "qwen2.5"])
+
+    models = client.get(f"{base}/ollama-models", headers=auth_header(token))
+    assert models.status_code == 200
+    assert models.json()["reachable"] is True
+    assert models.json()["installed"] == ["llama3.2:1b", "qwen2.5:7b"]
+
+    seen: dict[str, str] = {}
+
+    def fake_generate(self: OllamaClient, request):
+        seen["model"] = self.model_name
+        seen["prompt"] = request.prompt
+        content = json.dumps({
+            "classes": [
+                {"name": "Book", "attributes": ["title: String", "isbn: String"], "methods": []},
+                {"name": "Member", "attributes": ["name: String"], "methods": ["borrow(book: Book): void"]},
+            ],
+            "relationships": [{"from": "Member", "to": "Book", "type": "association", "label": "borrows", "targetMultiplicity": "0..5"}],
+        })
+        return LlmResponse(content=content, response_payload={"content": content}, prompt_tokens=5, completion_tokens=5)
+
+    monkeypatch.setattr(OllamaClient, "generate", fake_generate)
+    response = client.post(
+        f"{base}/generate",
+        headers=auth_header(token),
+        json={"text": TASK, "mode": "llm", "project_id": project_id, "llm_provider": "ollama", "model_name": "qwen2.5:7b"},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["provider"] == "ollama" and body["modelName"] == "qwen2.5:7b"
+    assert seen["model"] == "qwen2.5:7b"
+    assert '"attributes": ["title: String"' in seen["prompt"]  # the short Ollama contract
+    member = next(cls for cls in body["model"]["classes"] if cls["name"] == "Member")
+    assert member["methods"][0]["parameters"] == [{"name": "book", "type": "Book"}]
+    assert body["model"]["relationships"][0]["targetMultiplicity"] == "0..5"
+
+    missing = client.post(
+        f"{base}/generate",
+        headers=auth_header(token),
+        json={"text": TASK, "mode": "llm", "project_id": project_id, "llm_provider": "ollama", "model_name": "mistral:latest"},
+    )
+    assert missing.status_code == 422
+    assert "ollama pull mistral:latest" in missing.json()["detail"]
+
+    byok = client.post(
+        f"{base}/generate",
+        headers=auth_header(token),
+        json={"text": TASK, "mode": "llm", "project_id": project_id, "llm_provider": "byok"},
+    )
+    assert byok.status_code == 422
+    assert "AI Settings" in byok.json()["detail"]
+
+
+def test_ollama_models_reports_unreachable_server(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.services.llm_service import LlmConfigurationError
+
+    token = register(client, "ollama-down@example.com")
+    workspace_id, _ = setup_project(client, token)
+
+    def down(self):
+        raise LlmConfigurationError("Cannot reach the Ollama server at http://localhost:11434.")
+
+    monkeypatch.setattr(OllamaClient, "available_models", down)
+    body = client.get(f"/api/v1/workspaces/{workspace_id}/class-modeler/ollama-models", headers=auth_header(token)).json()
+    assert body["reachable"] is False
+    assert "Cannot reach" in body["error"]
+    assert body["suggested"]

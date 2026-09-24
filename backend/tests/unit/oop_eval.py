@@ -1,10 +1,23 @@
-"""Score the Class Modeler on the held-out cases: `python -m tests.unit.oop_eval [-v] [--blind]`."""
+"""Score the Class Modeler on the held-out cases: `python -m tests.unit.oop_eval [-v] [--blind | --precision]`."""
 
 import sys
 
 from app.rule_engine.oop_modeler import analyze_oop_text
 from tests.unit.oop_eval_cases import CASES
 from tests.unit.oop_eval_cases_blind import BLIND_CASES
+from tests.unit.oop_eval_cases_precision import PRECISION_CASES
+
+
+def precision_counts(case: dict, result: dict) -> tuple[int, int, list[str], list[str]]:
+    """(correct classes, predicted classes, false classes, empty classes)."""
+    expected = set(case["exact_classes"])
+    predicted = {cls["name"] for cls in result["model"]["classes"]}
+    empty = sorted(
+        cls["name"]
+        for cls in result["model"]["classes"]
+        if not cls["attributes"] and not cls["methods"] and cls["stereotype"] != "interface"
+    )
+    return len(predicted & expected), len(predicted), sorted(predicted - expected), empty
 
 
 def score_case(case: dict) -> tuple[int, int, list[str]]:
@@ -29,6 +42,8 @@ def score_case(case: dict) -> tuple[int, int, list[str]]:
         have = {method["name"] for method in classes.get(owner, {}).get("methods", [])}
         for method in methods:
             checks.append((method in have, f"{owner}.{method}()"))
+    for name in case.get("exact_classes", []):
+        checks.append((name in classes, f"class {name}"))
     for child, parent in case.get("inherits", []):
         ok = any(r["type"] == "inheritance" and r["source"] == child and r["target"] == parent for r in rels)
         checks.append((ok, f"{child} inherits {parent}"))
@@ -54,17 +69,27 @@ def score_case(case: dict) -> tuple[int, int, list[str]]:
 
 def main() -> None:
     verbose = "-v" in sys.argv
-    cases = BLIND_CASES if "--blind" in sys.argv else CASES
-    total_ok = total = 0
+    cases = BLIND_CASES if "--blind" in sys.argv else PRECISION_CASES if "--precision" in sys.argv else CASES
+    total_ok = total = correct = predicted = 0
     for case in cases:
         ok, count, failures = score_case(case)
         total_ok += ok
         total += count
-        print(f"{case['name']:<26} {ok:>3}/{count:<3} {100 * ok // count:>3}%")
+        line = f"{case['name']:<26} {ok:>3}/{count:<3} {100 * ok // count:>3}%"
+        if "exact_classes" in case:
+            hit, made, false_classes, empty = precision_counts(case, analyze_oop_text(case["text"]))
+            correct += hit
+            predicted += made
+            line += f"   precision {hit}/{made}"
+            if verbose and (false_classes or empty):
+                failures = failures + [f"FALSE CLASS {name}" for name in false_classes] + [f"empty box {name}" for name in empty]
+        print(line)
         if verbose:
             for failure in failures:
                 print(f"      x {failure}")
     print(f"{'TOTAL':<26} {total_ok:>3}/{total:<3} {100 * total_ok // total:>3}%")
+    if predicted:
+        print(f"{'CLASS PRECISION':<26} {correct:>3}/{predicted:<3} {100 * correct // predicted:>3}%")
 
 
 if __name__ == "__main__":

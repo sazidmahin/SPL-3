@@ -24,6 +24,7 @@ step next to the diagram.
 from __future__ import annotations
 
 import re
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -37,6 +38,7 @@ from app.rule_engine.pipeline import (
     _quantity_from_text,
     camel_case,
     class_alias_map,
+    common_verb_base,
     domain_words,
     extract_facts,
     generate_drawio_xml,
@@ -113,6 +115,22 @@ _VALUE_NOUNS = {
     "message": ("message", "String"), "comment": ("comment", "String"), "rating": ("rating", "Integer"),
 }
 _CONTAINER_VERBS = {"add", "put", "insert", "place", "remove", "delete", "move", "transfer", "drop", "store", "save", "load", "attach"}
+# Identifiers the author already wrote in CamelCase ("PaymentMethod") keep
+# their casing; set per analysis.
+_CAMEL_NAMES: ContextVar[dict[str, str]] = ContextVar("_CAMEL_NAMES", default={})
+# Plural nouns that are ordinary words inside a class name ("SalesReport").
+_PLURAL_NAME_WORDS = {"sales", "news", "goods", "series", "species", "status", "business", "address", "class", "access", "process", "analysis", "basis", "bus"}
+# Counts written as plural nouns in a field list ("sets and repetitions").
+_COUNT_NOUNS = {
+    "sets", "repetitions", "reps", "laps", "points", "credits", "hours", "minutes", "seconds", "days", "weeks",
+    "months", "years", "pages", "copies", "seats", "votes", "likes", "views", "units", "calories", "steps",
+    "goals", "wins", "losses", "items", "attempts", "retries", "visits", "stars",
+}
+_DETERMINERS = {
+    "a", "an", "the", "this", "that", "these", "those", "each", "every", "all", "any", "some", "many", "several",
+    "multiple", "one", "two", "three", "four", "five", "its", "their", "his", "her", "our", "my", "your", "another",
+    "other", "no", "few", "more", "most",
+}
 _BOOLEAN_PREFIX = re.compile(r"^(?:is|has|can|should)[A-Z]")
 
 
@@ -157,6 +175,8 @@ class _Possession:
     plural: bool
     relation: str
     sentence: int
+    quantified: bool = False
+    in_field_list: bool = False
 
 
 @dataclass
@@ -187,6 +207,8 @@ class _Analysis:
         self.sentence_trace: list[dict[str, Any]] = []
         self.warnings: list[str] = []
         self.domains: set[str] = set()
+        self.sentence_texts: dict[int, str] = {}
+        self.implied: list[str] = []
 
     def candidate(self, name: str | None, sentence: int, role: str, raw: str | None = None) -> str | None:
         if not name:
@@ -294,7 +316,11 @@ def _attribute_spec(item_text: str) -> tuple[str, str]:
     if _BOOLEAN_PREFIX.match(name):
         return name, "Boolean"
     tail = words[-1]
+    if tail in _COUNT_NOUNS and len(words) == 1:
+        return name, "Integer"
     kind = _TYPE_BY_TAIL.get(tail) or hints.get(tail) or hints.get(singularize(tail))
+    if kind is None and _is_plural_phrase(cleaned) and not _is_attribute_like(singularize(tail)):
+        return name, "List<String>"
     if tail in {"at", "on"} and len(words) > 1:
         kind = "DateTime"
     return name, kind or "String"
@@ -325,7 +351,7 @@ def _match_header(text: str) -> bool:
 
 
 def _match_inheritance(text: str) -> list[tuple[str, str]] | None:
-    lowered = text.lower().strip(" .")
+    lowered = re.sub(r"\b(?:also|too|likewise|simply|just|really)\s+", "", text.lower().strip(" ."))
     patterns = [
         rf"^{_LEAD}(?P<child>{_NP})\s+(?:is|are)\s+(?:a|an)?\s*(?:special\s+)?(?:kind|type|sort|subclass|specialization|specialisation|form|subtype)s?\s+of\s+{_LEAD}(?P<parent>{_NP})$",
         rf"^{_LEAD}(?P<child>{_NP})\s+(?:extends|inherits from|is derived from|specializes|specialises|is a subclass of)\s+{_LEAD}(?P<parent>{_NP})$",
@@ -532,6 +558,13 @@ def _match_association(text: str, modals: str) -> tuple[str, str, str, str, str]
     )
     if match:
         return match.group("a"), "passive", match.group("b"), match.group("b"), match.group("verb")
+    match = re.match(
+        rf"^{_LEAD}(?P<a>{_NP})\s+(?:is|are|can be|must be|will be|gets|get)\s+"
+        rf"(?P<verb>[a-z]+(?:ed|en)|{'|'.join(_IRREGULAR_PARTICIPLES)})\s+(?P<prep>in|at|on|to|into|for|with|from|under)\s+(?P<b>.+)$",
+        lowered,
+    )
+    if match:
+        return match.group("a"), f"weak:{match.group('verb')} {match.group('prep')}", match.group("b"), match.group("b"), match.group("verb")
     return None
 
 
@@ -562,13 +595,25 @@ def _class_name(analysis: _Analysis | None, raw: str | None, keep_adjective: boo
     if keep_adjective and len(words) >= 2 and words[0] in _KEEPABLE_ADJECTIVES:
         rest = normalize_entity(" ".join(words[1:]))
         if rest:
-            return pascal_case(words[0]) + rest
-    return normalize_entity(raw)
+            return _restore_camel(pascal_case(words[0]) + rest)
+    return _restore_camel(normalize_entity(raw))
+
+
+def _restore_camel(name: str | None) -> str | None:
+    if not name:
+        return name
+    return _CAMEL_NAMES.get().get(name.lower(), name)
 
 
 def _record_possession(analysis: _Analysis, owner: str, verb: str, items_text: str, index: int, findings: list[str]) -> None:
     relation = _COMPOSITION_VERBS.get(verb, "association")
-    for item in _split_list(items_text):
+    items = _split_list(items_text)
+    # A list that also names a single simple value ("a name, sets and
+    # repetitions") is a field list: its bare plurals are fields too.
+    singular_field = [
+        not _is_plural_phrase(item) and _is_attribute_like(_class_name(None, item, keep_adjective=False)) for item in items
+    ]
+    for position, item in enumerate(items):
         multiplicity, _ = _quantity_from_text(item)
         cleaned = re.sub(r"^(?:a\s+)?(?:list|set|collection|group|series|number)\s+of\s+", "", item.strip()) if re.match(
             r"^(?:a\s+)?(?:list|set|collection|group|series)\s+of\s+", item.strip()
@@ -577,8 +622,13 @@ def _record_possession(analysis: _Analysis, owner: str, verb: str, items_text: s
         if not name or name == "System":
             continue
         plural = _is_plural_phrase(item)
+        quantified = multiplicity is not None or bool(
+            re.search(r"\b(?:many|several|multiple|various|some|a number of|any number of|list of|set of|collection of|\d+)\b", item.lower())
+        )
+        in_field_list = any(flag for other, flag in enumerate(singular_field) if other != position)
         analysis.possessions.append(
-            _Possession(owner=owner, item=name, item_text=item, multiplicity=multiplicity, plural=plural, relation=relation, sentence=index)
+            _Possession(owner=owner, item=name, item_text=item, multiplicity=multiplicity, plural=plural, relation=relation,
+                        sentence=index, quantified=quantified, in_field_list=in_field_list)
         )
         analysis.candidate(name, index, "possessed", item)
         findings.append(f"{owner} {verb} → {item.strip()}")
@@ -722,6 +772,16 @@ def _analyse_sentence(analysis: _Analysis, sentence: dict[str, Any], modals: str
                 )
                 analysis.sentence_trace.append({"index": index, "text": sentence["text"], "kind": "Behaviour (passive voice)", "findings": findings})
                 return
+            if relation.startswith("weak:"):
+                # Only drawn when both ends turn out to be classes on their own.
+                analysis.candidate(a, index, "subject", raw_a)
+                analysis.candidate(b, index, "object", raw_b)
+                analysis.associations.append(
+                    {"source": a, "target": b, "label": relation[5:], "targetMultiplicity": multiplicity or "1", "sentence": index, "weak": True}
+                )
+                findings.append(f"{a} {relation[5:]} {b}")
+                analysis.sentence_trace.append({"index": index, "text": sentence["text"], "kind": "Association", "findings": findings})
+                return
             analysis.candidate(a, index, "owner" if relation.endswith("part of") else "subject", raw_a)
             analysis.candidate(b, index, "object", raw_b)
             if relation.endswith("part of"):
@@ -790,6 +850,13 @@ def _analyse_sentence(analysis: _Analysis, sentence: dict[str, Any], modals: str
         owner_hint = None
         per_instance = False
         if obj:
+            linked = re.search(
+                rf"\b{re.escape(raw_action.split()[0].lower())}\w*\s+.*?\b(?:for|of)\s+(?:a|an|the)\s+(?P<target>{_NP})(?=$|[,.;]|\s+(?:and|or|when|if|by|with)\b)",
+                str(fact.get("sourceText") or text).lower(),
+            )
+            target = _class_name(analysis, linked.group("target"), keep_adjective=False) if linked else None
+            if target and target not in {obj, subject, "System"}:
+                analysis.associations.append({"source": obj, "target": target, "label": "for", "targetMultiplicity": "1", "sentence": index, "weak": True})
             # "The system calculates the fine for each loan": the fine is a
             # value kept per Loan, so it is Loan's data (and Loan's method).
             owner_match = re.search(
@@ -928,6 +995,42 @@ def _written_subject(analysis: _Analysis, actor: str | None, clause: str, raw_ac
     return actor
 
 
+_FIRST_PREDICATE = (
+    r"(?:belongs? to|is assigned to|are assigned to|is linked to|is associated with|is part of|are part of|"
+    r"is owned by|is placed by|is created by|is managed by|is an?|are|is)"
+)
+_SECOND_PREDICATE = r"(?:has|have|contains?|consists? of|includes?|records?|stores?|belongs? to|can|must|should|may|will)"
+
+
+def _split_predicates(sentence: dict[str, Any]) -> list[dict[str, Any]]:
+    """"A section belongs to a course and has a room" -> "A section belongs
+    to a course" + "A section has a room": each predicate is its own fact."""
+    text = sentence["normalizedText"]
+    match = None
+    for candidate in re.finditer(r"\s*,?\s+and\s+(?P<word>[a-z]+)\b", text, flags=re.IGNORECASE):
+        word = candidate.group("word").lower()
+        second_ok = re.fullmatch(_SECOND_PREDICATE, word) or (
+            word.endswith("s") and common_verb_base(word) not in (None, word)
+        )
+        if not second_ok:
+            continue
+        match = re.match(
+            rf"^(?P<subject>{_LEAD}[a-z][a-z0-9'\- ]*?)\s+(?P<first>{_FIRST_PREDICATE}\s+.+)$",
+            text[: candidate.start()],
+            flags=re.IGNORECASE,
+        )
+        if match:
+            second = text[candidate.start("word"):]
+            break
+    if not match or re.search(r"\b(?:and|or)\b", match.group("subject"), flags=re.IGNORECASE):
+        return [sentence]
+    subject = match.group("subject")
+    return [
+        {**sentence, "normalizedText": f"{subject} {match.group('first')}"},
+        {**sentence, "normalizedText": f"{subject} {second}"},
+    ]
+
+
 def _resolve_pronoun_subjects(sentences: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """"Members can borrow books. They can also reserve books." - "they" is
     the previous sentence's subject, not a generic User."""
@@ -988,14 +1091,24 @@ def _decide(analysis: _Analysis) -> tuple[dict[str, dict[str, Any]], dict[str, s
         {c for c, _, _ in analysis.hierarchy} | {p for _, p, _ in analysis.hierarchy} | set(analysis.interfaces)
     )
     enum_owners = {e["owner"] for e in analysis.enums.values()}
-    association_ends = {a["source"] for a in analysis.associations} | {a["target"] for a in analysis.associations}
+    association_ends = {a["source"] for a in analysis.associations if not a.get("weak")} | {
+        a["target"] for a in analysis.associations if not a.get("weak")
+    }
     acted_on_by_class = {a.obj for a in analysis.actions if a.obj and a.subject and a.subject != "System" and not a.owner_hint}
     acted_on_by_system = {a.obj for a in analysis.actions if a.obj and (not a.subject or a.subject == "System")}
-    collections = {p.item for p in analysis.possessions if p.plural}
+    # Plural items become collections of a class only when counted ("many
+    # books") or named on their own - not inside a field list.
+    collections = {p.item for p in analysis.possessions if p.plural and (p.quantified or not p.in_field_list)}
+    field_list_plurals = {p.item for p in analysis.possessions if p.plural and p.in_field_list and not p.quantified}
+    strong_evidence = owners | subjects | hierarchy_members | enum_owners | association_ends
 
     decisions: dict[str, dict[str, Any]] = {}
     for name, record in analysis.candidates.items():
         lowered = snake_case(name).replace("_", " ")
+        junk = _junk_name_reason(name)
+        if junk and name not in analysis.interfaces:
+            decisions[name] = {"decision": "rejected", "reason": junk}
+            continue
         if name == "System" or lowered in _SYSTEM_WORDS:
             decisions[name] = {"decision": "rejected", "reason": "The system itself is the boundary being designed, not a class inside it."}
             continue
@@ -1005,8 +1118,7 @@ def _decide(analysis: _Analysis) -> tuple[dict[str, dict[str, Any]], dict[str, s
         if lowered in _VALUE_NOUNS and name not in owners:
             decisions[name] = {"decision": "value", "reason": "An amount/value handed to a method (e.g. deposit(amount)), not a class."}
             continue
-        strong = name in owners or name in subjects or name in hierarchy_members
-        if (lowered in generic or lowered in state_words) and not strong:
+        if (lowered in generic or lowered in state_words) and not (name in strong_evidence or len(record.sentences) > 1):
             decisions[name] = {"decision": "rejected", "reason": "Generic or UI/state word, too vague to be a domain class."}
             continue
         if name in owners:
@@ -1021,6 +1133,12 @@ def _decide(analysis: _Analysis) -> tuple[dict[str, dict[str, Any]], dict[str, s
             decisions[name] = {"decision": "class", "reason": "Performs actions (it is the subject of a verb)."}
         elif name in enum_owners or name in association_ends:
             decisions[name] = {"decision": "class", "reason": "Has states or is linked to another class."}
+        elif name in field_list_plurals and name not in strong_evidence and name not in acted_on_by_class:
+            decisions[name] = {"decision": "attribute", "reason": "A plural value listed among other fields (e.g. \"sets and repetitions\"), so it is a field."}
+        elif name not in strong_evidence and _only_possessive_mentions(name, record, analysis):
+            decisions[name] = {"decision": "value", "reason": "Always written as \"its/their ...\" - a value belonging to the subject, not a separate class."}
+        elif name not in strong_evidence and _only_mass_mentions(name, record, analysis):
+            decisions[name] = {"decision": "value", "reason": "Used once without an article (\"order food\", \"stock is updated\") - an uncountable value, not an object."}
         elif name in acted_on_by_class or name in collections:
             decisions[name] = {"decision": "class", "reason": "Another class acts on it or keeps many of them."}
         elif name in {p.item for p in analysis.possessions}:
@@ -1032,6 +1150,69 @@ def _decide(analysis: _Analysis) -> tuple[dict[str, dict[str, Any]], dict[str, s
         else:
             decisions[name] = {"decision": "rejected", "reason": "Mentioned, but has no structure, behaviour or links."}
     return decisions, aliases
+
+
+def _junk_name_reason(name: str) -> str | None:
+    """A class name must be a clean noun phrase. Parsing slips produce names
+    that swallowed a verb ("MonthlyProducesPayslip", "Headed") or a plural
+    modifier ("EmployeesWork"); those are never classes."""
+    words = [word.lower() for word in re.findall(r"[A-Z][a-z0-9]*|[a-z0-9]+", name)]
+    if not words:
+        return "Empty name."
+    for position, word in enumerate(words):
+        final = position == len(words) - 1
+        base = common_verb_base(word)
+        if base and base != word and (word.endswith("ed") or (not final and word.endswith("s"))):
+            return f"\"{name}\" contains the verb form \"{word}\" - a parsing slip, not a noun phrase."
+        # "savings account", "sports club" are real compounds; a plural
+        # followed by a bare verb ("EmployeesWork") is a subject+verb slip.
+        if (
+            not final
+            and word.endswith("s")
+            and not word.endswith("ss")
+            and word not in _PLURAL_NAME_WORDS
+            and singularize(word) != word
+            and common_verb_base(words[-1]) == words[-1]
+            and position == len(words) - 2
+        ):
+            return f"\"{name}\" reads as a subject followed by a verb (\"{word} {words[-1]}\") - a parsing slip, not a noun phrase."
+        if len(word) == 1 and word not in {"a", "i"} and len(words) > 1:
+            return f"\"{name}\" contains a stray letter - a parsing slip."
+    return None
+
+
+def _only_mass_mentions(name: str, record: _Candidate, analysis: _Analysis) -> bool:
+    """True when every mention of `name` is a bare singular noun with no
+    article or count ("customers order food", "stock is updated") - an
+    uncountable value rather than a thing with its own identity."""
+    if len(record.sentences) != 1:
+        return False
+    phrase = " ".join(word.lower() for word in re.findall(r"[A-Z][a-z0-9]*|[a-z0-9]+", name))
+    text = analysis.sentence_texts.get(next(iter(record.sentences)), "").lower()
+    mentions = list(re.finditer(rf"(?:^|\b([a-z0-9']+)\s+){re.escape(phrase)}(?![a-z])", text))
+    if not mentions:
+        return False
+    return all((match.group(1) or "") not in _DETERMINERS and not re.fullmatch(r"\d+", match.group(1) or "") for match in mentions)
+
+
+def _only_possessive_mentions(name: str, record: _Candidate, analysis: _Analysis) -> bool:
+    phrase = " ".join(word.lower() for word in re.findall(r"[A-Z][a-z0-9]*|[a-z0-9]+", name))
+    found = False
+    for index in record.sentences:
+        text = analysis.sentence_texts.get(index, "").lower()
+        for match in re.finditer(rf"(?:^|\b([a-z0-9']+)\s+){re.escape(phrase)}s?(?![a-z])", text):
+            found = True
+            if (match.group(1) or "") not in {"its", "their", "his", "her", "your", "my", "our"}:
+                return False
+    return found
+
+
+def _plural_word(name: str) -> str:
+    if re.search(r"[^aeiou]y$", name):
+        return name[:-1] + "ies"
+    if re.search(r"(?:s|x|z|ch|sh)$", name):
+        return name + "es"
+    return name + "s"
 
 
 def _indirect_container(action: _Action, classes: dict[str, Any], aliases: dict[str, str]) -> str | None:
@@ -1055,12 +1236,18 @@ def analyze_oop_text(raw_text: str) -> dict[str, Any]:
     """Run the full human-style analysis. Returns the class model (classes,
     relationships, enums), the draw.io XML, and the step-by-step analysis."""
     normalized = normalize_text(raw_text)["normalizedText"]
+    # "the employee's salary" -> "the salary of employee": the owner is named
+    # the way the "of each X" rule already reads.
+    normalized = re.sub(r"\b([A-Za-z]+)'s\s+([A-Za-z]+)\b", r"\2 of \1", normalized)
+    _CAMEL_NAMES.set({word.lower(): word for word in re.findall(r"\b[A-Z][a-z0-9]+(?:[A-Z][a-z0-9]*)+\b", raw_text)})
     sentences = _resolve_pronoun_subjects(split_sentences(normalized))
     analysis = _Analysis()
+    analysis.sentence_texts = {sentence["sentenceIndex"]: sentence["normalizedText"] for sentence in sentences}
     analysis.domains = domain_words([sentence["text"] for sentence in sentences])
     modals = _modals()
     for sentence in sentences:
-        _analyse_sentence(analysis, sentence, modals)
+        for part in _split_predicates(sentence):
+            _analyse_sentence(analysis, part, modals)
 
     decisions, aliases = _decide(analysis)
     class_names = sorted(name for name, decision in decisions.items() if decision["decision"] in {"class", "interface"})
@@ -1071,6 +1258,16 @@ def analyze_oop_text(raw_text: str) -> dict[str, Any]:
     }
     for name in class_names:
         classes[name]["sentences"] = set(analysis.candidates[name].sentences)
+    # "A premium listener can download songs" next to a Listener class: the
+    # adjective names a special kind of Listener.
+    in_hierarchy = {child for child, _, _ in analysis.hierarchy}
+    for name in class_names:
+        words = re.findall(r"[A-Z][a-z0-9]*", name)
+        if len(words) >= 2 and words[0].lower() in _KEEPABLE_ADJECTIVES and name not in in_hierarchy:
+            base = "".join(words[1:])
+            if base in classes and base not in analysis.interfaces:
+                analysis.hierarchy.append((name, base, 0))
+                analysis.implied.append(f"{name} is a kind of {base} (implied by the adjective \"{words[0].lower()}\")")
 
     relationships: dict[tuple[str, str, str], dict[str, Any]] = {}
 
@@ -1248,7 +1445,13 @@ def analyze_oop_text(raw_text: str) -> dict[str, Any]:
                 spec = classes[children[0]]["attributes"][attribute]
                 classes[parent]["attributes"].setdefault(attribute, spec)
                 pulled_up.append(f"{attribute} moved up from {', '.join(sorted(children))} to {parent}")
-            shared_methods = set.intersection(*(set(classes[child]["methods"]) for child in children))
+            contract_methods = {
+                method
+                for child, iface, _ in analysis.hierarchy
+                if iface in analysis.interfaces and child in children and iface in classes
+                for method in classes[iface]["methods"]
+            }
+            shared_methods = set.intersection(*(set(classes[child]["methods"]) for child in children)) - contract_methods
             for method in sorted(shared_methods):
                 classes[parent]["methods"].setdefault(method, classes[children[0]]["methods"][method])
                 pulled_up.append(f"{method}() moved up from {', '.join(sorted(children))} to {parent}")
@@ -1260,6 +1463,23 @@ def analyze_oop_text(raw_text: str) -> dict[str, Any]:
                 if method in classes[parent]["methods"]:
                     del classes[child]["methods"][method]
 
+    # A whole keeps a reference to its parts ("floors: List<Floor>"), and a
+    # "belongs to exactly one" link is a reference field ("member: Member") -
+    # the fields an OOP answer writes for these relationships.
+    belongs_to = {(a["source"], a["target"]) for a in analysis.associations}
+    for rel in relationships.values():
+        source, target = rel["source"], rel["target"]
+        if source not in classes or target not in classes or source == target:
+            continue
+        many = (rel.get("targetMultiplicity") or "").endswith(("*", "..0")) or bool(
+            re.search(r"\.\.(?:[2-9]|\d{2,})$", rel.get("targetMultiplicity") or "")
+        ) or (rel.get("targetMultiplicity") or "").isdigit() and int(rel["targetMultiplicity"]) > 1
+        if rel["type"] in {"aggregation", "composition"}:
+            field_name = camel_case(_plural_word(target) if many else target)
+            classes[source]["attributes"].setdefault(field_name, {"type": f"List<{target}>" if many else target, "sentence": None})
+        elif rel["type"] == "association" and (source, target) in belongs_to and not many:
+            classes[source]["attributes"].setdefault(camel_case(target), {"type": target, "sentence": None})
+
     # A class with no field, no behaviour and no link never earned its box.
     linked = {r["source"] for r in relationships.values()} | {r["target"] for r in relationships.values()}
     for name in list(classes):
@@ -1268,7 +1488,7 @@ def analyze_oop_text(raw_text: str) -> dict[str, Any]:
             decisions[name] = {"decision": "rejected", "reason": "Ended up with no attributes, methods or relationships."}
             del classes[name]
 
-    return _package(analysis, sentences, decisions, aliases, classes, relationships, enums_out, verb_trace, unassigned, pulled_up)
+    return _package(analysis, sentences, decisions, aliases, classes, relationships, enums_out, verb_trace, unassigned, analysis.implied + pulled_up)
 
 
 def _package(

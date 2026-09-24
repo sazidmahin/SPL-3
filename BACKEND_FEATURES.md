@@ -1109,7 +1109,8 @@ All endpoints under `/api/v1/` require `Authorization: Bearer <jwt>` header (exc
 
 | Method | Path | Purpose |
 |---|---|---|
-| POST | `/generate` | OOP task text → classes/attributes/methods/relationships/enums + draw.io XML + step-by-step `analysis`. Body `{text, mode: "rule_based" \| "llm", project_id?}`. `rule_based` runs `app/rule_engine/oop_modeler.py` (no project needed); `llm` uses the user's own active AI credential, else local Ollama, and needs `project_id` (LLM calls are logged per project); like the BYOK/Ollama pipeline it consumes no platform AI quota. Stateless — the UI saves via the Diagram API. Service: `app/services/class_modeler_service.py`. |
+| POST | `/generate` | OOP task text → classes/attributes/methods/relationships/enums + draw.io XML + step-by-step `analysis`. Body `{text, mode: "rule_based" \| "llm", project_id?}`. `rule_based` runs `app/rule_engine/oop_modeler.py` (no project needed); `llm` takes `llm_provider` (`ollama` = local model, optional `model_name`; `byok` = the user's AI Settings credential; omitted = byok if configured else Ollama) and needs `project_id` (LLM calls are logged per project); like the BYOK/Ollama pipeline it consumes no platform AI quota. Stateless — the UI saves via the Diagram API. Service: `app/services/class_modeler_service.py`. |
+| GET | `/ollama-models` | `{reachable, installed, suggested, defaultModel, error}` for the Ollama model picker. |
 
 ### 8.6 Billing API — `/api/v1/billing`
 
