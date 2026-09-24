@@ -4,7 +4,6 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.db.models import User, Workspace, WorkspaceMember
-from app.services.billing_service import require_member_capacity
 
 WORKSPACE_ROLES = {"owner", "admin", "member", "viewer"}
 INVITABLE_ROLES = {"admin", "member", "viewer"}
@@ -174,8 +173,6 @@ def invite_workspace_member(
     )
     if existing_membership is not None:
         raise DuplicateWorkspaceMemberError("User is already a workspace member")
-
-    require_member_capacity(db, workspace_id=workspace_id)
 
     membership = WorkspaceMember(
         workspace_id=workspace_id,

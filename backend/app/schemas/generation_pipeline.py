@@ -15,6 +15,10 @@ class PipelineRunCreateRequest(BaseModel):
     generation_mode: GenerationMode
 
 
+class PipelineRunUpdateRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=255)
+
+
 class PipelineStageRevisionCreateRequest(BaseModel):
     payload: dict[str, Any]
     expected_version: int | None = Field(default=None, ge=1)
@@ -57,5 +61,23 @@ class PipelineRunRead(BaseModel):
     created_by_user_id: UUID
     created_at: datetime
     updated_at: datetime
+    srs_document_id: UUID | None = None
     stages: list[PipelineStageRevisionRead]
+
+
+class PipelineRunSummaryRead(BaseModel):
+    id: UUID
+    workspace_id: UUID
+    project_id: UUID
+    project_name: str | None
+    title: str
+    generation_mode: GenerationMode
+    provider: str | None
+    model_name: str | None
+    current_stage: str
+    status: str
+    created_by_user_id: UUID
+    created_at: datetime
+    updated_at: datetime
+    srs_document_id: UUID | None = None
 

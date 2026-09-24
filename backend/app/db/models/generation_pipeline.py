@@ -14,9 +14,6 @@ class GenerationPipelineRun(Base):
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     workspace_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("workspaces.id"), nullable=False, index=True)
     project_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("projects.id"), nullable=False, index=True)
-    requirement_input_id: Mapped[uuid.UUID | None] = mapped_column(
-        Uuid, ForeignKey("requirement_inputs.id"), nullable=True, index=True
-    )
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     raw_text: Mapped[str] = mapped_column(Text, nullable=False)
     generation_mode: Mapped[str] = mapped_column(String(32), nullable=False, index=True)

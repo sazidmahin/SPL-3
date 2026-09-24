@@ -1,19 +1,20 @@
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import select
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.security import hash_password
 from app.db.models import (
     AdminAuditLog,
-    GenerationJob,
+    Diagram,
+    GenerationPipelineRun,
     LlmCall,
     PlatformSetting,
     PromptTemplate,
     Project,
-    Subscription,
+    SrsDocument,
     User,
     Workspace,
 )
@@ -53,22 +54,28 @@ def list_platform_workspaces(db: Session) -> list[Workspace]:
     return list(db.scalars(select(Workspace).order_by(Workspace.created_at.asc())))
 
 
-def list_platform_subscriptions(db: Session) -> list[Subscription]:
-    return list(
-        db.scalars(
-            select(Subscription)
-            .options(selectinload(Subscription.plan))
-            .order_by(Subscription.created_at.asc())
-        )
-    )
-
-
 def list_platform_projects(db: Session) -> list[Project]:
     return list(db.scalars(select(Project).order_by(Project.created_at.asc())))
 
 
-def list_platform_generation_jobs(db: Session) -> list[GenerationJob]:
-    return list(db.scalars(select(GenerationJob).order_by(GenerationJob.created_at.asc())))
+def list_platform_pipeline_runs(db: Session) -> list[GenerationPipelineRun]:
+    return list(db.scalars(select(GenerationPipelineRun).order_by(GenerationPipelineRun.created_at.desc())))
+
+
+def platform_overview(db: Session) -> dict[str, int]:
+    def count(model, *conditions) -> int:
+        return int(db.scalar(select(func.count()).select_from(model).where(*conditions)) or 0)
+
+    return {
+        "users": count(User),
+        "workspaces": count(Workspace),
+        "projects": count(Project, Project.status == "active"),
+        "pipeline_runs": count(GenerationPipelineRun),
+        "completed_runs": count(GenerationPipelineRun, GenerationPipelineRun.status == "completed"),
+        "srs_documents": count(SrsDocument, SrsDocument.status == "active"),
+        "diagrams": count(Diagram, Diagram.status == "active"),
+        "llm_calls": count(LlmCall),
+    }
 
 
 def list_platform_llm_calls(db: Session) -> list[LlmCall]:

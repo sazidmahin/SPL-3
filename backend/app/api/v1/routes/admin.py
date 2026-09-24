@@ -7,11 +7,11 @@ from app.api.deps import get_db, require_super_admin
 from app.db.models import AdminAuditLog, User
 from app.schemas.admin import (
     AdminAuditLogRead,
-    AdminGenerationJobRead,
+    AdminOverviewRead,
+    AdminPipelineRunRead,
     AdminLlmCallRead,
     AdminProjectRead,
     AdminPromptTemplateRead,
-    AdminSubscriptionRead,
     AdminUserRead,
     AdminWorkspaceRead,
     PlatformSettingRead,
@@ -19,11 +19,11 @@ from app.schemas.admin import (
 )
 from app.services.admin_service import (
     list_admin_audit_logs,
-    list_platform_generation_jobs,
+    list_platform_pipeline_runs,
     list_platform_llm_calls,
     list_platform_projects,
     list_platform_settings,
-    list_platform_subscriptions,
+    platform_overview,
     list_platform_users,
     list_platform_workspaces,
     list_prompt_templates,
@@ -106,22 +106,13 @@ def admin_list_workspaces(
     return workspaces
 
 
-@router.get("/subscriptions", response_model=list[AdminSubscriptionRead])
-def admin_list_subscriptions(
-    request: Request,
+@router.get("/overview", response_model=AdminOverviewRead)
+def admin_overview(
     admin_user: User = Depends(require_super_admin),
     db: Session = Depends(get_db),
 ):
-    subscriptions = list_platform_subscriptions(db)
-    _audit(
-        db,
-        request,
-        admin_user=admin_user,
-        action="admin.subscriptions.list",
-        target_type="subscription",
-        result_count=len(subscriptions),
-    )
-    return subscriptions
+    del admin_user
+    return platform_overview(db)
 
 
 @router.get("/projects", response_model=list[AdminProjectRead])
@@ -142,22 +133,22 @@ def admin_list_projects(
     return projects
 
 
-@router.get("/generation-jobs", response_model=list[AdminGenerationJobRead])
-def admin_list_generation_jobs(
+@router.get("/pipeline-runs", response_model=list[AdminPipelineRunRead])
+def admin_list_pipeline_runs(
     request: Request,
     admin_user: User = Depends(require_super_admin),
     db: Session = Depends(get_db),
 ):
-    generation_jobs = list_platform_generation_jobs(db)
+    runs = list_platform_pipeline_runs(db)
     _audit(
         db,
         request,
         admin_user=admin_user,
-        action="admin.generation_jobs.list",
-        target_type="generation_job",
-        result_count=len(generation_jobs),
+        action="admin.pipeline_runs.list",
+        target_type="pipeline_run",
+        result_count=len(runs),
     )
-    return generation_jobs
+    return runs
 
 
 @router.get("/llm-calls", response_model=list[AdminLlmCallRead])

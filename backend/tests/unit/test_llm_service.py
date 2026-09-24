@@ -17,7 +17,6 @@ from app.services.llm_service import (
     LlmConfigurationError,
     LlmExecutionError,
     LlmRequest,
-    build_llm_client,
     build_external_llm_client,
     execute_llm_call,
     get_or_create_prompt_template,
@@ -52,40 +51,9 @@ class FailingClient:
         raise RuntimeError("provider unavailable")
 
 
-def test_auto_provider_requires_openai_api_key() -> None:
-    with pytest.raises(LlmConfigurationError):
-        build_llm_client(
-            provider="auto",
-            openai_api_key=None,
-            openai_model="gpt-test",
-            openai_temperature=0,
-            openai_timeout_seconds=30,
-            openai_max_retries=2,
-        )
-
-
-def test_local_provider_is_not_supported() -> None:
-    with pytest.raises(LlmConfigurationError):
-        build_llm_client(
-            provider="local",
-            openai_api_key="sk-test",
-            openai_model="gpt-test",
-            openai_temperature=0,
-            openai_timeout_seconds=30,
-            openai_max_retries=2,
-        )
-
-
-def test_openai_provider_requires_api_key() -> None:
-    with pytest.raises(LlmConfigurationError):
-        build_llm_client(
-            provider="openai",
-            openai_api_key=None,
-            openai_model="gpt-test",
-            openai_temperature=0,
-            openai_timeout_seconds=30,
-            openai_max_retries=2,
-        )
+def test_openai_client_requires_user_api_key() -> None:
+    with pytest.raises(LlmConfigurationError, match="AI Settings"):
+        LangChainOpenAIClient(api_key=None, model_name="gpt-test", temperature=0, timeout_seconds=30, max_retries=0)
 
 
 def test_langchain_openai_client_invokes_chat_model(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -208,7 +176,7 @@ def test_execute_llm_call_logs_completed_call(db_session: Session) -> None:
         db_session,
         workspace_id=uuid4(),
         project_id=uuid4(),
-        generation_job_id=None,
+        pipeline_run_id=None,
         template=template,
         variables={"raw_text": "users submit claims"},
         client=FakeStructuredLlmClient(),
@@ -236,7 +204,7 @@ def test_execute_llm_call_logs_failed_call(db_session: Session) -> None:
             db_session,
             workspace_id=uuid4(),
             project_id=uuid4(),
-            generation_job_id=None,
+            pipeline_run_id=None,
             template=template,
             variables={"raw_text": "users submit claims"},
             client=FailingClient(),
