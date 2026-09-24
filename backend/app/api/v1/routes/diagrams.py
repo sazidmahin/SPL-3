@@ -21,6 +21,7 @@ from app.services.diagram_service import (
     get_diagram_detail,
     list_active_diagrams,
     list_diagram_versions,
+    list_workspace_diagrams,
     save_diagram_version,
     update_diagram,
 )
@@ -30,6 +31,15 @@ router = APIRouter(
     prefix="/workspaces/{workspace_id}/projects/{project_id}/diagrams",
     tags=["diagrams"],
 )
+workspace_router = APIRouter(prefix="/workspaces/{workspace_id}/diagrams", tags=["diagrams"])
+
+
+@workspace_router.get("", response_model=list[DiagramRead])
+def list_workspace_diagrams_route(
+    membership: WorkspaceMember = Depends(get_current_workspace_membership),
+    db: Session = Depends(get_db),
+) -> list[Diagram]:
+    return list_workspace_diagrams(db, membership=membership)
 
 
 def _detail_response(diagram: Diagram, current: DiagramVersion) -> DiagramDetailRead:

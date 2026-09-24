@@ -3,7 +3,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import Diagram, DiagramVersion, WorkspaceMember
+from app.db.models import Diagram, DiagramVersion, Project, WorkspaceMember
 from app.services.project_service import ProjectNotFoundError, get_active_project
 from app.services.workspace_service import require_workspace_role
 
@@ -97,6 +97,21 @@ def list_active_diagrams(
                 Diagram.status == ACTIVE_DIAGRAM_STATUS,
             )
             .order_by(Diagram.created_at.desc())
+        )
+    )
+
+
+def list_workspace_diagrams(db: Session, *, membership: WorkspaceMember) -> list[Diagram]:
+    return list(
+        db.scalars(
+            select(Diagram)
+            .join(Project, Project.id == Diagram.project_id)
+            .where(
+                Diagram.workspace_id == membership.workspace_id,
+                Diagram.status == ACTIVE_DIAGRAM_STATUS,
+                Project.status == "active",
+            )
+            .order_by(Diagram.updated_at.desc())
         )
     )
 

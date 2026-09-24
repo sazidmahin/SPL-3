@@ -41,10 +41,23 @@ class WorkspaceMemberInviteRequest(BaseModel):
     role: Literal["admin", "member", "viewer"] = "member"
 
 
+class WorkspaceMemberUserRead(BaseModel):
+    id: UUID
+    email: str
+    full_name: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class WorkspaceMemberRoleUpdateRequest(BaseModel):
+    role: Literal["admin", "member", "viewer"]
+
+
 class WorkspaceMemberRead(BaseModel):
     id: UUID
     workspace_id: UUID
     user_id: UUID
+    user: WorkspaceMemberUserRead | None = None
     role: WorkspaceRole
     status: WorkspaceStatus
     invited_by: UUID | None
