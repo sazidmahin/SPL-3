@@ -1,4 +1,5 @@
 import { cn } from './cn'
+import { initials } from './initials'
 
 /** SpecTwin logo mark: two stacked "spec" sheets, the twin offset behind. */
 export function BrandMark({ className }: { className?: string }) {
@@ -16,17 +17,6 @@ export function BrandMark({ className }: { className?: string }) {
         <path d="M11 10h6M11 13.5h4" />
       </svg>
     </span>
-  )
-}
-
-export function initials(name: string, fallback = 'U') {
-  return (
-    name
-      .trim()
-      .split(/\s+/)
-      .slice(0, 2)
-      .map((part) => part[0]?.toUpperCase())
-      .join('') || fallback
   )
 }
 

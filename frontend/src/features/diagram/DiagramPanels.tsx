@@ -66,7 +66,7 @@ export function DiagramsPanel({
   }
 
   return (
-    <Card className="grid gap-4 p-5">
+    <Card className="@container grid grid-cols-1 gap-4 p-5">
       <PageHeader
         size="section"
         eyebrow="Manual diagrams"
@@ -83,8 +83,8 @@ export function DiagramsPanel({
         }
       />
       {!canUseManualDrawio ? <UpgradeNote>Upgrade to use manual Draw.io editing.</UpgradeNote> : null}
-      <div className="grid gap-5 xl:grid-cols-[13.75rem_minmax(0,1fr)_10rem]">
-        <div className="grid content-start gap-2" aria-label="Diagrams">
+      <div className="grid grid-cols-1 gap-5 @3xl:grid-cols-[12rem_minmax(0,1fr)] @6xl:grid-cols-[13.75rem_minmax(0,1fr)_10rem]">
+        <div className="grid grid-cols-1 content-start gap-2" aria-label="Diagrams">
           {diagrams.map((diagram) => (
             <button
               key={diagram.id}
@@ -105,11 +105,11 @@ export function DiagramsPanel({
           ))}
           {diagrams.length === 0 ? <p className="text-[13px] text-fg-3">No diagrams found.</p> : null}
         </div>
-        <div className="grid min-w-0 gap-3">
+        <div className="grid grid-cols-1 min-w-0 gap-3">
           {diagramXml ? (
             <DrawioEmbed ref={drawioRef} xml={diagramXml} title="Draw.io diagram preview" className="h-96" />
           ) : (
-            <p className="rounded-md bg-surface-2 p-4 text-[13px] text-fg-3">Select a diagram to preview it.</p>
+            <p className="grid h-48 place-items-center rounded-lg border border-dashed border-border-strong bg-surface-2 p-4 text-[13px] text-fg-3">Select a diagram to preview it.</p>
           )}
           <Field label="Draw.io XML">
             <Textarea
@@ -120,7 +120,7 @@ export function DiagramsPanel({
               disabled={!canUseManualDrawio}
             />
           </Field>
-          <div className="grid gap-2 sm:grid-cols-3">
+          <div className="flex flex-wrap gap-2 [&>*]:flex-1">
             <Button variant="secondary" size="sm" onClick={onResetXml} disabled={!canUseManualDrawio}>
               Blank XML
             </Button>
@@ -140,7 +140,7 @@ export function DiagramsPanel({
               {isSavingDiagram ? 'Saving…' : 'Save version'}
             </Button>
           </div>
-          <div className="grid gap-2 sm:grid-cols-2">
+          <div className="flex flex-wrap gap-2 [&>*]:flex-1">
             <Button
               variant="secondary"
               size="sm"
@@ -160,7 +160,7 @@ export function DiagramsPanel({
           </div>
           {!canExportDiagrams ? <UpgradeNote>Upgrade to export diagrams.</UpgradeNote> : null}
         </div>
-        <div className="grid content-start gap-2" aria-label="Diagram versions">
+        <div className="grid grid-cols-1 content-start gap-2 @3xl:col-start-2 @6xl:col-start-auto" aria-label="Diagram versions">
           <span className="text-[11px] font-bold uppercase tracking-wide text-accent">Versions</span>
           {diagramVersions.map((version) => (
             <button
@@ -201,9 +201,9 @@ export function CreateDiagramPanel({
   onSubmit,
 }: CreateDiagramPanelProps) {
   return (
-    <Card className="grid gap-4 p-5">
+    <Card className="grid grid-cols-1 gap-4 p-5">
       <span className="text-[11px] font-bold uppercase tracking-wide text-accent">New manual diagram</span>
-      <form className="grid gap-3 sm:grid-cols-2" onSubmit={onSubmit}>
+      <form className="grid grid-cols-1 gap-3 sm:grid-cols-2" onSubmit={onSubmit}>
         <Field label="Title">
           <Input value={diagramTitle} onChange={(event) => onDiagramTitleChange(event.target.value)} required />
         </Field>

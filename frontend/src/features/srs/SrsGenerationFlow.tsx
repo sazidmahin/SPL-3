@@ -179,7 +179,7 @@ export function SrsGenerationFlow({
   }
 
   return (
-    <section className="grid gap-5">
+    <section className="grid grid-cols-1 gap-5">
       <Modal open={srsgenNoticeOpen} onOpenChange={setSrsgenNoticeOpen}>
         <ModalContent
           title="SrsGen unavailable"
@@ -221,8 +221,8 @@ export function SrsGenerationFlow({
 
       {!selectedRun ? (
         <Card className="p-6">
-          <form className="grid gap-5" onSubmit={start}>
-            <label className="grid gap-2">
+          <form className="grid grid-cols-1 gap-5" onSubmit={start}>
+            <label className="grid grid-cols-1 gap-2">
               <span className="text-[12.5px] font-semibold text-fg-2">Requirements</span>
               <Textarea
                 className="min-h-48"
@@ -233,9 +233,9 @@ export function SrsGenerationFlow({
               />
             </label>
 
-            <div className="grid gap-2">
+            <div className="grid grid-cols-1 gap-2">
               <span className="text-[12.5px] font-semibold text-fg-2">Generation method</span>
-              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
                 {engineOptions.map((option) => (
                   <RadioCard
                     key={option.id}
@@ -269,7 +269,7 @@ export function SrsGenerationFlow({
               </div>
             </div>
 
-            <div className="grid gap-2">
+            <div className="grid grid-cols-1 gap-2">
               <Button
                 type="submit"
                 className="w-max"
@@ -283,9 +283,9 @@ export function SrsGenerationFlow({
           </form>
         </Card>
       ) : (
-        <div className="grid gap-5 lg:grid-cols-[16.5rem_minmax(0,1fr)]">
-          <Card className="grid content-start gap-1 p-3">
-            <div className="grid gap-1 border-b border-border px-2 pb-3">
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-[16.5rem_minmax(0,1fr)]">
+          <Card className="grid grid-cols-1 content-start gap-1 p-3">
+            <div className="grid grid-cols-1 gap-1 border-b border-border px-2 pb-3">
               <strong className="truncate text-sm text-fg">{selectedRun.title}</strong>
               <small className="text-xs text-fg-3">{engineDetail}</small>
             </div>
@@ -311,7 +311,7 @@ export function SrsGenerationFlow({
                   >
                     {index + 1}
                   </b>
-                  <span className="grid gap-0.5 font-semibold">
+                  <span className="grid grid-cols-1 gap-0.5 font-semibold">
                     {stage.label}
                     <small className="text-[10px] font-medium capitalize text-fg-3">
                       {revision?.status.replaceAll('_', ' ') ?? 'waiting'}
@@ -325,7 +325,7 @@ export function SrsGenerationFlow({
             </Button>
           </Card>
 
-          <Card className="grid min-h-[32.5rem] gap-5 p-6">
+          <Card className="grid grid-cols-1 min-h-[32.5rem] gap-5 p-6">
             {currentRevision ? (
               <StageReview
                 revision={currentRevision}
@@ -429,7 +429,7 @@ function GenericStageEditor({
   if (stage === 'input') {
     const normalization = (payload.normalization as Record<string, unknown> | undefined) ?? {}
     return (
-      <section className="grid content-start gap-3">
+      <section className="grid grid-cols-1 content-start gap-3">
         <h2 className="font-display text-xl font-bold text-fg">Review input story</h2>
         <p className="text-[13px] text-fg-3">Improve the source before the pipeline generates clarifications.</p>
         <Textarea
@@ -510,7 +510,7 @@ function ClarificationsReview({
     })
 
   return (
-    <section className="grid content-start gap-4">
+    <section className="grid grid-cols-1 content-start gap-4">
       <header>
         <h2 className="font-display text-xl font-bold text-fg">Clarifying questions</h2>
         <p className="mt-1 text-[13px] text-fg-3">
@@ -544,7 +544,7 @@ function ClarificationsReview({
         </p>
       )}
 
-      <div className="grid gap-3.5 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-2">
         {questions.map((question, index) => {
           const id = question.id
           const answer = answerFor(id)
@@ -657,7 +657,7 @@ function FinalStoryReview({
     onChange({ ...payload, atomicStorySections: nextSections })
   }
   return (
-    <section className="grid content-start gap-5">
+    <section className="grid grid-cols-1 content-start gap-5">
       <header>
         <h2 className="font-display text-xl font-bold text-fg">Final story</h2>
         <p className="mt-1 text-[13px] text-fg-3">
@@ -665,16 +665,16 @@ function FinalStoryReview({
         </p>
       </header>
       {sections.length ? (
-        <div className="grid gap-4">
+        <div className="grid grid-cols-1 gap-4">
           {sections.map((section, index) => {
             const sectionWarnings = Array.isArray(section.warnings) ? section.warnings.map(String) : []
             return (
-              <article className="grid gap-4 rounded-lg border border-border p-4 shadow-sm" key={String(section.id ?? index)}>
+              <article className="grid grid-cols-1 gap-4 rounded-lg border border-border p-4 shadow-sm" key={String(section.id ?? index)}>
                 <header className="flex flex-wrap items-center justify-between gap-2">
                   <Chip tone="accent">{String(section.id ?? `Story ${index + 1}`)}</Chip>
                   {section.modality ? <Chip tone="muted">{String(section.modality)}</Chip> : null}
                 </header>
-                <label className="grid gap-1.5 text-sm font-semibold text-fg-2">
+                <label className="grid grid-cols-1 gap-1.5 text-sm font-semibold text-fg-2">
                   User story
                   <Textarea
                     className="min-h-20 font-normal"
@@ -682,7 +682,7 @@ function FinalStoryReview({
                     onChange={(event) => updateSection(index, 'normalizedSentence', event.target.value)}
                   />
                 </label>
-                <div className="grid gap-3 sm:grid-cols-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                   <StoryField label="Actor" value={section.actor} onChange={(value) => updateSection(index, 'actor', value)} />
                   <StoryField label="Action" value={section.action} onChange={(value) => updateSection(index, 'action', value)} />
                   <StoryField label="Object" value={section.object} onChange={(value) => updateSection(index, 'object', value)} />
@@ -709,7 +709,7 @@ function FinalStoryReview({
           <summary className="cursor-pointer text-sm font-semibold text-fg-2">
             Applied clarification answers ({answers.length})
           </summary>
-          <ul className="mt-3 grid gap-2 text-[13px] text-fg-2">
+          <ul className="mt-3 grid grid-cols-1 gap-2 text-[13px] text-fg-2">
             {answers.map((answer, index) => (
               <li key={String(answer.questionStableId ?? index)}>
                 <span className="font-semibold">{String(answer.questionStableId ?? `Answer ${index + 1}`)}:</span>{' '}
@@ -736,7 +736,7 @@ function FinalStoryReview({
 
 function StoryField({ label, value, onChange }: { label: string; value: unknown; onChange: (value: string) => void }) {
   return (
-    <label className="grid gap-1.5 text-sm font-semibold text-fg-2">
+    <label className="grid grid-cols-1 gap-1.5 text-sm font-semibold text-fg-2">
       {label}
       <input className={inputClasses()} value={String(value ?? '')} onChange={(event) => onChange(event.target.value)} />
     </label>
@@ -771,7 +771,7 @@ function RequirementsReview({
     onChange({ ...payload, requirements: nextRequirements })
   }
   return (
-    <section className="grid content-start gap-5">
+    <section className="grid grid-cols-1 content-start gap-5">
       <header>
         <h2 className="font-display text-xl font-bold text-fg">Requirements review</h2>
         <p className="mt-1 text-[13px] text-fg-3">
@@ -782,7 +782,7 @@ function RequirementsReview({
         </p>
       </header>
       {requirements.length ? (
-        <div className="grid gap-4">
+        <div className="grid grid-cols-1 gap-4">
           {requirements.map((requirement, index) => {
             const type = String(requirement.requirementType ?? 'functional')
             const isNfr = type === 'non_functional'
@@ -813,7 +813,7 @@ function RequirementsReview({
                     Include
                   </label>
                 </header>
-                <label className="grid gap-1.5 text-sm font-semibold text-fg-2">
+                <label className="grid grid-cols-1 gap-1.5 text-sm font-semibold text-fg-2">
                   Requirement statement
                   <Textarea
                     className="min-h-20 font-normal"
@@ -827,14 +827,14 @@ function RequirementsReview({
                   </p>
                 ) : null}
                 {isNfr ? (
-                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
                     <StoryField label="Category" value={requirement.nfrCategory} onChange={(value) => updateRequirement(index, 'nfrCategory', value || null)} />
                     <StoryField label="Metric" value={requirement.metric} onChange={(value) => updateRequirement(index, 'metric', value || null)} />
                     <StoryField label="Target" value={requirement.targetValue} onChange={(value) => updateRequirement(index, 'targetValue', value || null)} />
                     <StoryField label="Unit" value={requirement.unit} onChange={(value) => updateRequirement(index, 'unit', value || null)} />
                   </div>
                 ) : (
-                  <div className="grid gap-3 sm:grid-cols-3">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                     <StoryField label="Actor" value={requirement.actor} onChange={(value) => updateRequirement(index, 'actor', value || null)} />
                     <StoryField label="Action" value={requirement.action} onChange={(value) => updateRequirement(index, 'action', value || null)} />
                     <StoryField label="Object" value={requirement.object} onChange={(value) => updateRequirement(index, 'object', value || null)} />
@@ -896,7 +896,7 @@ function XmlReview({ revision }: { revision: PipelineStageRevision }) {
   }
 
   return (
-    <section className="grid content-start gap-5">
+    <section className="grid grid-cols-1 content-start gap-5">
       <header>
         <h2 className="font-display text-xl font-bold text-fg">Draw.io class diagram</h2>
         <p className="mt-1 text-[13px] text-fg-3">
@@ -966,7 +966,7 @@ function JsonStageEditor({
     }
   }
   return (
-    <section className="grid content-start gap-3">
+    <section className="grid grid-cols-1 content-start gap-3">
       <h2 className="font-display text-xl font-bold text-fg">{stages.find((item) => item.id === stage)?.label} review</h2>
       <p className="text-[13px] text-fg-3">{stages.find((item) => item.id === stage)?.help}</p>
       <Textarea

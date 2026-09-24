@@ -139,7 +139,7 @@ export function ClassModelReview({ revision, busy, onSave, onDraftChange, onRevi
 
   if (phase === 'classes')
     return (
-      <section className="grid content-start gap-5">
+      <section className="grid grid-cols-1 content-start gap-5">
         <header className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
           <div>
             <h2 className="font-display text-xl font-bold text-fg">Check class names</h2>
@@ -151,7 +151,7 @@ export function ClassModelReview({ revision, busy, onSave, onDraftChange, onRevi
             <Plus /> Add class
           </Button>
         </header>
-        <div className="grid gap-3">
+        <div className="grid grid-cols-1 gap-3">
           {classes.map((item, index) => (
             <article
               className="flex flex-col gap-3 rounded-lg border border-border p-4 sm:flex-row sm:items-center"
@@ -205,7 +205,7 @@ export function ClassModelReview({ revision, busy, onSave, onDraftChange, onRevi
     )
 
   return (
-    <section className="grid content-start gap-5">
+    <section className="grid grid-cols-1 content-start gap-5">
       <header className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
         <div>
           <h2 className="font-display text-xl font-bold text-fg">Review relationships</h2>
@@ -217,17 +217,17 @@ export function ClassModelReview({ revision, busy, onSave, onDraftChange, onRevi
           <Plus /> Add relationship
         </Button>
       </header>
-      <div className="grid gap-4">
+      <div className="grid grid-cols-1 gap-4">
         {visibleRelationships.map(({ item, index }) => (
-          <article className="grid gap-3 rounded-lg border border-border p-4" key={text(item, 'id') || index}>
-            <div className="grid gap-3 sm:grid-cols-3">
+          <article className="grid grid-cols-1 gap-3 rounded-lg border border-border p-4" key={text(item, 'id') || index}>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <ClassSelect
                 label="From"
                 classes={includedClasses}
                 selected={text(item, 'sourceClassId')}
                 onChange={(sourceClassId) => updateRelationship(index, { sourceClassId })}
               />
-              <label className="grid gap-1.5 text-sm font-semibold text-fg-2">
+              <label className="grid grid-cols-1 gap-1.5 text-sm font-semibold text-fg-2">
                 Relationship
                 <select
                   className={control}
@@ -248,8 +248,8 @@ export function ClassModelReview({ revision, busy, onSave, onDraftChange, onRevi
                 onChange={(targetClassId) => updateRelationship(index, { targetClassId })}
               />
             </div>
-            <div className="grid gap-3 sm:grid-cols-3">
-              <label className="grid gap-1.5 text-sm font-semibold text-fg-2">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <label className="grid grid-cols-1 gap-1.5 text-sm font-semibold text-fg-2">
                 From multiplicity
                 <input
                   className={control}
@@ -258,7 +258,7 @@ export function ClassModelReview({ revision, busy, onSave, onDraftChange, onRevi
                   onChange={(event) => updateRelationship(index, { sourceMultiplicity: event.target.value || null })}
                 />
               </label>
-              <label className="grid gap-1.5 text-sm font-semibold text-fg-2">
+              <label className="grid grid-cols-1 gap-1.5 text-sm font-semibold text-fg-2">
                 To multiplicity
                 <input
                   className={control}
@@ -267,7 +267,7 @@ export function ClassModelReview({ revision, busy, onSave, onDraftChange, onRevi
                   onChange={(event) => updateRelationship(index, { targetMultiplicity: event.target.value || null })}
                 />
               </label>
-              <label className="grid gap-1.5 text-sm font-semibold text-fg-2">
+              <label className="grid grid-cols-1 gap-1.5 text-sm font-semibold text-fg-2">
                 Label (optional)
                 <input
                   className={control}
@@ -344,7 +344,7 @@ function ClassSelect({
   onChange: (value: string) => void
 }) {
   return (
-    <label className="grid gap-1.5 text-sm font-semibold text-fg-2">
+    <label className="grid grid-cols-1 gap-1.5 text-sm font-semibold text-fg-2">
       {label}
       <select className={control} value={selected} onChange={(event) => onChange(event.target.value)}>
         {classes.map((item) => (

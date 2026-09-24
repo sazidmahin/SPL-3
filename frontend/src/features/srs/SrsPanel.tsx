@@ -112,7 +112,7 @@ export function SrsPanel({
   const selectedId = selectedPipelineRun ? selectedPipelineRun.id : activeSrsDocument?.id
 
   return (
-    <Card className="grid gap-5 p-5">
+    <Card className="grid grid-cols-1 gap-5 p-5">
       <PageHeader
         size="section"
         eyebrow="SRS documents"
@@ -162,7 +162,7 @@ export function SrsPanel({
           {selectedPipelineRun ? (
             <PipelineRunDocument run={selectedPipelineRun} />
           ) : activeSrsDocument ? (
-            <div className="grid gap-4 border-t border-border pt-5">
+            <div className="grid grid-cols-1 gap-4 border-t border-border pt-5">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-accent">Generated SRS</span>
                 <span className="text-[13px] text-fg-3">{new Date(activeSrsDocument.created_at).toLocaleString()}</span>
@@ -191,10 +191,10 @@ export function SrsPanel({
               {!canGenerateAiDiagrams ? <UpgradeNote>Upgrade to generate AI diagrams.</UpgradeNote> : null}
 
               {generatedDiagrams.length > 0 ? (
-                <div className="grid gap-3" aria-label="Generated diagram artifacts">
+                <div className="grid grid-cols-1 gap-3" aria-label="Generated diagram artifacts">
                   {generatedDiagrams.map((diagram) => (
-                    <div key={diagram.id} className="grid gap-3 rounded-lg border border-border bg-surface-2 p-4 sm:grid-cols-[1fr_auto]">
-                      <div className="grid gap-1">
+                    <div key={diagram.id} className="grid grid-cols-1 gap-3 rounded-lg border border-border bg-surface-2 p-4 sm:grid-cols-[1fr_auto]">
+                      <div className="grid grid-cols-1 gap-1">
                         <strong className="text-fg">{diagram.title}</strong>
                         <small className="text-xs text-fg-3">
                           {diagram.diagram_type} · v{diagram.current.version_number}
@@ -220,9 +220,9 @@ export function SrsPanel({
                 <ReactMarkdown remarkPlugins={[remarkGfm]}>{activeSrsDocument.content_markdown}</ReactMarkdown>
               </div>
 
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3" aria-label="Extracted requirements">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3" aria-label="Extracted requirements">
                 {activeSrsDocument.extracted_requirements?.map((requirement) => (
-                  <div key={requirement.id} className="grid gap-1 rounded-lg border border-border bg-surface p-3">
+                  <div key={requirement.id} className="grid grid-cols-1 gap-1 rounded-lg border border-border bg-surface p-3">
                     <strong className="font-mono text-[13px] text-accent">{requirement.requirement_code}</strong>
                     <span className="text-[11px] font-bold uppercase tracking-wide text-fg-3">
                       {requirement.requirement_type.replaceAll('_', ' ')}
@@ -247,7 +247,7 @@ function PipelineRunDocument({ run }: { run: PipelineRun }) {
   const xmlText = typeof xml === 'string' ? xml : ''
 
   return (
-    <div className="grid gap-4 border-t border-border pt-5">
+    <div className="grid grid-cols-1 gap-4 border-t border-border pt-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-accent">Generated via pipeline</span>
         <span className="text-[13px] text-fg-3">{new Date(run.created_at).toLocaleString()}</span>
@@ -265,7 +265,7 @@ function PipelineRunDocument({ run }: { run: PipelineRun }) {
       {storySections.length > 0 ? (
         <div>
           <h3 className="mb-2 text-[11px] font-bold uppercase tracking-[0.12em] text-fg-3">Final story</h3>
-          <ul className="grid gap-2">
+          <ul className="grid grid-cols-1 gap-2">
             {storySections.map((section) => (
               <li key={section.id} className="rounded-md border border-border bg-surface-2 p-3 text-[13px] leading-6 text-fg-2">
                 {section.text}
@@ -278,9 +278,9 @@ function PipelineRunDocument({ run }: { run: PipelineRun }) {
       {requirements.length > 0 ? (
         <div>
           <h3 className="mb-2 text-[11px] font-bold uppercase tracking-[0.12em] text-fg-3">Requirements</h3>
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3" aria-label="Extracted requirements">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3" aria-label="Extracted requirements">
             {requirements.map((requirement) => (
-              <div key={requirement.id} className="grid gap-1 rounded-lg border border-border bg-surface p-3">
+              <div key={requirement.id} className="grid grid-cols-1 gap-1 rounded-lg border border-border bg-surface p-3">
                 <strong className="font-mono text-[13px] text-accent">{requirement.id}</strong>
                 <span className="text-[11px] font-bold uppercase tracking-wide text-fg-3">{requirement.type}</span>
                 <p className="text-[13px] leading-6 text-fg-2">{requirement.statement}</p>

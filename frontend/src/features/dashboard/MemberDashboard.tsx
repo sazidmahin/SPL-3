@@ -133,7 +133,7 @@ export function MemberDashboard({
               }
             />
           ) : (
-            <div className="mt-4 grid gap-px">
+            <div className="mt-4 grid grid-cols-1 gap-px">
               {recentProjects.map((project) => (
                 <div
                   key={project.id}
@@ -172,7 +172,7 @@ export function MemberDashboard({
                   </PieChart>
                 </ResponsiveContainer>
               </div>
-              <div className="mt-3 grid gap-2">
+              <div className="mt-3 grid grid-cols-1 gap-2">
                 {donutData.map((entry) => (
                   <div key={entry.name} className="flex items-center justify-between text-[12.5px]">
                     <span className="flex items-center gap-2 capitalize text-fg-2">
@@ -194,7 +194,7 @@ export function MemberDashboard({
           {recentDocs.length === 0 ? (
             <EmptyState className="mt-4" icon={FileText} title="No SRS documents yet" />
           ) : (
-            <div className="mt-3 grid gap-px">
+            <div className="mt-3 grid grid-cols-1 gap-px">
               {recentDocs.map((document) => (
                 <div key={document.id} className="flex items-center gap-2.5 rounded-md px-2 py-2.5 transition hover:bg-surface-2">
                   <FileText className="size-4 shrink-0 text-fg-3" />
@@ -215,7 +215,7 @@ export function MemberDashboard({
           {activity.length === 0 ? (
             <EmptyState className="mt-4" title="Nothing here yet" />
           ) : (
-            <div className="mt-3 grid gap-3.5">
+            <div className="mt-3 grid grid-cols-1 gap-3.5">
               {activity.map((item) => (
                 <div key={item.id} className="flex gap-2.5">
                   <span className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-full bg-accent2/15 text-accent2">
@@ -280,7 +280,7 @@ function PlanCard({
           </div>
         </div>
         {features.length > 0 ? (
-          <div className="mt-4 grid gap-2">
+          <div className="mt-4 grid grid-cols-1 gap-2">
             {features.map((feature) => (
               <div key={feature} className="flex items-center gap-2 text-[12.5px] text-white/80">
                 <Check className="size-3.5 text-emerald-300" />

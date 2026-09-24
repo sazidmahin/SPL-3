@@ -300,7 +300,7 @@ export function ClassModelerPage({ accessToken, activeWorkspace, activeProject, 
   const visibleErrors = Object.entries(errors).filter(([, message]) => message) as [ClassModelerMode, string][]
 
   return (
-    <section className="grid gap-6">
+    <section className="grid grid-cols-1 gap-6">
       {/* ── Hero ─────────────────────────────────────── */}
       <div className="relative overflow-hidden rounded-2xl border border-border bg-gradient-to-br from-accent/12 via-surface to-accent2/12 px-6 py-7 sm:px-8">
         <div className="pointer-events-none absolute -right-16 -top-20 size-64 rounded-full bg-accent2/15 blur-3xl" />
@@ -331,8 +331,8 @@ export function ClassModelerPage({ accessToken, activeWorkspace, activeProject, 
       </div>
 
       {/* ── Input ────────────────────────────────────── */}
-      <form onSubmit={handleGenerate} className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_22rem]">
-        <div className="grid gap-3 rounded-2xl border border-border bg-surface p-5 shadow-sm">
+      <form onSubmit={handleGenerate} className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_22rem]">
+        <div className="grid grid-cols-1 gap-3 rounded-2xl border border-border bg-surface p-5 shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <label htmlFor="class-modeler-text" className="font-display text-[15px] font-bold text-fg">
               Requirement / task statement
@@ -371,9 +371,9 @@ export function ClassModelerPage({ accessToken, activeWorkspace, activeProject, 
           </p>
         </div>
 
-        <div className="grid content-start gap-3 rounded-2xl border border-border bg-surface p-5 shadow-sm">
+        <div className="grid grid-cols-1 content-start gap-3 rounded-2xl border border-border bg-surface p-5 shadow-sm">
           <span className="font-display text-[15px] font-bold text-fg">Engine</span>
-          <div role="radiogroup" className="grid gap-2">
+          <div role="radiogroup" className="grid grid-cols-1 gap-2">
             {engines.map((item) => {
               const active = engine === item.id
               return (
@@ -410,7 +410,7 @@ export function ClassModelerPage({ accessToken, activeWorkspace, activeProject, 
             })}
           </div>
           {engine !== 'rule_based' ? (
-            <div className="grid gap-2.5 rounded-xl border border-border bg-surface-2 p-3">
+            <div className="grid grid-cols-1 gap-2.5 rounded-xl border border-border bg-surface-2 p-3">
               <span className="text-[11px] font-bold uppercase tracking-[0.08em] text-fg-3">LLM provider</span>
               <div className="grid grid-cols-2 gap-1 rounded-lg bg-surface-3 p-1">
                 {(
@@ -435,7 +435,7 @@ export function ClassModelerPage({ accessToken, activeWorkspace, activeProject, 
               </div>
 
               {llmProvider === 'ollama' ? (
-                <div className="grid gap-1.5">
+                <div className="grid grid-cols-1 gap-1.5">
                   <div className="flex items-center justify-between gap-2">
                     <label htmlFor="ollama-model" className="text-[11.5px] font-semibold text-fg-2">
                       Model
@@ -541,7 +541,7 @@ export function ClassModelerPage({ accessToken, activeWorkspace, activeProject, 
           </div>
         )
       ) : (
-        <div className="grid gap-4 rounded-2xl border border-border bg-surface p-4 shadow-sm sm:p-5">
+        <div className="grid grid-cols-1 gap-4 rounded-2xl border border-border bg-surface p-4 shadow-sm sm:p-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-2">
               <Chip tone={result.mode === 'llm' ? 'ai' : 'accent'}>
@@ -611,7 +611,7 @@ export function ClassModelerPage({ accessToken, activeWorkspace, activeProject, 
             </div>
           ) : null}
 
-          <Tabs value={tab} onValueChange={setTab} className="grid gap-4">
+          <Tabs value={tab} onValueChange={setTab} className="grid grid-cols-1 gap-4">
             <TabsList className="justify-self-start overflow-x-auto">
               <TabTrigger value="diagram" icon={Network}>Diagram</TabTrigger>
               <TabTrigger value="breakdown" icon={ListTree}>Step-by-step</TabTrigger>
@@ -620,7 +620,7 @@ export function ClassModelerPage({ accessToken, activeWorkspace, activeProject, 
               {canCompare ? <TabTrigger value="compare" icon={GitCompareArrows}>Compare</TabTrigger> : null}
             </TabsList>
 
-            <TabsContent value="diagram" className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_20rem]">
+            <TabsContent value="diagram" className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_20rem]">
               {result.validation.valid ? (
                 <ClassDiagramCanvas ref={canvasRef} model={result.model} />
               ) : (
@@ -629,16 +629,16 @@ export function ClassModelerPage({ accessToken, activeWorkspace, activeProject, 
               <RelationshipLegend model={result.model} className="content-start xl:max-h-[38rem] xl:overflow-y-auto xl:pr-1" />
             </TabsContent>
 
-            <TabsContent value="breakdown" className="grid gap-6">
+            <TabsContent value="breakdown" className="grid grid-cols-1 gap-6">
               <Breakdown result={result} />
             </TabsContent>
 
-            <TabsContent value="classes" className="grid gap-6">
+            <TabsContent value="classes" className="grid grid-cols-1 gap-6">
               <ClassCards classes={result.model.classes} enums={result.model.enums} relationships={result.model.relationships} />
               <RelationshipList relationships={result.model.relationships} classes={result.model.classes} />
             </TabsContent>
 
-            <TabsContent value="drawio" className="grid gap-3">
+            <TabsContent value="drawio" className="grid grid-cols-1 gap-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="text-[12px] text-fg-3">
                   The same model as a draw.io diagram - download it and keep editing in diagrams.net. Needs an internet connection to preview.
@@ -653,10 +653,10 @@ export function ClassModelerPage({ accessToken, activeWorkspace, activeProject, 
             </TabsContent>
 
             {canCompare ? (
-              <TabsContent value="compare" className="grid gap-4">
-                <div className="grid gap-3 rounded-xl border border-border bg-surface-2 p-3 sm:grid-cols-[1fr_auto_1fr] sm:items-end">
+              <TabsContent value="compare" className="grid grid-cols-1 gap-4">
+                <div className="grid grid-cols-1 gap-3 rounded-xl border border-border bg-surface-2 p-3 sm:grid-cols-[1fr_auto_1fr] sm:items-end">
                   {(['left', 'right'] as const).map((side, index) => (
-                    <div key={side} className={cn('grid gap-1', index === 1 && 'sm:order-3')}>
+                    <div key={side} className={cn('grid grid-cols-1 gap-1', index === 1 && 'sm:order-3')}>
                       <label className="text-[11px] font-bold uppercase tracking-[0.08em] text-fg-3" htmlFor={`compare-${side}`}>
                         {side === 'left' ? 'Compare' : 'With'}
                       </label>
@@ -727,7 +727,7 @@ function ModelStats({ model }: { model: ClassModelerResult['model'] }) {
 
 function ResultSkeleton() {
   return (
-    <div className="grid gap-4 rounded-2xl border border-border bg-surface p-5">
+    <div className="grid grid-cols-1 gap-4 rounded-2xl border border-border bg-surface p-5">
       <div className="flex gap-2">
         {[1, 2, 3].map((item) => (
           <div key={item} className="h-6 w-24 animate-pulse rounded-full bg-surface-3" />
@@ -762,7 +762,7 @@ function ClassCards({
     interface: 'bg-accent2/12',
   }
   return (
-    <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-3">
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 2xl:grid-cols-3">
       {classes.map((cls) => {
         const extendsOf = relationships.filter((rel) => rel.sourceClassId === cls.id && rel.type === 'inheritance').map((rel) => rel.target)
         const implementsOf = relationships.filter((rel) => rel.sourceClassId === cls.id && rel.type === 'realization').map((rel) => rel.target)
@@ -778,7 +778,7 @@ function ClassCards({
                 ) : null}
               </div>
               {extendsOf.length || implementsOf.length || children.length ? (
-                <div className="mt-1 grid gap-0.5 text-[11.5px] text-fg-2">
+                <div className="mt-1 grid grid-cols-1 gap-0.5 text-[11.5px] text-fg-2">
                   {extendsOf.length ? <span>is a <strong>{extendsOf.join(', ')}</strong> - inherits its members</span> : null}
                   {implementsOf.length ? <span>implements <strong>{implementsOf.join(', ')}</strong></span> : null}
                   {children.length ? (
@@ -789,7 +789,7 @@ function ClassCards({
                 </div>
               ) : null}
             </div>
-            <div className="grid gap-2 px-4 py-3">
+            <div className="grid grid-cols-1 gap-2 px-4 py-3">
               <div>
                 <div className="text-[10px] font-bold uppercase tracking-[0.1em] text-fg-3">Attributes</div>
                 {cls.attributes.length ? (
@@ -842,9 +842,9 @@ function ClassCards({
 function RelationshipList({ relationships, classes }: { relationships: ModelRelationship[]; classes: ModelClass[] }) {
   if (!relationships.length) return <p className="text-[12.5px] text-fg-3">No relationships between classes were found.</p>
   return (
-    <div className="grid gap-2">
+    <div className="grid grid-cols-1 gap-2">
       <h3 className="font-display text-[15px] font-bold text-fg">Relationships in plain words</h3>
-      <ul className="grid gap-2 lg:grid-cols-2">
+      <ul className="grid grid-cols-1 gap-2 lg:grid-cols-2">
         {relationships.map((rel) => {
           const { headline, detail } = explainRelationship(rel, classes)
           return (

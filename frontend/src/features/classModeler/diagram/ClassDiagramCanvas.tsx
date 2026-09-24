@@ -216,7 +216,7 @@ function Canvas({ model, className, compact, ref }: Props) {
             zoomable
             className="!m-3 overflow-hidden rounded-lg border border-border !bg-surface shadow-sm"
             nodeClassName="fill-accent/30"
-            maskColor="rgba(240, 244, 250, 0.7)"
+            maskColor="color-mix(in oklab, var(--color-bg) 72%, transparent)"
           />
         ) : null}
       </ReactFlow>
@@ -307,7 +307,7 @@ function ClassExplainer({
           <X />
         </Button>
       </div>
-      <div className="grid gap-4 overflow-y-auto px-4 py-3 text-[12.5px]">
+      <div className="grid grid-cols-1 gap-4 overflow-y-auto px-4 py-3 text-[12.5px]">
         <p className="text-fg-2">{guide.meaning}</p>
 
         {enumLiterals ? (
@@ -335,7 +335,7 @@ function ClassExplainer({
         {inherited.length ? (
           <section>
             <h4 className="mb-1 text-[10.5px] font-bold uppercase tracking-[0.1em] text-fg-3">Inherited (not redeclared)</h4>
-            <ul className="grid gap-0.5 font-mono text-[11px] text-fg-3">
+            <ul className="grid grid-cols-1 gap-0.5 font-mono text-[11px] text-fg-3">
               {inherited.map((item) => (
                 <li key={`${item.from}-${item.member}`}>
                   {item.member} <span className="font-sans text-[10.5px]">← {item.from}</span>
@@ -358,7 +358,7 @@ function ClassExplainer({
         {mine.length ? (
           <section>
             <h4 className="mb-1.5 text-[10.5px] font-bold uppercase tracking-[0.1em] text-fg-3">Relationships</h4>
-            <ul className="grid gap-2">
+            <ul className="grid grid-cols-1 gap-2">
               {mine.map((rel) => {
                 const { headline, detail } = explainRelationship(rel, model.classes)
                 return (

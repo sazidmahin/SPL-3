@@ -183,10 +183,10 @@ export function AiGenerationJobs({ generationJobs, projects, pipelineRuns = [] }
   const visible = tab === 'all' ? rows : rows.filter((row) => row.filterStatus === tab)
 
   return (
-    <section className="grid gap-6" id="ai-jobs">
+    <section className="grid grid-cols-1 gap-6" id="ai-jobs">
       <PageHeader title="AI Generation Jobs" description="Track and manage AI-generated SRS and diagram jobs." />
 
-      <div className="grid gap-3.5 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 xl:grid-cols-4">
         <StatTile label="Total jobs" value={counts.all} icon={WandSparkles} />
         <StatTile label="Completed" value={counts.completed} icon={CheckCircle2} />
         <StatTile label="Running" value={counts.running} icon={RotateCw} />
@@ -194,7 +194,7 @@ export function AiGenerationJobs({ generationJobs, projects, pipelineRuns = [] }
       </div>
 
       {pipelineRuns.length ? (
-        <Card className="grid gap-2.5 p-4">
+        <Card className="grid grid-cols-1 gap-2.5 p-4">
           <div className="flex items-center justify-between gap-2">
             <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-fg-3">
               SRS generation pipeline runs ({pipelineRuns.length})
@@ -321,7 +321,7 @@ function PipelineRunDocumentCard({ run, onClose }: { run: PipelineRun; onClose: 
   const xmlText = typeof xml === 'string' ? xml : ''
 
   return (
-    <Card className="grid gap-4 p-5">
+    <Card className="grid grid-cols-1 gap-4 p-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
           <PageHeader size="section" eyebrow="Generated via pipeline" title={run.title} />
@@ -338,7 +338,7 @@ function PipelineRunDocumentCard({ run, onClose }: { run: PipelineRun; onClose: 
       {storySections.length > 0 ? (
         <div>
           <h3 className="mb-2 text-[11px] font-bold uppercase tracking-[0.12em] text-fg-3">Final story</h3>
-          <ul className="grid gap-2">
+          <ul className="grid grid-cols-1 gap-2">
             {storySections.map((section) => (
               <li key={section.id} className="rounded-md border border-border bg-surface-2 p-3 text-[13px] leading-6 text-fg-2">
                 {section.text}
@@ -351,9 +351,9 @@ function PipelineRunDocumentCard({ run, onClose }: { run: PipelineRun; onClose: 
       {requirements.length > 0 ? (
         <div>
           <h3 className="mb-2 text-[11px] font-bold uppercase tracking-[0.12em] text-fg-3">Requirements</h3>
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3" aria-label="Extracted requirements">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3" aria-label="Extracted requirements">
             {requirements.map((requirement) => (
-              <div key={requirement.id} className="grid gap-1 rounded-lg border border-border bg-surface p-3">
+              <div key={requirement.id} className="grid grid-cols-1 gap-1 rounded-lg border border-border bg-surface p-3">
                 <strong className="font-mono text-[13px] text-accent">{requirement.id}</strong>
                 <span className="text-[11px] font-bold uppercase tracking-wide text-fg-3">{requirement.label}</span>
                 <p className="text-[13px] leading-6 text-fg-2">{requirement.text}</p>
@@ -402,15 +402,15 @@ function RunComparePanel({
   }
 
   return (
-    <Card className="grid gap-4 p-5">
+    <Card className="grid grid-cols-1 gap-4 p-5">
       <PageHeader
         size="section"
         eyebrow="Compare"
         title="Compare two generation runs"
         description="Pick a stage tab, then compare that stage's output between the two runs."
       />
-      <div className="grid gap-3 sm:grid-cols-2">
-        <label className="grid gap-1.5 text-sm font-semibold text-fg-2">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <label className="grid grid-cols-1 gap-1.5 text-sm font-semibold text-fg-2">
           Run A
           <Select value={leftId} onChange={(event) => onLeftChange(event.target.value)}>
             <option value="" disabled>
@@ -423,7 +423,7 @@ function RunComparePanel({
             ))}
           </Select>
         </label>
-        <label className="grid gap-1.5 text-sm font-semibold text-fg-2">
+        <label className="grid grid-cols-1 gap-1.5 text-sm font-semibold text-fg-2">
           Run B
           <Select value={rightId} onChange={(event) => onRightChange(event.target.value)}>
             <option value="" disabled>
@@ -495,7 +495,7 @@ function EntryCompare({ stage, leftRun, rightRun }: { stage: PipelineStage; left
           <strong className="text-fg">{matched}</strong> matched
         </span>
       </div>
-      <div className="grid overflow-hidden rounded-lg border border-border">
+      <div className="grid grid-cols-1 overflow-hidden rounded-lg border border-border">
         <div className="grid grid-cols-2 border-b border-border bg-surface-2">
           <div className="border-r border-border px-4 py-2 text-[12px] font-bold text-fg">{leftRun.title}</div>
           <div className="px-4 py-2 text-[12px] font-bold text-fg">{rightRun.title}</div>
@@ -548,8 +548,8 @@ function FullTextCompare({ stage, leftRun, rightRun }: { stage: 'input' | 'xml';
         ) : (
           <div className="rounded-md bg-warning/10 px-4 py-2.5 text-[13px] text-warning">The two diagrams differ.</div>
         )}
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="grid gap-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-2">
             <div className="rounded-md bg-surface-2 px-4 py-2 text-[12px] font-bold text-fg">{leftRun.title}</div>
             {leftText ? (
               <DrawioEmbed xml={leftText} title={`${leftRun.title} diagram`} className="h-[28rem]" />
@@ -557,7 +557,7 @@ function FullTextCompare({ stage, leftRun, rightRun }: { stage: 'input' | 'xml';
               <p className="rounded-md bg-surface-2 p-4 text-[13px] text-fg-3">No diagram generated.</p>
             )}
           </div>
-          <div className="grid gap-2">
+          <div className="grid grid-cols-1 gap-2">
             <div className="rounded-md bg-surface-2 px-4 py-2 text-[12px] font-bold text-fg">{rightRun.title}</div>
             {rightText ? (
               <DrawioEmbed xml={rightText} title={`${rightRun.title} diagram`} className="h-[28rem]" />
@@ -568,7 +568,7 @@ function FullTextCompare({ stage, leftRun, rightRun }: { stage: 'input' | 'xml';
         </div>
         <details className="rounded-md border border-border p-4">
           <summary className="cursor-pointer text-sm font-semibold text-fg-2">View raw XML</summary>
-          <div className="mt-3 grid gap-4 sm:grid-cols-2">
+          <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
             <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded-md bg-sidebar p-3 font-mono text-[11px] leading-5 text-sidebar-fg-active">
               {leftText || 'Not generated.'}
             </pre>
@@ -588,7 +588,7 @@ function FullTextCompare({ stage, leftRun, rightRun }: { stage: 'input' | 'xml';
       ) : (
         <div className="rounded-md bg-warning/10 px-4 py-2.5 text-[13px] text-warning">The two runs differ for this stage.</div>
       )}
-      <div className="grid overflow-hidden rounded-lg border border-border sm:grid-cols-2">
+      <div className="grid grid-cols-1 overflow-hidden rounded-lg border border-border sm:grid-cols-2">
         <div className="border-b border-border sm:border-b-0 sm:border-r">
           <div className="border-b border-border bg-surface-2 px-4 py-2 text-[12px] font-bold text-fg">{leftRun.title}</div>
           <pre className="max-h-96 overflow-auto whitespace-pre-wrap p-4 font-mono text-[11.5px] leading-5 text-fg-2">
@@ -623,7 +623,7 @@ function EntryCell({
     )
   }
   return (
-    <div className={cn('grid gap-1 px-4 py-3', tone === 'diff' && 'bg-warning/5', tone === 'only' && 'bg-sky/5', className)}>
+    <div className={cn('grid grid-cols-1 gap-1 px-4 py-3', tone === 'diff' && 'bg-warning/5', tone === 'only' && 'bg-sky/5', className)}>
       <div className="flex items-center gap-2">
         <span className="font-mono text-[11px] font-bold text-fg-3">{entry.id}</span>
         {entry.label ? (

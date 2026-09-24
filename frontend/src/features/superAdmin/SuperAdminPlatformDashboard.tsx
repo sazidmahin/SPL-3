@@ -40,20 +40,20 @@ export function SuperAdminPlatformDashboard({
   const recentJobs = [...generationJobs].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 6)
 
   return (
-    <section className="grid gap-6" id="overview">
+    <section className="grid grid-cols-1 gap-6" id="overview">
       <PageHeader
         title="Platform Overview"
         description={`Signed in on ${activeWorkspace?.workspace.name ?? 'the platform'}.`}
       />
 
-      <div className="grid gap-3.5 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 xl:grid-cols-4">
         <StatTile label="Projects" value={projects.length} icon={Folder} />
         <StatTile label="SRS Documents" value={srsDocuments.length} icon={FileText} />
         <StatTile label="Diagrams" value={diagrams.length} icon={Network} />
         <StatTile label="AI Jobs" value={generationJobs.length} icon={WandSparkles} />
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
         <Card className="p-5">
           <PageHeader size="section" title="Recent AI Jobs" />
           {recentJobs.length === 0 ? (
@@ -106,7 +106,7 @@ export function SuperAdminPlatformDashboard({
                   </PieChart>
                 </ResponsiveContainer>
               </div>
-              <div className="mt-3 grid gap-2">
+              <div className="mt-3 grid grid-cols-1 gap-2">
                 {donutData.map((entry) => (
                   <div key={entry.name} className="flex items-center justify-between text-[12.5px]">
                     <span className="flex items-center gap-2 capitalize text-fg-2">
@@ -125,7 +125,7 @@ export function SuperAdminPlatformDashboard({
       {usage ? (
         <Card className="p-5">
           <PageHeader size="section" title="This Workspace Usage" />
-          <div className="mt-3 grid gap-3 sm:grid-cols-3">
+          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
             {[
               { label: 'SRS generations', value: usage.srs_generations },
               { label: 'AI diagrams', value: usage.ai_diagram_generations },

@@ -46,7 +46,7 @@ export function BillingPanel({
     : []
 
   return (
-    <Card className="grid gap-4 p-4">
+    <Card className="@container grid grid-cols-1 gap-4 p-5">
       <PageHeader
         size="section"
         eyebrow="Billing"
@@ -57,19 +57,19 @@ export function BillingPanel({
           </Button>
         }
       />
-      <div className="grid gap-5 lg:grid-cols-[16.25rem_minmax(0,1fr)]">
-        <div className="grid content-start gap-2">
+      <div className="grid grid-cols-1 gap-5 @2xl:grid-cols-[16rem_minmax(0,1fr)]">
+        <div className="grid grid-cols-1 content-start gap-2">
           <span className="text-[11px] font-bold uppercase tracking-wide text-accent">Current plan</span>
           <h3 className="font-display text-lg font-bold text-fg">{subscription?.plan.name ?? 'No plan loaded'}</h3>
           <p className="text-[13px] text-fg-3">
             {subscription?.plan.description ?? 'Refresh billing to load workspace status.'}
           </p>
           {usageRows.length > 0 ? (
-            <div className="mt-2 grid gap-2">
+            <div className="mt-2 grid grid-cols-1 gap-2">
               {usageRows.map((row) => (
                 <div
                   key={row.label}
-                  className="flex items-center justify-between rounded-md border border-border bg-surface-2 px-3 py-2 text-xs"
+                  className="flex items-center justify-between rounded-lg border border-border bg-surface-2 px-3 py-2 text-xs"
                 >
                   <span className="text-fg-2">{row.label}</span>
                   <span className="font-mono font-semibold text-fg">
@@ -80,13 +80,13 @@ export function BillingPanel({
             </div>
           ) : null}
         </div>
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 @md:grid-cols-2">
           {availablePlans.map((plan) => {
             const current = subscription?.plan.code === plan.code
             return (
               <div
                 key={plan.id}
-                className={cn('grid content-start gap-3 rounded-lg border p-4', current ? 'border-accent' : 'border-border')}
+                className={cn('grid grid-cols-1 content-start gap-3 rounded-xl border p-4 transition', current ? 'border-accent bg-accent/[0.04] shadow-[var(--ring-accent)]' : 'border-border hover:border-border-strong')}
               >
                 <div className="flex items-start justify-between gap-2">
                   <h3 className="font-display text-lg font-bold text-fg">{plan.name}</h3>

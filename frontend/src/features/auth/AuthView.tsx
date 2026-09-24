@@ -288,7 +288,7 @@ export function AuthView({
             <AuthLinkButton onClick={() => setFlowView('forgot')}>Forgot password?</AuthLinkButton>
           </div>
         ) : (
-          <div className="grid gap-1">
+          <div className="grid grid-cols-1 gap-1">
             <label className="flex cursor-pointer items-start gap-2 text-[13px] leading-5 text-fg-2">
               <input checked={termsAccepted} type="checkbox" required onChange={updateTermsAccepted} />
               <span>
@@ -486,7 +486,7 @@ function ResetPasswordView({ password, onPasswordChange, onBack }: { password: s
           value={password}
           onChange={onPasswordChange}
         />
-        <ul className="grid gap-2 rounded-lg border border-border bg-surface-2 p-3 text-xs text-fg-3">
+        <ul className="grid grid-cols-1 gap-2 rounded-lg border border-border bg-surface-2 p-3 text-xs text-fg-3">
           {passwordRules.map((rule) => (
             <li className={rule.passed ? 'flex items-center gap-2 font-semibold text-success' : 'flex items-center gap-2'} key={rule.label}>
               <span className={rule.passed ? 'grid size-4 place-items-center rounded-full bg-success/15' : 'grid size-4 place-items-center rounded-full bg-surface-3'} aria-hidden="true"><Check size={12} strokeWidth={3} /></span>
@@ -536,7 +536,7 @@ function VerifyEmailView({
 }) {
   return (
     <AuthFrame artwork="mail">
-      <section className="grid gap-5"><span className="grid size-12 place-items-center rounded-2xl bg-success/12 text-success ring-1 ring-success/20"><AuthIcon name="check" /></span>
+      <section className="grid grid-cols-1 gap-5"><span className="grid size-12 place-items-center rounded-2xl bg-success/12 text-success ring-1 ring-success/20"><AuthIcon name="check" /></span>
         <AuthPanelHeader title="Verify your email" subtitle={`Enter the 6 digit verification code sent to ${email || 'your email'}.`} />
         <form className={spaciousFormClass} onSubmit={onSubmit}>
           <AuthField
@@ -579,7 +579,7 @@ function WorkspaceOnboardingView({ onContinue }: { onContinue: () => void }) {
       </section>
       <section className="mt-4 rounded-xl border border-border bg-surface-2 p-4">
         <strong className="text-sm text-fg">Your personal workspace will be created automatically</strong>
-        <ul className="mt-3 grid list-inside list-disc gap-1.5 text-[13px] text-fg-2 marker:text-accent">
+        <ul className="mt-3 grid grid-cols-1 list-inside list-disc gap-1.5 text-[13px] text-fg-2 marker:text-accent">
           <li>Get your own private workspace</li>
           <li>Invite collaborators anytime</li>
           <li>Upgrade or change later</li>

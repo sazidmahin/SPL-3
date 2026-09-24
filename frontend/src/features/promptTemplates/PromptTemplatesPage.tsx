@@ -53,7 +53,7 @@ export function PromptTemplatesPage({ accessToken }: PromptTemplatesPageProps) {
   const guardrailCount = templates.filter((template) => template.purpose.includes('guardrail')).length
 
   return (
-    <section className="grid gap-6" id="prompt-templates">
+    <section className="grid grid-cols-1 gap-6" id="prompt-templates">
       <PageHeader
         eyebrow="Prompt library"
         title="Prompt Templates"
@@ -71,7 +71,7 @@ export function PromptTemplatesPage({ accessToken }: PromptTemplatesPageProps) {
         }
       />
 
-      <div className="grid gap-3.5 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-3">
         <StatTile label="Total templates" value={templates.length} icon={FileText} />
         <StatTile label="Active" value={activeCount} icon={BrainCircuit} />
         <StatTile label="Guardrails" value={guardrailCount} icon={ShieldCheck} />
@@ -92,8 +92,8 @@ export function PromptTemplatesPage({ accessToken }: PromptTemplatesPageProps) {
           />
         </Card>
       ) : (
-        <div className="grid gap-5 xl:grid-cols-[22rem_minmax(0,1fr)]">
-          <div className="grid content-start gap-3" aria-label="Prompt templates">
+        <div className="grid grid-cols-1 gap-5 xl:grid-cols-[22rem_minmax(0,1fr)]">
+          <div className="grid grid-cols-1 content-start gap-3" aria-label="Prompt templates">
             {filtered.map((template) => (
               <button
                 key={template.id}

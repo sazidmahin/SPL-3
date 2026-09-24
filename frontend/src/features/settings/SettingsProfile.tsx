@@ -34,12 +34,12 @@ export function SettingsProfile({
   onLoadProviderModels,
 }: SettingsProfileProps) {
   return (
-    <section className="grid gap-5" id="settings">
+    <section className="grid grid-cols-1 gap-5" id="settings">
       <PageHeader title="Settings" description="Manage your profile and AI provider credentials." />
-      <div className="grid items-start gap-6 lg:grid-cols-[12rem_minmax(0,1fr)]">
+      <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[12rem_minmax(0,1fr)]">
         <SettingsNav active="profile" />
-        <div className="grid gap-5">
-          <Card className="grid gap-5 p-6" id="profile">
+        <div className="grid grid-cols-1 gap-5">
+          <Card className="grid grid-cols-1 gap-5 p-6" id="profile">
             <PageHeader size="section" title="Profile" description="How you appear across the platform." />
             <div className="flex items-center gap-4">
               <span className="grid size-16 shrink-0 place-items-center rounded-full bg-gradient-to-br from-accent2 to-accent text-xl font-bold text-white">
@@ -79,7 +79,7 @@ export function AiSettingsPanel({
   onLoadProviderModels,
 }: Omit<SettingsProfileProps, 'user'>) {
   return (
-    <section className="grid gap-5" id="ai-settings">
+    <section className="grid grid-cols-1 gap-5" id="ai-settings">
       <PageHeader
         title="AI Settings"
         description="Add provider API keys, choose a model, test the connection, and select the provider used by AI-Gen."
@@ -115,7 +115,7 @@ function AiProvidersCard({
   onLoadModels?: SettingsProfileProps['onLoadProviderModels']
 }) {
   return (
-    <Card className="grid gap-4 p-6" id="ai-providers">
+    <Card className="grid grid-cols-1 gap-4 p-6" id="ai-providers">
       <PageHeader
         size="section"
         title="AI Providers"
@@ -174,7 +174,7 @@ function ProviderCard({
   const status = credential?.status ?? 'unconfigured'
 
   return (
-    <div className="grid gap-3 rounded-lg border border-border p-4">
+    <div className="grid grid-cols-1 gap-3 rounded-lg border border-border p-4">
       <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
         <div>
           <h3 className="text-sm font-semibold text-fg">{provider.label}</h3>
@@ -283,7 +283,7 @@ function ProviderCard({
 
 function SettingsNav({ active }: { active: string }) {
   return (
-    <nav className="grid gap-1 lg:sticky lg:top-20" aria-label="Settings sections">
+    <nav className="grid grid-cols-1 gap-1 lg:sticky lg:top-20" aria-label="Settings sections">
       {navSections.map((section) => (
         <a
           key={section.id}

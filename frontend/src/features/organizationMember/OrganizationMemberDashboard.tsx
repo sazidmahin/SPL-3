@@ -27,21 +27,21 @@ export function OrganizationMemberDashboard({
   const firstName = user.full_name.trim().split(/\s+/)[0] || 'there'
 
   return (
-    <section className="grid gap-6" id="overview">
+    <section className="grid grid-cols-1 gap-6" id="overview">
       <PageHeader
         title="Dashboard"
         description={`Welcome back, ${firstName} — your view of ${activeWorkspace?.workspace.name ?? 'this workspace'}.`}
       />
 
-      <div className="grid gap-3.5 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 xl:grid-cols-4">
         <StatTile label="Projects" value={projects.length} icon={Folder} />
         <StatTile label="SRS Documents" value={srsDocuments.length} icon={FileText} />
         <StatTile label="Diagrams" value={diagrams.length} icon={Network} />
         <StatTile label="SRS this period" value={usage?.srs_generations ?? 0} icon={FileText} />
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-3">
-        <Card className="grid gap-4 p-5">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <Card className="grid grid-cols-1 gap-4 p-5">
           <PageHeader size="section" title="Assigned Projects" />
           {projects.length === 0 ? (
             <EmptyState icon={Folder} title="No projects assigned" />
@@ -58,7 +58,7 @@ export function OrganizationMemberDashboard({
             />
           )}
         </Card>
-        <Card className="grid gap-4 p-5">
+        <Card className="grid grid-cols-1 gap-4 p-5">
           <PageHeader size="section" title="Recent SRS Documents" />
           <CompactList
             items={srsDocuments.slice(0, 5).map((document) => ({
@@ -71,7 +71,7 @@ export function OrganizationMemberDashboard({
             emptyText="No SRS documents yet."
           />
         </Card>
-        <Card className="grid gap-4 p-5">
+        <Card className="grid grid-cols-1 gap-4 p-5">
           <PageHeader size="section" title="Recent Diagrams" />
           <CompactList
             items={diagrams.slice(0, 5).map((diagram) => ({

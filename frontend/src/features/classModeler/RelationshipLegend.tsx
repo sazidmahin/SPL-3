@@ -34,13 +34,13 @@ export function RelationshipLegend({ model, className }: { model: ClassModelerRe
   const stereotypes = new Set(model.classes.map((cls) => cls.stereotype))
 
   return (
-    <div className={cn('grid gap-3', className)}>
+    <div className={cn('grid grid-cols-1 gap-3', className)}>
       <div>
         <h3 className="font-display text-[14px] font-bold text-fg">How to read this diagram</h3>
         <p className="text-[11.5px] text-fg-3">Line style and the shape at the end tell you the kind of relationship.</p>
       </div>
 
-      <ul className="grid gap-2">
+      <ul className="grid grid-cols-1 gap-2">
         {kinds.map((kind) => {
           const guide = relationshipGuide[kind]
           const examples = model.relationships.filter((rel) => rel.type === kind).slice(0, 2)
@@ -66,7 +66,7 @@ export function RelationshipLegend({ model, className }: { model: ClassModelerRe
               </div>
               <p className="mt-1.5 text-[11.5px] leading-snug text-fg-2">{guide.meaning}</p>
               {examples.length ? (
-                <ul className="mt-1.5 grid gap-0.5">
+                <ul className="mt-1.5 grid grid-cols-1 gap-0.5">
                   {examples.map((rel) => (
                     <li key={rel.id} className="text-[11.5px] font-semibold text-accent-dim">
                       e.g. {explainRelationship(rel, model.classes).headline.replace(/\.$/, '')}
@@ -81,7 +81,7 @@ export function RelationshipLegend({ model, className }: { model: ClassModelerRe
         })}
       </ul>
 
-      <div className="grid gap-1.5 rounded-lg border border-border bg-surface px-3 py-2.5">
+      <div className="grid grid-cols-1 gap-1.5 rounded-lg border border-border bg-surface px-3 py-2.5">
         <div className="text-[10.5px] font-bold uppercase tracking-[0.1em] text-fg-3">Box types</div>
         {(['entity', 'abstract', 'interface', 'enumeration'] as const).map((key) => (
           <div key={key} className={cn('flex gap-2 text-[11.5px]', key !== 'enumeration' && !stereotypes.has(key) && key !== 'entity' && 'opacity-60')}>
