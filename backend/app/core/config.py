@@ -34,11 +34,24 @@ class Settings(BaseSettings):
     ollama_base_url: str = Field(default="http://localhost:11434", alias="OLLAMA_BASE_URL")
     ollama_model: str = "llama3.2:1b"
     ollama_models: str = "llama3.2:1b,llama3.2,llama3.1,qwen2.5,qwen2.5-coder,mistral,phi3"
-    ollama_temperature: float = 0
+    # At temperature 0 (greedy decoding), a small model that starts repeating a
+    # phrase has no randomness to break out of it - the repeated pattern stays
+    # the single highest-probability next token forever. repeat_penalty=1.3 alone
+    # was not enough to prevent this (observed: Ollama's own hard circuit
+    # breaker aborted a generation entirely with "token repeat limit reached")
+    # - a small amount of temperature is the standard companion to repeat_penalty
+    # for escaping a loop a purely greedy sampler cannot break out of on its own.
+    ollama_temperature: float = 0.2
     ollama_timeout_seconds: int = 600
     ollama_keep_alive: str = "5m"
     ollama_num_ctx: int = 16384
     ollama_num_predict: int = 1024
+    ollama_repeat_penalty: float = 1.4
+    ollama_repeat_last_n: int = 256
+    ollama_embed_model: str = "nomic-embed-text"
+    rag_enabled: bool = False
+    rag_top_k: int = 2
+    rag_min_similarity: float = 0.55
     ai_credential_encryption_key: str = "change-this-development-ai-credential-key"
     srsgen_base_model: str = "Qwen/Qwen1.5-1.8B-Chat"
     srsgen_artifact_path: str = "model_artifacts/srsgen-qwen1.5"
