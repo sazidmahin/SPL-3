@@ -13,7 +13,7 @@ export type Tone =
   | 'warning'
   | 'info'
 
-type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'ai'
+type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'destructive' | 'ai'
 type ButtonSize = 'sm' | 'md' | 'lg'
 
 const buttonBase =
@@ -26,6 +26,7 @@ const buttonVariants: Record<ButtonVariant, string> = {
     'border border-border-strong bg-surface text-fg shadow-[var(--elev-1)] hover:bg-surface-2 hover:border-fg-3/40',
   ghost: 'text-fg-2 hover:bg-surface-3 hover:text-fg',
   danger: 'border border-danger/25 bg-danger/10 text-danger hover:bg-danger/15',
+  destructive: 'bg-danger text-white shadow-[0_1px_2px_rgba(16,24,40,0.12)] hover:brightness-110 dark:text-slate-950',
   ai: 'bg-gradient-to-r from-accent to-accent2-dim text-white shadow-[0_6px_18px_-6px_color-mix(in_oklab,var(--color-accent)_70%,transparent)] hover:brightness-110',
 }
 

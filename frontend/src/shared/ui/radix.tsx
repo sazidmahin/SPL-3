@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- this module re-exports Radix primitives next to their styled wrappers */
 import type { ComponentPropsWithoutRef, ReactNode } from 'react'
 import { forwardRef } from 'react'
 import * as DialogPrimitive from '@radix-ui/react-dialog'

@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { Cpu, Sparkles } from 'lucide-react'
-import type { ClassModelerResult, ModelClass } from '../../domains/classModeler/types'
+import type { ClassModelerResult, ModelClass } from '../../api'
 import { Chip, cn } from '../../shared/ui'
 import { ClassDiagramCanvas } from './diagram/ClassDiagramCanvas'
 import { RelationshipGlyph } from './RelationshipLegend'

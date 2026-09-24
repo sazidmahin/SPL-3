@@ -1,6 +1,6 @@
 import { Handle, Position } from '@xyflow/react'
 import type { Node, NodeProps } from '@xyflow/react'
-import type { ModelClass, ModelEnum } from '../../../domains/classModeler/types'
+import type { ModelClass, ModelEnum } from '../../../api'
 import { cn } from '../../../shared/ui'
 
 export type UmlNodeData = {

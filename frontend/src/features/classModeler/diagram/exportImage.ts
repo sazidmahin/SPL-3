@@ -1,4 +1,4 @@
-import type { ClassModelerResult, ModelClass, ModelEnum } from '../../../domains/classModeler/types'
+import type { ClassModelerResult, ModelClass, ModelEnum } from '../../../api'
 import { methodSignature } from './layout'
 
 /**

@@ -1,4 +1,4 @@
-import type { ModelClass, ModelEnum, ModelRelationship } from '../../../domains/classModeler/types'
+import type { ModelClass, ModelEnum, ModelRelationship } from '../../../api'
 
 export type LayoutBox = { id: string; width: number; height: number }
 export type Point = { x: number; y: number }

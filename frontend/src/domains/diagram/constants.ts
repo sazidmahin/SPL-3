@@ -1,1 +1,0 @@
-export const BLANK_DRAWIO_XML = '<mxfile><diagram name="Page-1"></diagram></mxfile>'

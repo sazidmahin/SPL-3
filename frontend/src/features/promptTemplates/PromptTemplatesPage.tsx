@@ -1,41 +1,16 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
+import { useAsync } from '../../app/core/useAsync'
 import { BrainCircuit, FileText, GitBranch, Search, ShieldCheck } from 'lucide-react'
-import { fetchPromptTemplates } from '../../domains/promptTemplates/api'
-import type { PromptTemplate } from '../../domains/promptTemplates/types'
+import { adminApi } from '../../api'
 import { Card, Chip, EmptyState, Input, PageHeader, StatTile, cn } from '../../shared/ui'
 
-type PromptTemplatesPageProps = {
-  accessToken: string
-}
-
-export function PromptTemplatesPage({ accessToken }: PromptTemplatesPageProps) {
-  const [templates, setTemplates] = useState<PromptTemplate[]>([])
+export function PromptTemplatesPage() {
+  const state = useAsync(() => adminApi.promptTemplates(), [])
+  const templates = useMemo(() => state.data ?? [], [state.data])
+  const isLoading = state.loading
+  const error = state.error
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null)
   const [query, setQuery] = useState('')
-  const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    let cancelled = false
-    setIsLoading(true)
-    setError(null)
-    fetchPromptTemplates(accessToken)
-      .then((result) => {
-        if (cancelled) return
-        setTemplates(result)
-        setSelectedTemplateId((current) => current ?? result[0]?.id ?? null)
-      })
-      .catch((caught) => {
-        if (cancelled) return
-        setError(caught instanceof Error ? caught.message : 'Unable to load prompt templates')
-      })
-      .finally(() => {
-        if (!cancelled) setIsLoading(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [accessToken])
 
   const filtered = useMemo(() => {
     const term = query.trim().toLowerCase()

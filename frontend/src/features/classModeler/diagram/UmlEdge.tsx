@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { EdgeLabelRenderer, useInternalNode } from '@xyflow/react'
 import type { Edge, EdgeProps, InternalNode } from '@xyflow/react'
-import type { ModelRelationship } from '../../../domains/classModeler/types'
+import type { ModelRelationship } from '../../../api'
 import { cn } from '../../../shared/ui'
 import { relationshipGuide } from '../relationshipGuide'
 
