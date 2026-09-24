@@ -19,7 +19,12 @@ services:
       timeout: 5s
       retries: 10
 
+  # Not started by default (see backend's OLLAMA_BASE_URL, which now points at a
+  # native Ollama install on the host instead - CPU inference inside Docker
+  # Desktop's WSL2 VM measured 25x+ slower than running Ollama natively on
+  # Windows). Bring back with: docker compose --profile docker-ollama up
   ollama:
+    profiles: ["docker-ollama"]
     build:
       context: .
       dockerfile: Dockerfile.ollama
@@ -49,6 +54,7 @@ services:
   # backend/frontend from starting - rebuilding backend/frontend never disturbs
   # the already-running ollama service or its cached models.
   ollama-init:
+    profiles: ["docker-ollama"]
     image: ollama/ollama:latest
     depends_on:
       ollama:
@@ -78,22 +84,21 @@ services:
     depends_on:
       db:
         condition: service_healthy
-      ollama:
-        condition: service_healthy
-      ollama-init:
-        condition: service_completed_successfully
     environment:
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-srs_diagram_platform}
       SECRET_KEY: ${SECRET_KEY:-change-this-development-secret}
       AI_CREDENTIAL_ENCRYPTION_KEY: ${AI_CREDENTIAL_ENCRYPTION_KEY:-change-this-development-ai-credential-key}
       BACKEND_CORS_ORIGINS: ${BACKEND_CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
-      LLM_PROVIDER: ${LLM_PROVIDER:-openai}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2:1b}
       OLLAMA_MODELS: ${OLLAMA_MODELS:-llama3.2:1b,llama3.2,llama3.1,qwen2.5,qwen2.5-coder,mistral,phi3}
       OLLAMA_TIMEOUT_SECONDS: ${OLLAMA_TIMEOUT_SECONDS:-600}
       OLLAMA_NUM_CTX: ${OLLAMA_NUM_CTX:-16384}
+      OLLAMA_NUM_PREDICT: ${OLLAMA_NUM_PREDICT:-1024}
+      OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL:-nomic-embed-text}
+      RAG_ENABLED: ${RAG_ENABLED:-false}
+      RAG_TOP_K: ${RAG_TOP_K:-2}
+      RAG_MIN_SIMILARITY: ${RAG_MIN_SIMILARITY:-0.55}
       EMAIL_DELIVERY_MODE: ${EMAIL_DELIVERY_MODE:-console}
       SUPER_ADMIN_EMAIL: ${SUPER_ADMIN_EMAIL:-}
       SUPER_ADMIN_PASSWORD: ${SUPER_ADMIN_PASSWORD:-}

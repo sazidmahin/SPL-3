@@ -199,6 +199,10 @@ _ENTITY_LEADING_NOISE = (
     "relevant",
     "corresponding",
     "respective",
+    "other",
+    "another",
+    "different",
+    "same",
     "their",
     "his",
     "her",
@@ -475,13 +479,37 @@ def _split_clause_text(text: str) -> list[str]:
     def is_bare_verb_tail(fragment: str) -> bool:
         """True when `fragment` ends in a known action verb with nothing stated
         after it - it is still waiting for the object a later coordinated verb
-        will supply."""
+        will supply. After a modal only the first word is the verb, so in "can
+        borrow books" the "books" is the object even though "book" is a verb."""
         words = _words(fragment)
-        return bool(words) and _is_action_word(words[-1])
+        if not words or not _is_action_word(words[-1]):
+            return False
+        modal_positions = [index for index, word in enumerate(words) if word in modal_words]
+        if modal_positions:
+            return modal_positions[-1] == len(words) - 2
+        return len(words) == 1
+
+    determiners = {
+        "a", "an", "the", "their", "his", "her", "its", "my", "our", "your", "each", "every", "all",
+        "some", "any", "one", "two", "three", "several", "many", "multiple", "other", "another", "new",
+    }
 
     def looks_like_predicate(fragment: str) -> bool:
-        head = _words(fragment)[:4]
-        return any(word in modal_words or _is_action_word(word) for word in head)
+        words = _words(fragment)
+        head = words[:4]
+        if any(word in modal_words or _is_action_word(word) for word in head):
+            return True
+        # "... and prescribe medicines" / "... and enters a PIN": a general
+        # English verb opening the piece, confirmed either by a determiner
+        # right after it or by a modal earlier in the sentence. A plural first
+        # word ("sales reports") or a known field phrase is a noun list.
+        if len(words) < 2 or common_verb_base(words[0]) is None:
+            return False
+        if words[1] in determiners or re.fullmatch(r"\d+", words[1]):
+            return True
+        if _is_attribute_like(" ".join(words)):
+            return False
+        return segment_has_modal and not (words[0].endswith("s") and common_verb_base(words[0]) != words[0][:-1])
 
     def _looks_like_bare_noun_phrase(fragment: str) -> bool:
         """True for a short, plain noun phrase like "due date" or "phone
@@ -520,6 +548,7 @@ def _split_clause_text(text: str) -> list[str]:
     segments = [segment.strip() for segment in re.split(r"\s*;\s*|\s*,?\s+\b(?:then|but)\b\s*,?\s*", text) if segment.strip()]
     result: list[str] = []
     for segment in segments:
+        segment_has_modal = any(word in modal_words for word in _words(segment))
         segment = _protect_quantity(segment)
         relative_tail = ""
         relative_match = relative_pattern.search(segment)
@@ -668,6 +697,15 @@ def denarrate_clause(text: str) -> str:
     Anything it does not recognise is returned unchanged.
     """
     cleaned = _GOAL_CLAUSE_RE.sub("", text).strip(" ,;:")
+    # "Members can also reserve books" - an adverb between the modal and the
+    # verb would otherwise be read as the action ("also") with "reserve books"
+    # as its object.
+    cleaned = re.sub(
+        rf"\b({_modal_pattern()})\s+(?:also|additionally|then|always|easily|simply|just|quickly|directly|now)\s+",
+        r"\1 ",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
     # A leading "if/when someone …" trigger left after clause splitting — keep the
     # predicate, drop the trigger word (the condition, if structured, is captured
     # elsewhere from the full sentence).
@@ -796,7 +834,9 @@ def _nfr_keywords() -> dict[str, Any]:
 
 
 def _articles_pattern() -> str:
-    return r"(?:a|an|the)\s+"
+    articles = [str(item).strip().lower() for item in load_dictionaries().get("articles", []) if str(item).strip()]
+    ordered = sorted({re.escape(item) for item in articles or ["a", "an", "the"]}, key=len, reverse=True)
+    return r"(?:" + "|".join(ordered) + r")\s+"
 
 
 def _modal_pattern() -> str:
@@ -810,6 +850,28 @@ def _modal_pattern() -> str:
     return r"(?:" + "|".join(ordered) + r")"
 
 
+def _common_verbs() -> set[str]:
+    """General English verbs (common_verbs.json). A verb found here but not in
+    the action alias tables is a real verb with no synonym mapping - it keeps
+    its own base form instead of being reported as unknown."""
+    return {str(item).strip().lower() for item in load_dictionaries().get("common_verbs", []) if str(item).strip()}
+
+
+def common_verb_base(word: str) -> str | None:
+    """Base form of `word` when it is an inflection of a common verb."""
+    lowered = word.strip().lower()
+    verbs = _common_verbs()
+    if lowered in verbs:
+        return lowered
+    irregular = {str(k).lower(): str(v).lower() for k, v in load_dictionaries().get("irregular_verbs", {}).items()}
+    if irregular.get(lowered) in verbs:
+        return irregular[lowered]
+    for candidate in _regular_verb_bases(lowered):
+        if candidate in verbs:
+            return candidate
+    return None
+
+
 def _is_recognized_action_word(word: str) -> bool:
     """True when `word` (in any inflection) resolves to a known action -
     the same recognition _canonical_action ends up using, exposed separately
@@ -818,7 +880,9 @@ def _is_recognized_action_word(word: str) -> bool:
     aliases = _action_aliases()
     if word in aliases or singularize(word) in aliases:
         return True
-    return any(candidate in aliases for candidate in _regular_verb_bases(word))
+    if any(candidate in aliases for candidate in _regular_verb_bases(word)):
+        return True
+    return common_verb_base(word) is not None
 
 
 def _canonical_action(raw_action: str | None) -> tuple[str | None, str, list[str]]:
@@ -833,7 +897,21 @@ def _canonical_action(raw_action: str | None) -> tuple[str | None, str, list[str
         canonical = aliases.get(candidate)
         if canonical:
             return canonical, "EXT_ACTION_ALIAS_001", []
+    base = common_verb_base(lowered)
+    if base:
+        return base, "EXT_ACTION_COMMON_VERB_001", []
+    head, _, particle = lowered.partition(" ")
+    if particle and (head in aliases or common_verb_base(head)):
+        head_base = verb_lemma(head) or head
+        return f"{head_base} {particle}", "EXT_ACTION_PHRASAL_VERB_001", []
     return lowered, "EXT_UNKNOWN_ACTION_001", [f'Unknown action "{raw_action}".']
+
+
+_PHRASAL_PARTICLES = {"out", "up", "off", "down", "back", "over", "away"}
+_PHRASAL_IN_ON = {
+    "check in", "log in", "sign in", "fill in", "hand in", "turn in", "check on", "log on", "sign on",
+    "turn on", "switch on", "try on", "take on", "put on", "drop in", "plug in", "clock in",
+}
 
 
 def _absorb_phrasal_particle(raw_action: str, object_group: str | None) -> tuple[str, str | None]:
@@ -852,13 +930,29 @@ def _absorb_phrasal_particle(raw_action: str, object_group: str | None) -> tuple
     combined = f"{raw_action.strip().lower()} {particle}"
     if combined in _action_aliases():
         return combined, " ".join(object_words[1:])
+    # A general phrasal verb: the particle directly follows a known verb and an
+    # object still follows it ("checks out guests"). "in"/"on" double as plain
+    # prepositions ("enroll in courses"), so they only count for known pairs.
+    base = verb_lemma(raw_action) or raw_action.strip().lower()
+    phrasal = particle in _PHRASAL_PARTICLES or f"{base} {particle}" in _PHRASAL_IN_ON
+    # "up to five", "out of stock", "over 100": a quantity or preposition
+    # follows, so the word is not a particle.
+    follows = object_words[1].lower() if len(object_words) > 1 else ""
+    if follows in {"to", "of", "from", "than", "with"} or re.fullmatch(r"\d+", follows) or follows in NUMBER_WORDS:
+        phrasal = False
+    if phrasal and len(object_words) > 1 and _is_recognized_action_word(raw_action.strip().lower()):
+        return f"{raw_action.strip()} {particle}", " ".join(object_words[1:])
     return raw_action, object_group
 
 
 def _split_coordinated(phrase: str) -> list[str]:
+    # "one or more accounts" is one quantified object, not "one" + "more accounts".
+    protected = phrase or ""
+    for idiom in ("one or more", "zero or more", "one or many", "one or two", "zero or one", "more or less"):
+        protected = re.sub(re.escape(idiom), idiom.replace(" ", "\x00"), protected, flags=re.IGNORECASE)
     parts = [
-        re.sub(r"^(?:a|an|the)\s+", "", part.strip(), flags=re.IGNORECASE)
-        for part in re.split(r"\s*,\s*|\s+\band\b\s+|\s+\bor\b\s+", phrase or "")
+        re.sub(r"^(?:a|an|the)\s+", "", part.replace("\x00", " ").strip(), flags=re.IGNORECASE)
+        for part in re.split(r"\s*,\s*|\s+\band\b\s+|\s+\bor\b\s+", protected)
         if part.strip()
     ]
     return parts or ([phrase.strip()] if phrase and phrase.strip() else [])
@@ -879,7 +973,17 @@ def _expand_action_object(raw_action: str | None, raw_object: str | None) -> lis
     return [(actions[0], objects[0])]
 
 
-_CONDITION_TRIGGERS = r"(?:if|when|whenever|unless|once|after|before|while|as soon as)"
+_BASE_CONDITION_TRIGGERS = ("if", "when", "whenever", "unless", "once", "after", "before", "while", "as soon as")
+
+
+def _condition_triggers() -> str:
+    """Trigger words for a subordinate condition: the built-in set plus
+    conditional_markers.json ("provided that", "in case", ...)."""
+    markers = {str(item).strip().lower() for item in load_dictionaries().get("conditional_markers", []) if str(item).strip()}
+    ordered = sorted({re.escape(item) for item in markers.union(_BASE_CONDITION_TRIGGERS)}, key=len, reverse=True)
+    return r"(?:" + "|".join(ordered) + r")"
+
+
 _CONDITION_SPECIFIC_STATE_RE = re.compile(
     r"\b(?:if|when|unless)\s+(?:the\s+|a\s+|an\s+)?(?P<subject>[a-zA-Z][\w -]*?)\s+"
     r"(?P<verb>fails|failed|is failed|succeeds|expires|is invalid|is valid)\b",
@@ -911,7 +1015,7 @@ def _condition_match(text: str) -> re.Match[str] | None:
     if not state_pattern:
         return None
     return re.search(
-        rf"\b{_CONDITION_TRIGGERS}\s+(?:the\s+|a\s+|an\s+)?(?P<subject>[a-zA-Z][\w -]*?)\s+"
+        rf"\b{_condition_triggers()}\s+(?:the\s+|a\s+|an\s+)?(?P<subject>[a-zA-Z][\w -]*?)\s+"
         rf"(?:is|are|was|were|has been|have been)\s+(?P<state>{state_pattern})\b",
         text,
         re.IGNORECASE,
@@ -934,24 +1038,47 @@ def _condition_from_text(text: str) -> dict[str, Any] | None:
     return {"subject": normalize_entity(match.group("subject")), "operator": "is", "value": value}
 
 
+NUMBER_WORDS = {
+    "zero": 0, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7,
+    "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12, "fifteen": 15, "twenty": 20,
+    "thirty": 30, "fifty": 50, "hundred": 100,
+}
+_NUMBER_WORD_RE = re.compile(r"\b(" + "|".join(NUMBER_WORDS) + r")\b")
+
+
+def _digits_for_number_words(text: str) -> str:
+    return _NUMBER_WORD_RE.sub(lambda match: str(NUMBER_WORDS[match.group(1)]), text)
+
+
 def _quantity_from_text(text: str) -> tuple[str | None, str | None]:
+    """Multiplicity from a quantity phrase. Multi-word dictionary idioms
+    ("one or more", "at least one") win first, then numeric bounds - with
+    number words read as digits, so "up to five books" is 0..5 - and only then
+    single-word quantifiers ("many", "optional"). Checking single words last
+    keeps "no" from swallowing "no more than 3"."""
     lowered = text.lower()
     quantifiers = load_dictionaries().get("quantifiers", {})
-    for phrase, multiplicity in sorted(quantifiers.items(), key=lambda item: len(item[0]), reverse=True):
-        if re.search(rf"\b{re.escape(phrase)}\b", lowered):
+    ordered = sorted(quantifiers.items(), key=lambda item: len(item[0]), reverse=True)
+    for phrase, multiplicity in ordered:
+        if " " in phrase and re.search(rf"\b{re.escape(phrase)}\b", lowered):
             return multiplicity, "MUL_QUANTIFIER_DICTIONARY_001"
+    numeric = _digits_for_number_words(lowered)
     patterns = [
-        (r"exactly\s+(\d+)", "{0}", "MUL_EXACT_NUMBER_001"),
-        (r"at least\s+(\d+)", "{0}..*", "MUL_AT_LEAST_NUMBER_001"),
-        (r"at most\s+(\d+)", "0..{0}", "MUL_AT_MOST_NUMBER_001"),
-        (r"(?:maximum|up to)\s+(\d+)", "0..{0}", "MUL_MAX_NUMBER_001"),
-        (r"minimum\s+(\d+)", "{0}..*", "MUL_MIN_NUMBER_001"),
-        (r"between\s+(\d+)\s+and\s+(\d+)", "{0}..{1}", "MUL_BETWEEN_NUMBER_001"),
+        (r"\bbetween\s+(\d+)\s+and\s+(\d+)", "{0}..{1}", "MUL_BETWEEN_NUMBER_001"),
+        (r"\bexactly\s+(\d+)", "{0}", "MUL_EXACT_NUMBER_001"),
+        (r"\b(?:at least|minimum(?: of)?|no fewer than|no less than)\s+(\d+)", "{0}..*", "MUL_AT_LEAST_NUMBER_001"),
+        (r"\b(?:at most|no more than|not more than)\s+(\d+)", "0..{0}", "MUL_AT_MOST_NUMBER_001"),
+        (r"\b(?:maximum(?: of)?|up to|a maximum of)\s+(\d+)", "0..{0}", "MUL_MAX_NUMBER_001"),
+        (r"\b(\d+)\s+or\s+more\b", "{0}..*", "MUL_AT_LEAST_NUMBER_001"),
+        (r"^(?:(?:a|an|the|has|have|with|of|contains?|holds?)\s+)*(\d+)\s+[a-z]", "{0}", "MUL_EXACT_NUMBER_001"),
     ]
     for pattern, template, rule_id in patterns:
-        match = re.search(pattern, lowered)
+        match = re.search(pattern, numeric)
         if match:
             return template.format(*match.groups()), rule_id
+    for phrase, multiplicity in ordered:
+        if " " not in phrase and re.search(rf"\b{re.escape(phrase)}\b", lowered):
+            return multiplicity, "MUL_QUANTIFIER_DICTIONARY_001"
     return None, None
 
 
@@ -1233,7 +1360,7 @@ def extract_facts(sentences: list[dict[str, Any]], clauses: list[dict[str, Any]]
 
         # "The system shall allow/enable/permit/let <actor> to <action> <object>"
         grant_match = re.match(
-            rf"^(?:{article})?[a-zA-Z][\w -]*?\s+(?:{modal_pattern}\s+)?(?:allow|allows|enable|enables|permit|permits|let|lets|give|gives|grant|grants)\s+(?:{article})?(?P<actor>[a-zA-Z][\w -]*?)\s+(?:to\s+|the\s+ability\s+to\s+|permission\s+to\s+)(?P<action>[a-zA-Z][\w ]*?)\s+(?:{article})?(?P<object>[a-zA-Z][\w -]*)$",
+            rf"^(?:{article})?[a-zA-Z][\w -]*?\s+(?:{modal_pattern}\s+)?(?:allow|allows|enable|enables|permit|permits|let|lets|give|gives|grant|grants)\s+(?:{article})?(?P<actor>[a-zA-Z][\w -]*?)\s+(?:to\s+|the\s+ability\s+to\s+|permission\s+to\s+)(?P<action>[a-zA-Z][\w ]*?)\s+(?:{article})?(?P<object>[a-zA-Z][\w ,-]*)$",
             text,
             flags=re.IGNORECASE,
         )
@@ -1271,7 +1398,7 @@ def extract_facts(sentences: list[dict[str, Any]], clauses: list[dict[str, Any]]
         # never misfires on an ordinary "<actor> <modal> <verb> <object>" clause.
         and_verb_list_match = re.match(
             rf"^(?:{article})?(?P<actor>[a-zA-Z][\w -]*?)\s+{modal_pattern}\s+"
-            rf"(?P<verbs>[a-zA-Z]+(?:\s+and\s+[a-zA-Z]+)+)\s+(?:{article})?(?P<object>[a-zA-Z][\w -]*)$",
+            rf"(?P<verbs>[a-zA-Z]+(?:\s+and\s+[a-zA-Z]+)+)\s+(?:{article})?(?P<object>[a-zA-Z][\w ,-]*)$",
             text,
             flags=re.IGNORECASE,
         )
@@ -1302,20 +1429,24 @@ def extract_facts(sentences: list[dict[str, Any]], clauses: list[dict[str, Any]]
                 continue
 
         only_match = re.match(
-            rf"^only\s+(?:{article})?(?P<actor>[a-zA-Z][\w -]*?)\s+{modal_pattern}\s+(?P<action>[a-zA-Z][\w ]*?)\s+(?:{article})?(?P<object>[a-zA-Z][\w -]*)$",
+            rf"^only\s+(?:{article})?(?P<actor>[a-zA-Z][\w -]*?)\s+{modal_pattern}\s+(?P<action>[a-zA-Z][\w ]*?)\s+(?:{article})?(?P<object>[a-zA-Z][\w ,-]*)$",
             text,
             flags=re.IGNORECASE,
         )
         active_match = re.match(
-            rf"^(?:{article})?(?P<actor>[a-zA-Z][\w -]*?)\s+{modal_pattern}\s+(?P<action>[a-zA-Z][\w ]*?)\s+(?:{article})?(?P<object>[a-zA-Z][\w -]*)$",
+            rf"^(?:{article})?(?P<actor>[a-zA-Z][\w -]*?)\s+{modal_pattern}\s+(?P<action>[a-zA-Z][\w ]*?)\s+(?:{article})?(?P<object>[a-zA-Z][\w ,-]*)$",
             text,
             flags=re.IGNORECASE,
         )
         # Declarative present tense without a modal: "The system sends a confirmation email".
         present_match = None
-        if not (only_match or active_match):
+        first_word = (re.findall(r"[a-zA-Z]+", text) or [""])[0].lower()
+        opens_with_verb = bool(first_word) and (
+            common_verb_base(first_word) == first_word or first_word in _action_aliases()
+        ) and first_word not in {"a", "an", "the"}
+        if not (only_match or active_match) and not opens_with_verb:
             candidate = re.match(
-                rf"^(?:{article})?(?P<actor>[a-zA-Z][\w -]*?)\s+(?P<action>[a-zA-Z]+(?:e?s)?)\s+(?:{article})?(?P<object>[a-zA-Z][\w -]*)$",
+                rf"^(?:{article})?(?P<actor>[a-zA-Z][\w -]*?)\s+(?P<action>[a-zA-Z]+(?:e?s)?)\s+(?:{article})?(?P<object>[a-zA-Z][\w ,-]*)$",
                 text,
                 flags=re.IGNORECASE,
             )
@@ -1335,6 +1466,9 @@ def extract_facts(sentences: list[dict[str, Any]], clauses: list[dict[str, Any]]
             for action_name, object_name in _expand_action_object(raw_action, object_group):
                 action, action_rule_id, warnings = _canonical_action(action_name)
                 normalized_object = normalize_entity(object_name)
+                # "borrow up to five books" bounds how many Books one actor
+                # handles - the same multiplicity a "has" phrase would carry.
+                target_multiplicity, _ = _quantity_from_text(object_name or "")
                 if normalized_object and normalized_object.lower() in load_dictionaries().get("pronouns", {}).get("objectPronouns", []):
                     if len(set(known_entities)) == 1:
                         normalized_object = known_entities[-1]
@@ -1358,6 +1492,8 @@ def extract_facts(sentences: list[dict[str, Any]], clauses: list[dict[str, Any]]
                         else action_rule_id,
                         extraction_type="EXACT_PATTERN" if action_rule_id != "EXT_UNKNOWN_ACTION_001" else "POSITIONAL_GUESS",
                         condition=condition,
+                        source_multiplicity="1" if target_multiplicity else None,
+                        target_multiplicity=target_multiplicity,
                         warnings=warnings,
                     )
                 )
@@ -1401,30 +1537,35 @@ def extract_facts(sentences: list[dict[str, Any]], clauses: list[dict[str, Any]]
             ),
             None,
         )
+        if action_token is None and tokens and common_verb_base(tokens[0]["normalized"]):
+            # A coordinated clause whose subject was elided ("... and
+            # prescribe medicines") opens with its verb.
+            action_token = tokens[0]
         has_modal = re.search(rf"\b{modal_pattern}\b", text, flags=re.IGNORECASE) is not None
         if action_token and (has_modal or len(tokens) <= 6):
             before = " ".join(token["text"] for token in tokens[: action_token["index"] - 1])
-            after = " ".join(token["text"] for token in tokens[action_token["index"] :])
+            after = text[action_token["endOffset"]:].strip(" .")
             # Drop a trailing modal so "the librarian can" resolves to "Librarian".
             before = re.sub(rf"\s+{modal_pattern}\s*$", "", before, flags=re.IGNORECASE).strip()
-            action, _, warnings = _canonical_action(action_token["text"])
+            raw_action, after = _absorb_phrasal_particle(action_token["text"], after)
             actor = resolve_actor(before) or None
-            object_name = normalize_entity(after) or None
-            facts.append(
-                _fact_template(
-                    fact_index=fact_index,
-                    sentence=sentence,
-                    clause=clause,
-                    actor=actor,
-                    action=action,
-                    object_name=object_name,
-                    raw_action=action_token["text"],
-                    matched_rule_id="EXT_POSITIONAL_ACTION_001",
-                    extraction_type="POSITIONAL_GUESS",
-                    condition=condition,
-                    warnings=warnings,
+            for action_name, object_text in _expand_action_object(raw_action, _strip_relative_clause(after)):
+                action, _, warnings = _canonical_action(action_name)
+                facts.append(
+                    _fact_template(
+                        fact_index=len(facts) + 1,
+                        sentence=sentence,
+                        clause=clause,
+                        actor=actor,
+                        action=action,
+                        object_name=normalize_entity(object_text) or None,
+                        raw_action=action_name,
+                        matched_rule_id="EXT_POSITIONAL_ACTION_001",
+                        extraction_type="POSITIONAL_GUESS",
+                        condition=condition,
+                        warnings=warnings,
+                    )
                 )
-            )
 
     # An elided subject in a coordinated clause ("...shall notify the warehouse
     # and update the inventory") leaves the second clause with no actor of its
@@ -1787,7 +1928,22 @@ def _fact_story_sections(facts: list[dict[str, Any]]) -> list[dict[str, Any]]:
         modal = {"obligation": "must", "negative": "cannot"}.get(str(fact.get("modality")), "can")
         object_article = _indefinite_article(object_label)
         sentence = f"The {actor_label} {modal} {action_label} {object_article} {object_label}."
-        if condition:
+        nfr = fact.get("nfr")
+        if nfr:
+            # An NFR's "action" is a metric name (responseTime), not a verb -
+            # "The System must responseTime a Performance" is not a sentence.
+            if nfr.get("measurable"):
+                bound = " ".join(
+                    str(part) for part in [nfr.get("operator") or "<=", nfr.get("targetValue"), nfr.get("unit")] if part
+                )
+                target = f" (target: {bound})"
+            else:
+                target = " (no measurable target yet)"
+            sentence = (
+                f"The system must meet the {str(nfr.get('category') or 'quality').lower()} requirement: "
+                f"\"{str(fact.get('sourceText') or '').strip()}\"{target}."
+            )
+        elif condition:
             sentence = f"If {condition}, the {actor_label} {modal} {action_label} {object_article} {object_label}."
         sections.append(
             {
@@ -1917,6 +2073,7 @@ def generate_requirements(final_story: dict[str, Any], facts: list[dict[str, Any
                 "extractionMethod": fact.get("extractionType", "UNCLASSIFIED"),
                 "actor": actor,
                 "action": action,
+                "rawAction": fact.get("rawAction"),
                 "object": object_name,
                 "condition": condition,
                 "nfrCategory": None,
@@ -1951,6 +2108,7 @@ def generate_requirements(final_story: dict[str, Any], facts: list[dict[str, Any
                     "extractionMethod": "DICTIONARY_PATTERN",
                     "actor": actor,
                     "action": action,
+                    "rawAction": fact.get("rawAction"),
                     "object": object_name,
                     "condition": condition,
                     "nfrCategory": None,
@@ -1961,6 +2119,118 @@ def generate_requirements(final_story: dict[str, Any], facts: list[dict[str, Any
                 }
             )
     return {"requirements": requirements, "dictionaryVersionId": DICTIONARY_VERSION, "ruleVersionId": RULE_VERSION}
+
+
+def verb_lemma(raw_verb: str | None) -> str | None:
+    """Base form of the verb exactly as the author wrote it ("removes" ->
+    "remove"). Unlike _canonical_action it does not map synonyms onto one
+    canonical verb, so a class diagram keeps the author's vocabulary
+    (removeBook, not deleteBook)."""
+    if not raw_verb:
+        return None
+    lowered = re.sub(r"\s+", " ", raw_verb.strip().lower())
+    if not lowered:
+        return None
+    irregular = {str(k).lower(): str(v).lower() for k, v in load_dictionaries().get("irregular_verbs", {}).items()}
+    if lowered in irregular:
+        return irregular[lowered]
+    aliases = _action_aliases()
+    if lowered in aliases and not re.search(r"(?:ing|ed|s)$", lowered):
+        return lowered
+    for candidate in _regular_verb_bases(lowered):
+        if candidate in aliases:
+            return candidate
+    base = common_verb_base(lowered)
+    if base:
+        return base
+    if " " not in lowered:
+        if re.search(r"[^aeiou]ie[sd]$", lowered):
+            return lowered[:-3] + "y"
+        if re.search(r"(?:ch|sh|x|ss|z)es$", lowered):
+            return lowered[:-2]
+        if lowered.endswith("s") and not lowered.endswith(("ss", "us", "is")) and len(lowered) > 3:
+            return lowered[:-1]
+    return lowered
+
+
+_DOMAIN_RE = re.compile(
+    r"\b(?P<domain>[a-z][a-z]+(?:\s+[a-z][a-z]+)?)\s+(?:management\s+|information\s+|booking\s+|reservation\s+)?"
+    r"(?:system|application|app|platform|portal|software|website)\b",
+    flags=re.IGNORECASE,
+)
+_NOT_A_DOMAIN = {"the", "a", "an", "this", "our", "my", "your", "their", "whole", "entire", "new", "online", "web", "management"}
+
+
+def domain_words(texts: list[str]) -> set[str]:
+    """The domain the text names itself after: "a library management system"
+    -> {"library"}. A class name that merely prefixes this word ("library
+    member") names the same thing as its head ("member")."""
+    found: set[str] = set()
+    for text in texts:
+        for match in _DOMAIN_RE.finditer(text or ""):
+            words = [word for word in match.group("domain").lower().split() if word not in _NOT_A_DOMAIN]
+            if words:
+                found.add(words[-1])
+                found.add(singularize(words[-1]).lower())
+    return found
+
+
+def _pascal_words(name: str) -> list[str]:
+    return re.findall(r"[A-Z][a-z0-9]*|[a-z0-9]+", name)
+
+
+def class_alias_map(
+    names: list[str],
+    sentences: dict[str, set[str]],
+    domains: set[str],
+    first_seen: dict[str, int] | None = None,
+    protected: set[str] | frozenset[str] = frozenset(),
+) -> dict[str, str]:
+    """Merge compound class names that are just a longer spelling of another
+    class ("LibraryMember" -> "Member"), the way a person reading the text
+    treats "a library member ... the member" as one entity.
+
+    A compound "<Modifier><Head>" merges into "<Head>" when
+    - the modifier is the system's own domain word ("library" in a library
+      management system), or
+    - it is the only compound built on that head, the modifier is not itself a
+      class, the two spellings never appear in the same sentence (writers
+      switch from "library member" to "member"; they don't contrast them), the
+      compound is introduced first (the short form refers back to it - a
+      compound that appears only after the head, like "a librarian is a kind of
+      staff member" after "a member can borrow", defines a new concept), and
+      the compound is not being defined in a hierarchy (`protected`).
+    Several compounds on one head ("staff member", "library member") are
+    distinct kinds, so none of them merge except through the domain rule.
+    """
+    name_set = set(names)
+    by_head: dict[str, list[tuple[str, str]]] = {}
+    for name in names:
+        words = _pascal_words(name)
+        for split in range(1, len(words)):
+            head = "".join(words[split:])
+            if head in name_set:
+                modifier = " ".join(words[:split]).lower()
+                by_head.setdefault(head, []).append((name, modifier))
+                break
+    aliases: dict[str, str] = {}
+    for head, compounds in by_head.items():
+        for name, modifier in compounds:
+            if modifier in domains:
+                aliases[name] = head
+                continue
+            if len(compounds) != 1:
+                continue
+            if pascal_case(modifier) in name_set:
+                continue
+            if sentences.get(name, set()) & sentences.get(head, set()):
+                continue
+            if name in protected:
+                continue
+            if first_seen and first_seen.get(name, 0) > first_seen.get(head, 0):
+                continue
+            aliases[name] = head
+    return aliases
 
 
 def _requirement_source_ids(requirements: list[dict[str, Any]], actor: str, object_name: str) -> list[str]:
@@ -2137,7 +2407,43 @@ def _merge_attribute(cls: dict[str, Any], name: str) -> None:
         )
 
 
+def _apply_class_aliases(
+    requirements: list[dict[str, Any]], facts: list[dict[str, Any]]
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, str]]:
+    names: list[str] = []
+    mentions: dict[str, set[str]] = {}
+    first_seen: dict[str, int] = {}
+    texts: list[str] = []
+    for item in [*facts, *requirements]:
+        sentence = str(item.get("sourceSentenceText") or item.get("sourceSentence") or item.get("sourceText") or "")
+        texts.append(sentence)
+        for field in ("actor", "object"):
+            value = item.get(field)
+            if value and not str(value).startswith("Unknown"):
+                if value not in names:
+                    names.append(value)
+                mentions.setdefault(value, set()).add(sentence)
+                if item.get("sentenceIndex") is not None:
+                    first_seen[value] = min(first_seen.get(value, 10**6), int(item["sentenceIndex"]))
+    aliases = class_alias_map(names, mentions, domain_words(texts), first_seen=first_seen)
+    if not aliases:
+        return requirements, facts, {}
+
+    def _remap(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        remapped = []
+        for item in items:
+            copy = dict(item)
+            for field in ("actor", "object"):
+                if copy.get(field) in aliases:
+                    copy[field] = aliases[copy[field]]
+            remapped.append(copy)
+        return remapped
+
+    return _remap(requirements), _remap(facts), aliases
+
+
 def generate_class_model(requirements: list[dict[str, Any]], facts: list[dict[str, Any]], threshold: int = 4) -> dict[str, Any]:
+    requirements, facts, class_aliases = _apply_class_aliases(requirements, facts)
     scores: Counter[str] = Counter()
     source_fact_ids: dict[str, set[str]] = {}
     source_requirement_ids: dict[str, set[str]] = {}
@@ -2228,23 +2534,30 @@ def generate_class_model(requirements: list[dict[str, Any]], facts: list[dict[st
         if source_id not in classes or target_id not in classes:
             continue
 
-        # Behaviour on the acting class: "customer.createOrder()".
-        actor_method = camel_case(f"{action} {object_name}")
+        # Name the behaviour with the author's own verb ("remove", not the
+        # canonical "delete") unless a clarification answer replaced the action.
+        raw_verb = verb_lemma(requirement.get("rawAction"))
+        verb = raw_verb if raw_verb and _canonical_action(raw_verb)[0] == action else action
+        # Behaviour on the acting class, taking the acted-upon object:
+        # "librarian.approveRequest(request: Request)".
+        actor_method = camel_case(f"{verb} {object_name}")
         if (source_id, actor_method) not in method_signatures:
             method_signatures.add((source_id, actor_method))
             classes[source_id]["methods"].append(
                 {
                     "id": f"method_{snake_case(actor)}_{snake_case(actor_method)}",
                     "name": actor_method,
-                    "parameters": [],
-                    "returnType": object_name,
+                    "parameters": [{"name": camel_case(object_name), "type": object_name}]
+                    if source_id != target_id
+                    else [],
+                    "returnType": "void",
                     "visibility": "public",
                     "static": False,
                     "sourceRequirementIds": [requirement["requirementId"]],
                 }
             )
         # Lifecycle behaviour on the acted-upon class so entities are not empty shells.
-        target_method = camel_case(action or "handle")
+        target_method = camel_case(verb or "handle")
         if (target_id, target_method) not in method_signatures:
             method_signatures.add((target_id, target_method))
             classes[target_id]["methods"].append(
@@ -2252,7 +2565,7 @@ def generate_class_model(requirements: list[dict[str, Any]], facts: list[dict[st
                     "id": f"method_{snake_case(object_name)}_{snake_case(target_method)}",
                     "name": target_method,
                     "parameters": [],
-                    "returnType": "Boolean",
+                    "returnType": "void",
                     "visibility": "public",
                     "static": False,
                     "sourceRequirementIds": [requirement["requirementId"]],
@@ -2271,11 +2584,11 @@ def generate_class_model(requirements: list[dict[str, Any]], facts: list[dict[st
             warnings = []
         relationships.append(
             {
-                "id": f"edge_{snake_case(actor)}_{snake_case(action or 'uses')}_{snake_case(object_name)}",
+                "id": f"edge_{snake_case(actor)}_{snake_case(verb or 'uses')}_{snake_case(object_name)}",
                 "sourceClassId": source_id,
                 "targetClassId": target_id,
                 "type": rel_type,
-                "label": action or "uses",
+                "label": verb or "uses",
                 "sourceMultiplicity": source_multiplicity,
                 "targetMultiplicity": target_multiplicity,
                 "direction": "source-to-target",
@@ -2311,6 +2624,8 @@ def generate_class_model(requirements: list[dict[str, Any]], facts: list[dict[st
     }
     if dropped:
         model["eliminatedClasses"] = dropped
+    if class_aliases:
+        model["mergedClasses"] = dict(sorted(class_aliases.items()))
     return model
 
 
@@ -2442,6 +2757,36 @@ def _drawio_graph_model() -> ET.Element:
     )
 
 
+def _class_header(cls: dict[str, Any]) -> str:
+    name = escape(str(cls.get("name", "")))
+    stereotype = str(cls.get("stereotype") or "")
+    if stereotype in {"enumeration", "interface", "abstract"}:
+        return f"«{stereotype}» {name}"
+    return name
+
+
+def _attribute_row(attr: dict[str, Any], is_enum: bool = False) -> str:
+    if is_enum:
+        return escape(str(attr.get("name", "")))
+    visibility = {"public": "+", "protected": "#", "package": "~"}.get(str(attr.get("visibility") or ""), "-")
+    return f"{visibility} {escape(str(attr['name']))}: {escape(str(attr.get('type') or 'String'))}"
+
+
+def _method_row(method: dict[str, Any]) -> str:
+    parameters = []
+    for parameter in method.get("parameters") or []:
+        if isinstance(parameter, dict) and parameter.get("name"):
+            kind = parameter.get("type")
+            parameters.append(f"{parameter['name']}: {kind}" if kind else str(parameter["name"]))
+        elif isinstance(parameter, str) and parameter.strip():
+            parameters.append(parameter.strip())
+    visibility = {"private": "-", "protected": "#", "package": "~"}.get(str(method.get("visibility") or ""), "+")
+    return (
+        f"{visibility} {escape(str(method['name']))}({escape(', '.join(parameters))}): "
+        f"{escape(str(method.get('returnType') or 'void'))}"
+    )
+
+
 def generate_drawio_xml(class_model: dict[str, Any]) -> tuple[str, dict[str, Any]]:
     validation = validate_class_model(class_model)
     if not validation["valid"]:
@@ -2476,8 +2821,9 @@ def generate_drawio_xml(class_model: dict[str, Any]) -> tuple[str, dict[str, Any
     for index, cls in enumerate(classes):
         attributes = sorted(cls.get("attributes", []), key=lambda item: item.get("name", "").lower())
         methods = sorted(cls.get("methods", []), key=lambda item: (item.get("name", "").lower(), str(item.get("parameters", []))))
-        attribute_rows = [f"- {escape(attr['name'])}: {escape(attr.get('type', 'String'))}" for attr in attributes]
-        method_rows = [f"+ {escape(method['name'])}(): {escape(method.get('returnType', 'void'))}" for method in methods]
+        is_enum = cls.get("stereotype") == "enumeration"
+        attribute_rows = [_attribute_row(attr, is_enum) for attr in attributes]
+        method_rows = [_method_row(method) for method in methods]
         attribute_section_height = max(len(attribute_rows), 1) * layout["rowHeight"]
         method_section_height = max(len(method_rows), 1) * layout["rowHeight"]
         height = max(
@@ -2491,7 +2837,7 @@ def generate_drawio_xml(class_model: dict[str, Any]) -> tuple[str, dict[str, Any
             "mxCell",
             {
                 "id": class_id,
-                "value": escape(cls["name"]),
+                "value": _class_header(cls),
                 "style": "swimlane;fontStyle=1;align=center;verticalAlign=top;childLayout=stackLayout;horizontal=1;startSize=32;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=0;marginBottom=0;rounded=0;whiteSpace=wrap;html=1;",
                 "vertex": "1",
                 "parent": "1",

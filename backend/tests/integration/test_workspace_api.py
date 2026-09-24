@@ -172,3 +172,49 @@ def test_owner_can_invite_registered_user_and_member_cannot_manage_members(
     )
     assert forbidden_response.status_code == 403
 
+
+
+def test_organization_admin_can_change_role_and_remove_member(client: TestClient) -> None:
+    owner_token = register(client, "org-owner@example.com", "Org Owner")
+    register(client, "org-member@example.com", "Org Member")
+    workspace = client.post(
+        "/api/v1/workspaces",
+        headers=auth_header(owner_token),
+        json={"name": "Acme", "slug": "acme-roles", "type": "organization"},
+    ).json()["workspace"]
+    invited = client.post(
+        f"/api/v1/workspaces/{workspace['id']}/members/invite",
+        headers=auth_header(owner_token),
+        json={"email": "org-member@example.com", "role": "member"},
+    )
+    assert invited.status_code == 201
+    member_id = invited.json()["id"]
+
+    members = client.get(f"/api/v1/workspaces/{workspace['id']}/members", headers=auth_header(owner_token)).json()
+    assert {item["user"]["email"] for item in members} == {"org-owner@example.com", "org-member@example.com"}
+
+    promoted = client.patch(
+        f"/api/v1/workspaces/{workspace['id']}/members/{member_id}",
+        headers=auth_header(owner_token),
+        json={"role": "admin"},
+    )
+    assert promoted.status_code == 200
+    assert promoted.json()["role"] == "admin"
+
+    owner_id = next(item["id"] for item in members if item["role"] == "owner")
+    assert client.delete(
+        f"/api/v1/workspaces/{workspace['id']}/members/{owner_id}", headers=auth_header(owner_token)
+    ).status_code == 422
+
+    removed = client.delete(f"/api/v1/workspaces/{workspace['id']}/members/{member_id}", headers=auth_header(owner_token))
+    assert removed.status_code == 204
+    members = client.get(f"/api/v1/workspaces/{workspace['id']}/members", headers=auth_header(owner_token)).json()
+    assert [item["user"]["email"] for item in members] == ["org-owner@example.com"]
+
+    reinvited = client.post(
+        f"/api/v1/workspaces/{workspace['id']}/members/invite",
+        headers=auth_header(owner_token),
+        json={"email": "org-member@example.com", "role": "viewer"},
+    )
+    assert reinvited.status_code == 201
+    assert reinvited.json()["role"] == "viewer"

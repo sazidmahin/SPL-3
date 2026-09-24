@@ -44,8 +44,8 @@ class LlmCall(Base):
     project_id: Mapped[uuid.UUID] = mapped_column(
         Uuid, ForeignKey("projects.id"), nullable=False, index=True
     )
-    generation_job_id: Mapped[uuid.UUID | None] = mapped_column(
-        Uuid, ForeignKey("generation_jobs.id"), nullable=True, index=True
+    pipeline_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("generation_pipeline_runs.id", ondelete="SET NULL"), nullable=True, index=True
     )
     prompt_template_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("prompt_templates.id"), nullable=True, index=True

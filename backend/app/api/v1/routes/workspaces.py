@@ -1,15 +1,15 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_current_workspace_membership, get_db
 from app.db.models import User, WorkspaceMember
-from app.services.billing_service import BillingError
 from app.schemas.workspace import (
     WorkspaceCreateRequest,
     WorkspaceMemberInviteRequest,
     WorkspaceMemberRead,
+    WorkspaceMemberRoleUpdateRequest,
     WorkspaceMembershipRead,
 )
 from app.services.workspace_service import (
@@ -22,6 +22,8 @@ from app.services.workspace_service import (
     invite_workspace_member,
     list_user_workspace_memberships,
     list_workspace_members,
+    remove_workspace_member,
+    update_workspace_member_role,
 )
 
 router = APIRouter(prefix="/workspaces", tags=["workspaces"])
@@ -101,11 +103,6 @@ def invite_member(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     except UserNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    except BillingError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail=str(exc),
-        ) from exc
     except DuplicateWorkspaceMemberError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except InvalidWorkspaceError as exc:
@@ -113,3 +110,41 @@ def invite_member(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=str(exc),
         ) from exc
+
+
+@router.patch("/{workspace_id}/members/{member_id}", response_model=WorkspaceMemberRead)
+def update_member_role(
+    workspace_id: UUID,
+    member_id: UUID,
+    payload: WorkspaceMemberRoleUpdateRequest,
+    membership: WorkspaceMember = Depends(get_current_workspace_membership),
+    db: Session = Depends(get_db),
+) -> WorkspaceMember:
+    try:
+        return update_workspace_member_role(
+            db, workspace_id=workspace_id, requester_membership=membership, member_id=member_id, role=payload.role
+        )
+    except WorkspacePermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except UserNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except InvalidWorkspaceError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
+
+
+@router.delete("/{workspace_id}/members/{member_id}", status_code=status.HTTP_204_NO_CONTENT)
+def remove_member(
+    workspace_id: UUID,
+    member_id: UUID,
+    membership: WorkspaceMember = Depends(get_current_workspace_membership),
+    db: Session = Depends(get_db),
+) -> Response:
+    try:
+        remove_workspace_member(db, workspace_id=workspace_id, requester_membership=membership, member_id=member_id)
+    except WorkspacePermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except UserNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except InvalidWorkspaceError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

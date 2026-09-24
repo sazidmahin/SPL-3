@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components -- this module re-exports Radix primitives next to their styled wrappers */
 import type { ComponentPropsWithoutRef, ReactNode } from 'react'
 import { forwardRef } from 'react'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
@@ -25,10 +26,10 @@ type SheetContentProps = ComponentPropsWithoutRef<typeof DialogPrimitive.Content
 export function SheetContent({ title, description, footer, width = 'w-[420px]', className, children, ...props }: SheetContentProps) {
   return (
     <DialogPrimitive.Portal>
-      <DialogPrimitive.Overlay className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm transition-opacity data-[state=closed]:opacity-0" />
+      <DialogPrimitive.Overlay className="fixed inset-0 z-40 bg-slate-950/45 backdrop-blur-[3px] data-[state=open]:animate-fade-in" />
       <DialogPrimitive.Content
         className={cn(
-          'fixed inset-y-0 right-0 z-50 flex max-w-[92vw] flex-col bg-surface shadow-[0_20px_60px_rgba(0,0,0,0.18)] transition-transform duration-300 ease-out data-[state=closed]:translate-x-full',
+          'fixed inset-y-0 right-0 z-50 flex max-w-[94vw] flex-col border-l border-border bg-surface shadow-[var(--elev-3)] transition-transform duration-300 ease-out data-[state=closed]:translate-x-full',
           width,
           className,
         )}
@@ -69,10 +70,10 @@ type ModalContentProps = ComponentPropsWithoutRef<typeof DialogPrimitive.Content
 export function ModalContent({ title, description, className, children, ...props }: ModalContentProps) {
   return (
     <DialogPrimitive.Portal>
-      <DialogPrimitive.Overlay className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm transition-opacity data-[state=closed]:opacity-0" />
+      <DialogPrimitive.Overlay className="fixed inset-0 z-40 bg-slate-950/45 backdrop-blur-[3px] data-[state=open]:animate-fade-in" />
       <DialogPrimitive.Content
         className={cn(
-          'fixed left-1/2 top-1/2 z-50 w-[92vw] max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-lg border border-border bg-surface p-6 shadow-[0_20px_60px_rgba(0,0,0,0.18)] transition data-[state=closed]:opacity-0',
+          'fixed left-1/2 top-1/2 z-50 max-h-[90svh] w-[94vw] max-w-lg -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-2xl border border-border bg-surface p-6 shadow-[var(--elev-3)] data-[state=open]:animate-rise-in',
           className,
         )}
         {...props}
@@ -107,7 +108,7 @@ export const TabsList = forwardRef<HTMLDivElement, ComponentPropsWithoutRef<type
     return (
       <TabsPrimitive.List
         ref={ref}
-        className={cn('inline-flex items-center gap-0.5 rounded-full bg-surface-3 p-1', className)}
+        className={cn('inline-flex max-w-full items-center gap-0.5 overflow-x-auto rounded-lg border border-border bg-surface-3 p-1', className)}
         {...props}
       />
     )
@@ -120,8 +121,8 @@ export const TabsTrigger = forwardRef<HTMLButtonElement, ComponentPropsWithoutRe
       <TabsPrimitive.Trigger
         ref={ref}
         className={cn(
-          'rounded-full px-4 py-1.5 text-[13px] font-semibold text-fg-3 outline-none transition focus-visible:ring-2 focus-visible:ring-accent/40',
-          'data-[state=active]:bg-surface data-[state=active]:text-fg data-[state=active]:shadow-sm',
+          'whitespace-nowrap rounded-md px-3.5 py-1.5 text-[13px] font-semibold text-fg-3 outline-none transition hover:text-fg focus-visible:ring-2 focus-visible:ring-accent/40',
+          'data-[state=active]:bg-surface data-[state=active]:text-fg data-[state=active]:shadow-[var(--elev-1)]',
           className,
         )}
         {...props}
@@ -163,7 +164,7 @@ export const DropdownMenuContent = forwardRef<HTMLDivElement, ComponentPropsWith
           ref={ref}
           sideOffset={sideOffset}
           className={cn(
-            'z-50 min-w-[11rem] rounded-md border border-border bg-surface p-1 shadow-[0_12px_40px_rgba(0,0,0,0.14)]',
+            'z-50 min-w-[11rem] rounded-lg border border-border bg-surface p-1 shadow-[var(--elev-3)] data-[state=open]:animate-fade-in',
             className,
           )}
           {...props}
@@ -179,7 +180,7 @@ export const DropdownMenuItem = forwardRef<HTMLDivElement, ComponentPropsWithout
       <DropdownPrimitive.Item
         ref={ref}
         className={cn(
-          'flex cursor-pointer items-center gap-2 rounded-sm px-2.5 py-2 text-[13px] text-fg-2 outline-none transition data-[disabled]:pointer-events-none data-[disabled]:opacity-50 data-[highlighted]:bg-surface-3 data-[highlighted]:text-fg [&_svg]:size-4',
+          'flex cursor-pointer items-center gap-2 rounded-md px-2.5 py-2 text-[13px] text-fg-2 outline-none transition data-[disabled]:pointer-events-none data-[disabled]:opacity-50 data-[highlighted]:bg-surface-3 data-[highlighted]:text-fg [&_svg]:size-4',
           className,
         )}
         {...props}
@@ -199,10 +200,10 @@ export function Tooltip({ content, children }: { content: ReactNode; children: R
       <TooltipPrimitive.Portal>
         <TooltipPrimitive.Content
           sideOffset={6}
-          className="z-50 rounded-sm bg-fg px-2 py-1 text-[11px] font-medium text-fg-invert"
+          className="z-50 rounded-md bg-slate-900 px-2 py-1 text-[11px] font-medium text-white shadow-[var(--elev-2)] dark:bg-slate-700"
         >
           {content}
-          <TooltipPrimitive.Arrow className="fill-fg" />
+          <TooltipPrimitive.Arrow className="fill-slate-900 dark:fill-slate-700" />
         </TooltipPrimitive.Content>
       </TooltipPrimitive.Portal>
     </TooltipPrimitive.Root>
@@ -222,7 +223,7 @@ export const PopoverContent = forwardRef<HTMLDivElement, ComponentPropsWithoutRe
           ref={ref}
           sideOffset={sideOffset}
           className={cn(
-            'z-50 rounded-md border border-border bg-surface p-3 shadow-[0_12px_40px_rgba(0,0,0,0.14)]',
+            'z-50 rounded-lg border border-border bg-surface p-3 shadow-[var(--elev-3)] data-[state=open]:animate-fade-in',
             className,
           )}
           {...props}

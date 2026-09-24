@@ -24,8 +24,6 @@ DATABASE_URL=postgresql+psycopg2://postgres:postgres@localhost:5432/srs_diagram_
 SECRET_KEY=change-this-development-secret
 ACCESS_TOKEN_EXPIRE_MINUTES=60
 PASSWORD_RESET_TOKEN_EXPIRE_MINUTES=15
-LLM_PROVIDER=auto
-OPENAI_API_KEY=
 OPENAI_MODEL=gpt-4o-mini
 OPENAI_TEMPERATURE=0
 OPENAI_TIMEOUT_SECONDS=30
@@ -36,10 +34,10 @@ SUPER_ADMIN_FULL_NAME=Platform Super Admin
 ```
 EMAIL_DELIVERY_MODE=console prints verification codes in the backend terminal for local testing. Use EMAIL_DELIVERY_MODE=smtp with the SMTP values above to send real emails.
 
-LLM calls are routed through `app.services.llm_service`. `LLM_PROVIDER=auto` uses a
-LangChain OpenAI chat client when `OPENAI_API_KEY` is set; otherwise it keeps the
-local deterministic client so development and tests can run offline. Set
-`LLM_PROVIDER=openai` when you want missing OpenAI credentials to fail fast.
+The platform ships no AI provider key of its own. The Rule-Based engine and local Ollama work
+for everyone with no key; users who want a hosted model (OpenAI, Anthropic, Gemini) add their own
+API key under **Settings → AI providers**. Keys are encrypted at rest and used only for that user's
+requests.
 
 `SUPER_ADMIN_*` values are used only by the explicit bootstrap script. Public registration always creates normal platform users.
 

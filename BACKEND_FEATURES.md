@@ -433,7 +433,23 @@ pascal_case(value: str) → str          # "my class" → "MyClass"
 normalize_relationship_type(v) → str   # "extends" → "inheritance"
 normalize_association_direction(v) → str
 relationship_drawio_style(rel_type, direction) → str  # CSS style string
+verb_lemma(raw) → str                  # "removes" → "remove" (author's verb, not the canonical alias)
+domain_words(texts) → set[str]         # "a library management system" → {"library"}
+class_alias_map(names, mentions, domains, first_seen, protected) → dict  # {"LibraryMember": "Member"}
 ```
+
+`generate_class_model` merges alias classes (reported as `mergedClasses`), names methods with the author's verb, gives
+actor methods a typed parameter (`approveRequest(request: Request): void`), and reads multiplicity from action objects
+("borrow up to five books" → `0..5`).
+
+### 4.16 OOP Modeler (`backend/app/rule_engine/oop_modeler.py`)
+
+`analyze_oop_text(text)` — human-style noun/verb (Abbott) analysis for OOP-course tasks, used by the Class Modeler.
+Recognises sentence kinds (task statement, generalisation, possible states → enum, structure "has/contains",
+association "belongs to"/passive "by", behaviour, NFR), decides every noun (class / attribute / value / merged /
+rejected, with a reason), assigns verbs as methods to the performing class (container verbs → the container,
+"for each X" → X), draws inheritance/composition/aggregation/association with multiplicities, and pulls attributes
+shared by all subclasses up to the parent. Returns `{model, drawioXml, validation, analysis, metadata}`.
 
 ---
 
@@ -1088,6 +1104,13 @@ All endpoints under `/api/v1/` require `Authorization: Bearer <jwt>` header (exc
 | GET | `/{diagram_id}` | Get diagram with version history |
 | PUT | `/{diagram_id}/versions` | Save new diagram version |
 | GET | `/{diagram_id}/requirement-links` | Get traceability links |
+
+### 8.5a Class Modeler API — `/api/v1/workspaces/{workspace_id}/class-modeler`
+
+| Method | Path | Purpose |
+|---|---|---|
+| POST | `/generate` | OOP task text → classes/attributes/methods/relationships/enums + draw.io XML + step-by-step `analysis`. Body `{text, mode: "rule_based" \| "llm", project_id?}`. `rule_based` runs `app/rule_engine/oop_modeler.py` (no project needed); `llm` takes `llm_provider` (`ollama` = local model, optional `model_name`; `byok` = the user's AI Settings credential; omitted = byok if configured else Ollama) and needs `project_id` (LLM calls are logged per project); like the BYOK/Ollama pipeline it consumes no platform AI quota. Stateless — the UI saves via the Diagram API. Service: `app/services/class_modeler_service.py`. |
+| GET | `/ollama-models` | `{reachable, installed, suggested, defaultModel, error}` for the Ollama model picker. |
 
 ### 8.6 Billing API — `/api/v1/billing`
 

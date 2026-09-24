@@ -15,10 +15,8 @@ class DiagramCreateRequest(BaseModel):
     diagram_json: str | None = None
 
 
-class ClassDiagramGenerateRequest(BaseModel):
-    requirement_input_id: UUID | None = None
-    srs_document_id: UUID | None = None
-    methods: list[Literal["llm", "rule_based", "both"]] = Field(default_factory=lambda: ["rule_based"])
+class DiagramUpdateRequest(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=255)
 
 
 class DiagramVersionCreateRequest(BaseModel):
@@ -56,24 +54,5 @@ class DiagramVersionRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class DiagramRequirementLinkRead(BaseModel):
-    id: UUID
-    workspace_id: UUID
-    project_id: UUID
-    diagram_id: UUID
-    diagram_version_id: UUID
-    srs_document_id: UUID
-    extracted_requirement_id: UUID
-    requirement_code: str
-    diagram_element_id: str
-    diagram_element_label: str
-    link_reason: str
-    confidence_score: float
-    created_at: datetime
-
-    model_config = ConfigDict(from_attributes=True)
-
-
 class DiagramDetailRead(DiagramRead):
     current: DiagramVersionRead
-    requirement_links: list[DiagramRequirementLinkRead] = Field(default_factory=list)

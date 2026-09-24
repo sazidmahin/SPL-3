@@ -1,3 +1,4 @@
+import json
 from collections.abc import Generator
 
 import pytest
@@ -12,6 +13,7 @@ from app.db.base import Base
 from app.db.models import UserAiProviderCredential
 from app.main import app
 from app.services.llm_service import LlmResponse
+from app.services.ollama_service import OllamaClient
 
 
 @pytest.fixture()
@@ -144,6 +146,306 @@ def test_rule_based_pipeline_is_editable_and_xml_is_deterministic(client: TestCl
     assert statuses["xml"] == "stale"
 
 
+_OLLAMA_NON_JSON_RESPONSES = {
+    "pipeline_clarifications_ollama_questions": (
+        "Sentences: A customer can place an order. An admin can approve an order.\n"
+        "What is the maximum number of items per order?\n"
+        "How long should an unapproved order remain pending?\n"
+        "The order total must be calculated automatically."
+    ),
+    "pipeline_clarifications_answer_suggestion": "Ten items",
+    "pipeline_final-story_ollama_independent": (
+        "A customer places an order for one or more products.\n"
+        "An admin reviews and approves pending orders.\n"
+        "The system automatically calculates the order total."
+    ),
+    "pipeline_requirements_ollama_independent": (
+        "The system shall allow a customer to place an order.\n"
+        "The system shall allow an admin to approve an order.\n"
+        "The system shall respond within two seconds (performance)."
+    ),
+    "pipeline_class-model_ollama_independent": (
+        "The domain centers on a Customer who places an Order containing OrderItem "
+        "entries, and an Admin who approves the Order."
+    ),
+}
+
+
+def test_ollama_pipeline_falls_back_to_text_extraction_except_class_model(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Freeform-text stages (clarifications/final-story/requirements) still produce
+    a usable payload verbatim from the model's own prose when it ignores the JSON
+    contract - this is the normal case for small local models, not an edge case.
+    class-model is different: attributes/methods/relationships cannot be honestly
+    recovered from flat text, so guessing classes via a capitalized-word regex
+    would fabricate wrong entities. That stage must fail loudly instead so the run
+    surfaces as failed and can be regenerated (see _fallback_stage_payload).
+    """
+    monkeypatch.setattr(OllamaClient, "validate_configuration", lambda self: None)
+
+    def fake_generate(self: OllamaClient, request):
+        content = _OLLAMA_NON_JSON_RESPONSES.get(request.purpose, "No structured answer available.")
+        return LlmResponse(content=content, response_payload={"content": content}, prompt_tokens=1, completion_tokens=1)
+
+    monkeypatch.setattr(OllamaClient, "generate", fake_generate)
+
+    token = register(client, "ollama@example.com")
+    workspace_id, project_id = setup_project(client, token)
+    base_url = pipeline_url(workspace_id, project_id)
+
+    created = client.post(
+        base_url,
+        headers=auth_header(token),
+        json={
+            "title": "Order management",
+            "raw_text": "A customer can place an order. An admin can approve an order.",
+            "generation_mode": "ollama",
+        },
+    )
+    assert created.status_code == 201, created.text
+    run = created.json()
+
+    # --- input: approving it generates the clarifications stage ---
+    run = approve_and_proceed(client, token, base_url, run)
+    assert run["current_stage"] == "clarifications"
+
+    # --- clarifications: fallback-extracted questions, each auto-answered ---
+    clarifications = next(stage for stage in run["stages"] if stage["stage_name"] == "clarifications")
+    questions = clarifications["payload"]["clarificationQuestions"]
+    assert len(questions) >= 1
+    for question in questions:
+        assert isinstance(question["id"], str) and question["id"]
+        assert isinstance(question["text"], str) and question["text"]
+        assert isinstance(question["category"], str) and question["category"]
+    answers = clarifications["payload"]["answers"]
+    assert len(answers) == len(questions)
+    for answer in answers:
+        assert answer.get("answerText") == "Ten items"
+
+    # --- approve clarifications: generates final-story ---
+    run = approve_and_proceed(client, token, base_url, run)
+    assert run["current_stage"] == "final-story"
+    final_story = next(stage for stage in run["stages"] if stage["stage_name"] == "final-story")
+    sections = final_story["payload"]["atomicStorySections"]
+    assert len(sections) == 3
+    for section in sections:
+        assert isinstance(section["id"], str) and section["id"]
+        assert isinstance(section["normalizedSentence"], str) and section["normalizedSentence"]
+    assert isinstance(final_story["payload"]["warnings"], list)
+
+    # --- approve final-story: generates requirements ---
+    run = approve_and_proceed(client, token, base_url, run)
+    assert run["current_stage"] == "requirements"
+    requirements_stage = next(stage for stage in run["stages"] if stage["stage_name"] == "requirements")
+    requirements = requirements_stage["payload"]["requirements"]
+    assert len(requirements) == 3
+    types = {requirement["requirementType"] for requirement in requirements}
+    assert types == {"functional", "non_functional"}
+    for requirement in requirements:
+        assert isinstance(requirement["requirementId"], str) and requirement["requirementId"]
+        assert isinstance(requirement["statement"], str) and requirement["statement"]
+        assert requirement["enabled"] is True
+
+    # --- approve requirements: class-model generation must fail loudly instead of
+    # fabricating classes from a capitalized-word regex over free text ---
+    current = next(stage for stage in run["stages"] if stage["stage_name"] == run["current_stage"])
+    response = client.post(
+        f"{base_url}/{run['id']}/stages/{run['current_stage']}/approve",
+        headers=auth_header(token),
+        json={"version_number": current["version_number"], "proceed": True},
+    )
+    assert response.status_code == 409, response.text
+    assert "class-model" in response.json()["detail"].lower()
+
+    run_after = client.get(f"{base_url}/{run['id']}", headers=auth_header(token)).json()
+    assert run_after["status"] == "failed"
+    assert run_after["current_stage"] == "requirements"
+
+
+_OLLAMA_CLASS_MODEL_RESPONSES = {
+    "pipeline_clarifications_ollama_questions": '{"clarificationQuestions": []}',
+    "pipeline_final-story_ollama_independent": (
+        '{"atomicStorySections": [{"id": "s1", "normalizedSentence": "stub"}]}'
+    ),
+    "pipeline_requirements_ollama_independent": (
+        '{"requirements": [{"requirementId": "REQ-1", "requirementType": "functional", '
+        '"statement": "stub", "actor": "User", "action": "act", "object": "Thing", "enabled": true}]}'
+    ),
+    # A small model restarting the JSON object per class instead of accumulating
+    # into one array - the exact shape that made json.loads silently keep only
+    # the last "classes" key and discard the other two (see _merge_duplicate_json_keys).
+    "pipeline_class-model_ollama_classes": (
+        '{"classes": [{"name": "Patient", "fields": ["age"], "methods": ["register"]}], '
+        '"classes": [{"name": "Doctor", "fields": ["specialty"], "methods": ["viewSchedule"]}], '
+        '"classes": [{"name": "Receptionist", "fields": [], "methods": ["checkIn"]}]}'
+    ),
+    "pipeline_class-model_ollama_relationships": (
+        '{"relationships": [{"from": "Patient", "to": "Doctor", "type": "has many", "label": "books with"}]}'
+    ),
+}
+
+
+def test_ollama_class_model_recovers_duplicate_keys_and_gets_own_relationships_call(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """class-model is generated as two focused Ollama calls (classes, then
+    relationships against that settled class list) instead of one combined ask -
+    see _generate_ollama_class_model. This proves both halves of that fix: (1) a
+    response that restarts the JSON object per class (three separate top-level
+    "classes" keys) must not silently lose two of the three classes to Python's
+    default last-key-wins JSON parsing, and (2) relationships come from their own
+    dedicated call and reference the classes that were actually kept.
+    """
+    monkeypatch.setattr(OllamaClient, "validate_configuration", lambda self: None)
+
+    def fake_generate(self: OllamaClient, request):
+        content = _OLLAMA_CLASS_MODEL_RESPONSES.get(request.purpose, "{}")
+        return LlmResponse(content=content, response_payload={"content": content}, prompt_tokens=1, completion_tokens=1)
+
+    monkeypatch.setattr(OllamaClient, "generate", fake_generate)
+
+    token = register(client, "ollama-classmodel@example.com")
+    workspace_id, project_id = setup_project(client, token)
+    base_url = pipeline_url(workspace_id, project_id)
+
+    created = client.post(
+        base_url,
+        headers=auth_header(token),
+        json={
+            "title": "Hospital",
+            "raw_text": "Patients book appointments with doctors. Receptionists check patients in.",
+            "generation_mode": "ollama",
+        },
+    )
+    assert created.status_code == 201, created.text
+    run = created.json()
+
+    run = approve_and_proceed(client, token, base_url, run)  # -> clarifications
+    run = approve_and_proceed(client, token, base_url, run)  # -> final-story
+    run = approve_and_proceed(client, token, base_url, run)  # -> requirements
+    run = approve_and_proceed(client, token, base_url, run)  # -> class-model
+
+    assert run["current_stage"] == "class-model"
+    class_model_stage = next(stage for stage in run["stages"] if stage["stage_name"] == "class-model")
+    classes = class_model_stage["payload"]["classes"]
+    class_names = {item["name"] for item in classes}
+    assert class_names == {"Patient", "Doctor", "Receptionist"}, (
+        "all three classes must survive, not just the last duplicate 'classes' key"
+    )
+    for item in classes:
+        assert isinstance(item["id"], str) and item["id"]
+        assert isinstance(item["attributes"], list)
+        assert isinstance(item["methods"], list)
+
+    relationships = class_model_stage["payload"]["relationships"]
+    assert len(relationships) == 1
+    relationship = relationships[0]
+    patient_id = next(item["id"] for item in classes if item["name"] == "Patient")
+    doctor_id = next(item["id"] for item in classes if item["name"] == "Doctor")
+    assert relationship["sourceClassId"] == patient_id
+    assert relationship["targetClassId"] == doctor_id
+    assert relationship["label"] == "books with"
+    assert relationship["type"] == "association"  # "has many" isn't a canonical type - safe default, not a guess
+
+    # --- approve class-model: xml renders successfully from this data ---
+    run = approve_and_proceed(client, token, base_url, run)
+    assert run["current_stage"] == "xml"
+    xml_stage = next(stage for stage in run["stages"] if stage["stage_name"] == "xml")
+    assert xml_stage["payload"]["validation"]["valid"] is True
+    for name in class_names:
+        assert name in xml_stage["payload"]["xml"]
+
+
+def test_rag_correction_memory_feeds_past_mistakes_back_into_the_prompt(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Correcting an Ollama-authored final-story draft on one run should surface
+    that correction as pastCorrections context the next time final-story is
+    generated for a similar input - and must not appear before any correction
+    exists yet. Gated entirely by RAG_ENABLED; embeddings are mocked to a fixed
+    vector so retrieval is deterministic regardless of exact wording.
+    """
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "rag_enabled", True)
+    monkeypatch.setattr(OllamaClient, "validate_configuration", lambda self: None)
+    monkeypatch.setattr(OllamaClient, "embed", lambda self, text, model=None: [1.0, 0.0, 0.0])
+
+    final_story_prompts: list[str] = []
+    original_final_story = {
+        "originalText": "x",
+        "normalizedSentences": [],
+        "atomicStorySections": [{"id": "s1", "normalizedSentence": "Original bad content."}],
+        "appliedClarificationAnswers": [],
+        "unresolvedFields": [],
+        "warnings": [],
+        "extractionMetadata": {},
+    }
+
+    def fake_generate(self: OllamaClient, request):
+        if request.purpose == "pipeline_clarifications_ollama_questions":
+            content = '{"clarificationQuestions": []}'
+        elif request.purpose == "pipeline_final-story_ollama_independent":
+            final_story_prompts.append(request.prompt)
+            content = json.dumps(original_final_story)
+        else:
+            content = "{}"
+        return LlmResponse(content=content, response_payload={"content": content}, prompt_tokens=1, completion_tokens=1)
+
+    monkeypatch.setattr(OllamaClient, "generate", fake_generate)
+
+    token = register(client, "rag@example.com")
+    workspace_id, _ = setup_project(client, token)
+
+    def run_through_final_story(raw_text: str) -> dict:
+        project = client.post(
+            f"/api/v1/workspaces/{workspace_id}/projects",
+            headers=auth_header(token),
+            json={"name": f"RAG project {raw_text[:10]}", "description": None},
+        )
+        assert project.status_code == 201, project.text
+        project_id = project.json()["id"]
+        base_url = pipeline_url(workspace_id, project_id)
+        created = client.post(
+            base_url,
+            headers=auth_header(token),
+            json={"title": "RAG test", "raw_text": raw_text, "generation_mode": "ollama"},
+        )
+        assert created.status_code == 201, created.text
+        run = created.json()
+        run = approve_and_proceed(client, token, base_url, run)  # input -> clarifications
+        run = approve_and_proceed(client, token, base_url, run)  # clarifications -> final-story
+        assert run["current_stage"] == "final-story"
+        return {"token": token, "base_url": base_url, "run": run}
+
+    # --- Run A: no correction exists yet, so no pastCorrections should appear ---
+    ctx_a = run_through_final_story("A customer can place an order.")
+    assert len(final_story_prompts) == 1
+    # The static instruction text always mentions the word "pastCorrections" (explaining
+    # what it means if present); what must NOT appear yet is actual correction data.
+    assert '"pastCorrections":' not in final_story_prompts[0]
+
+    final_story_a = next(stage for stage in ctx_a["run"]["stages"] if stage["stage_name"] == "final-story")
+    corrected_payload = {**original_final_story, "atomicStorySections": [{"id": "s1", "normalizedSentence": "Corrected content."}]}
+    save = client.post(
+        f"{ctx_a['base_url']}/{ctx_a['run']['id']}/stages/final-story/revisions",
+        headers=auth_header(ctx_a["token"]),
+        json={"payload": corrected_payload, "expected_version": final_story_a["version_number"]},
+    )
+    assert save.status_code == 200, save.text
+
+    # --- Run B: a correction now exists and should surface as pastCorrections ---
+    run_through_final_story("An admin can approve an order.")
+    assert len(final_story_prompts) == 2
+    assert '"pastCorrections":' in final_story_prompts[1]
+    assert "Original bad content." in final_story_prompts[1]
+    assert "Corrected content." in final_story_prompts[1]
+
+
 def test_ai_settings_encrypt_key_and_gate_ai_gen(
     client: TestClient,
     db_session: Session,
@@ -232,3 +534,109 @@ def test_ai_settings_encrypt_key_and_gate_ai_gen(
     assert created.json()["provider"] == "openai"
     assert created.json()["model_name"] == custom_model
     assert api_key not in created.text
+
+
+def test_completed_pipeline_publishes_srs_document_and_diagram(client: TestClient) -> None:
+    token = register(client, "publish@example.com")
+    workspace_id, project_id = setup_project(client, token)
+    base_url = pipeline_url(workspace_id, project_id)
+    run = client.post(
+        base_url,
+        headers=auth_header(token),
+        json={
+            "title": "Library system",
+            "raw_text": (
+                "A librarian can add books. A member can borrow a book. "
+                "Each book has a title and an ISBN. The system must respond within 2 seconds."
+            ),
+            "generation_mode": "rule_based",
+        },
+    ).json()
+    assert run["srs_document_id"] is None
+
+    for _ in range(6):
+        run = approve_and_proceed(client, token, base_url, run)
+    assert run["status"] == "completed"
+    document_id = run["srs_document_id"]
+    assert document_id
+
+    srs_url = f"/api/v1/workspaces/{workspace_id}/projects/{project_id}/srs"
+    document = client.get(f"{srs_url}/{document_id}", headers=auth_header(token)).json()
+    assert document["pipeline_run_id"] == run["id"]
+    markdown = document["content_markdown"]
+    for heading in ("# Library system", "## 1. Introduction", "### 3.1 Functional requirements", "## 4. Domain Model"):
+        assert heading in markdown
+    assert "The system shall" in markdown
+    assert document["content_json"]["requirements"]
+
+    diagram = client.get(
+        f"/api/v1/workspaces/{workspace_id}/projects/{project_id}/diagrams/{document['diagram_id']}",
+        headers=auth_header(token),
+    )
+    assert diagram.status_code == 200
+    assert diagram.json()["source"] == "generated"
+    assert "<mxfile" in diagram.json()["current"]["drawio_xml"]
+
+    workspace_diagrams = client.get(f"/api/v1/workspaces/{workspace_id}/diagrams", headers=auth_header(token)).json()
+    assert [item["id"] for item in workspace_diagrams] == [document["diagram_id"]]
+
+    workspace_docs = client.get(f"/api/v1/workspaces/{workspace_id}/srs-documents", headers=auth_header(token)).json()
+    assert [item["id"] for item in workspace_docs] == [document_id]
+
+    runs = client.get(f"/api/v1/workspaces/{workspace_id}/generation-pipelines", headers=auth_header(token)).json()
+    assert runs[0]["id"] == run["id"]
+    assert runs[0]["project_name"] == "Generation Modes"
+    assert runs[0]["srs_document_id"] == document_id
+    project_runs = client.get(base_url, headers=auth_header(token)).json()
+    assert "stages" not in project_runs[0]
+
+    search = client.get(
+        f"/api/v1/workspaces/{workspace_id}/search", params={"q": "librar"}, headers=auth_header(token)
+    ).json()
+    assert [item["id"] for item in search["documents"]] == [document_id]
+    assert [item["id"] for item in search["runs"]] == [run["id"]]
+    assert search["diagrams"][0]["id"] == document["diagram_id"]
+
+    edited = client.patch(
+        f"{srs_url}/{document_id}",
+        headers=auth_header(token),
+        json={"title": "Library SRS", "content_markdown": "# Library SRS\n\nEdited."},
+    )
+    assert edited.status_code == 200
+    assert edited.json()["content_json"]["editedManually"] is True
+    exported = client.get(f"{srs_url}/{document_id}/export", headers=auth_header(token))
+    assert exported.status_code == 200
+    assert exported.text == "# Library SRS\n\nEdited."
+
+    renamed = client.patch(f"{base_url}/{run['id']}", headers=auth_header(token), json={"title": "Renamed run"})
+    assert renamed.json()["title"] == "Renamed run"
+    assert client.delete(f"{base_url}/{run['id']}", headers=auth_header(token)).status_code == 204
+    assert client.get(f"{base_url}/{run['id']}", headers=auth_header(token)).status_code == 404
+    # Deleting the run keeps the published document.
+    assert client.get(f"{srs_url}/{document_id}", headers=auth_header(token)).status_code == 200
+
+    assert client.delete(f"{srs_url}/{document_id}", headers=auth_header(token)).status_code == 204
+    assert client.get(srs_url, headers=auth_header(token)).json() == []
+
+
+def test_reapproving_a_reopened_run_refreshes_the_same_document(client: TestClient) -> None:
+    token = register(client, "republish@example.com")
+    workspace_id, project_id = setup_project(client, token)
+    base_url = pipeline_url(workspace_id, project_id)
+    run = client.post(
+        base_url,
+        headers=auth_header(token),
+        json={"title": "Orders", "raw_text": "Administrator can create Order.", "generation_mode": "rule_based"},
+    ).json()
+    for _ in range(6):
+        run = approve_and_proceed(client, token, base_url, run)
+    first_document = run["srs_document_id"]
+
+    reopen = client.post(f"{base_url}/{run['id']}/stages/xml/reopen", headers=auth_header(token))
+    assert reopen.status_code == 200
+    run = client.get(f"{base_url}/{run['id']}", headers=auth_header(token)).json()
+    run = approve_and_proceed(client, token, base_url, run)
+    assert run["status"] == "completed"
+    assert run["srs_document_id"] == first_document
+    docs = client.get(f"/api/v1/workspaces/{workspace_id}/srs-documents", headers=auth_header(token)).json()
+    assert len(docs) == 1
