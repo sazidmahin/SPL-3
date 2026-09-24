@@ -153,7 +153,7 @@ _OLLAMA_NON_JSON_RESPONSES = {
         "How long should an unapproved order remain pending?\n"
         "The order total must be calculated automatically."
     ),
-    "pipeline_clarifications_answer_suggestion": "Ten items",
+    "pipeline_clarifications_answer_batch": "1. Ten items\n2. Ten items",
     "pipeline_final-story_ollama_independent": (
         "A customer places an order for one or more products.\n"
         "An admin reviews and approves pending orders.\n"
@@ -640,3 +640,84 @@ def test_reapproving_a_reopened_run_refreshes_the_same_document(client: TestClie
     assert run["srs_document_id"] == first_document
     docs = client.get(f"/api/v1/workspaces/{workspace_id}/srs-documents", headers=auth_header(token)).json()
     assert len(docs) == 1
+
+
+def test_ollama_pipeline_chunks_large_input_and_merges_the_answers(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A long requirement text must never be sent as one prompt bigger than the
+    model's window (Ollama drops the *start* of such a prompt - the instructions).
+    It is split into chunks, every call is schema-constrained with a bounded
+    output budget, and the per-chunk answers are merged and deduplicated."""
+    from app.core.config import settings
+
+    monkeypatch.setattr(OllamaClient, "validate_configuration", lambda self: None)
+    monkeypatch.setattr(OllamaClient, "warm_up", lambda self: None)
+    requests: list = []
+
+    def fake_generate(self: OllamaClient, request):
+        requests.append(request)
+        purpose = request.purpose
+        if purpose == "pipeline_clarifications_ollama_questions":
+            content = json.dumps({"clarificationQuestions": [
+                {"text": "Who approves a loan?", "category": "missing actor", "reason": "r", "sourceSentence": "s"}
+            ]})
+        elif purpose == "pipeline_clarifications_answer_batch":
+            content = json.dumps({"answers": [{"id": "ollama_q1", "answer": "The librarian."}]})
+        elif purpose == "pipeline_final-story_ollama_independent":
+            n = sum(1 for call in requests if call.purpose == purpose)
+            content = json.dumps({"atomicStorySections": [
+                {"normalizedSentence": f"Need {n}."}, {"normalizedSentence": "A member can borrow a book."}
+            ]})
+        elif purpose == "pipeline_requirements_ollama_independent":
+            content = json.dumps({"requirements": [
+                {"statement": "The system shall let a member borrow a book.", "requirementType": "functional", "actor": "Member"}
+            ]})
+        elif purpose == "pipeline_class-model_ollama_classes":
+            content = json.dumps({"classes": [
+                {"name": "Member", "fields": ["name"], "methods": ["borrow"]},
+                {"name": "Book", "fields": ["title"], "methods": []},
+            ]})
+        elif purpose == "pipeline_class-model_ollama_relationships":
+            content = json.dumps({"relationships": [{"from": "Member", "to": "Book", "type": "association", "label": "borrows"}]})
+        else:
+            content = "{}"
+        return LlmResponse(content=content, response_payload={"content": content}, prompt_tokens=1, completion_tokens=1)
+
+    monkeypatch.setattr(OllamaClient, "generate", fake_generate)
+    token = register(client, "ollama-large@example.com")
+    workspace_id, project_id = setup_project(client, token)
+    base_url = pipeline_url(workspace_id, project_id)
+    paragraph = (
+        "A member can borrow up to five books. A librarian adds, updates and removes books. "
+        "Each branch {i} has opening hours and sends reminders two days before a loan is due. "
+    )
+    raw_text = "\n\n".join(paragraph.replace("{i}", str(i)) * 3 for i in range(120))  # ~70k characters
+    created = client.post(
+        base_url, headers=auth_header(token), json={"title": "Library", "raw_text": raw_text, "generation_mode": "ollama"}
+    )
+    assert created.status_code == 201, created.text
+    run = created.json()
+    for _ in range(4):
+        run = approve_and_proceed(client, token, base_url, run)
+    assert run["current_stage"] == "class-model"
+
+    window_chars = settings.ollama_num_ctx * 3.5
+    assert all(len(request.prompt) < window_chars for request in requests), "a prompt overflowed the context window"
+    assert all(request.json_schema and request.max_tokens for request in requests)
+    story_calls = [r for r in requests if r.purpose == "pipeline_final-story_ollama_independent"]
+    assert len(story_calls) > 3  # the input was chunked...
+    stages = {stage["stage_name"]: stage["payload"] for stage in run["stages"]}
+    sentences = [s["normalizedSentence"] for s in stages["final-story"]["atomicStorySections"]]
+    assert sentences.count("A member can borrow a book.") == 1  # ...and the answers merged without duplicates
+    assert len(sentences) == len(story_calls) + 1
+    # one batched call drafts every clarification answer (not one call per question)
+    assert sum(1 for r in requests if r.purpose == "pipeline_clarifications_answer_batch") == 1
+    assert stages["clarifications"]["answers"][0]["answerText"] == "The librarian"
+    classes = {item["name"] for item in stages["class-model"]["classes"]}
+    assert classes == {"Member", "Book"}
+    relationship_call = next(r for r in requests if r.purpose == "pipeline_class-model_ollama_relationships")
+    from_enum = relationship_call.json_schema["properties"]["relationships"]["items"]["properties"]["from"]["enum"]
+    assert set(from_enum) == {"Member", "Book"}
+    assert len(stages["class-model"]["relationships"]) == 1

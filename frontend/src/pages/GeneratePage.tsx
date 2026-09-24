@@ -51,7 +51,7 @@ const ENGINES: EngineOption[] = [
   {
     id: 'ollama',
     title: 'Local AI (Ollama)',
-    description: 'An open model running on the Ollama server bundled with SpecTwin.',
+    description: 'An open model running in Ollama on your machine. Works without a GPU; each stage takes longer.',
     icon: Server,
     badge: 'No key needed',
   },
