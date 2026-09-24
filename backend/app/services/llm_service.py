@@ -113,7 +113,7 @@ class LangChainOpenAIClient:
     ) -> None:
         cleaned_api_key = api_key.strip() if api_key else ""
         if not cleaned_api_key and chat_model is None:
-            raise LlmConfigurationError("OPENAI_API_KEY is required for SRS AI generation")
+            raise LlmConfigurationError("An OpenAI API key is required. Add your own key in AI Settings.")
 
         self.model_name = model_name.strip() or settings.openai_model
         if chat_model is None:
@@ -281,32 +281,6 @@ ANTHROPIC_PROVIDER_NAMES = {"anthropic", "claude", "langchain-anthropic", "langc
 GEMINI_PROVIDER_NAMES = {"gemini", "google", "google-genai", "langchain-google-genai"}
 
 
-def resolve_llm_provider(provider: str, openai_api_key: str | None) -> str:
-    requested_provider = provider.strip().lower()
-    if requested_provider in OPENAI_PROVIDER_NAMES:
-        return "openai"
-    raise LlmConfigurationError(f"Unsupported LLM_PROVIDER: {provider}. Only OpenAI is supported.")
-
-
-def build_llm_client(
-    *,
-    provider: str,
-    openai_api_key: str | None,
-    openai_model: str,
-    openai_temperature: float,
-    openai_timeout_seconds: int,
-    openai_max_retries: int,
-) -> LlmClient:
-    resolve_llm_provider(provider, openai_api_key)
-    return LangChainOpenAIClient(
-        api_key=openai_api_key,
-        model_name=openai_model,
-        temperature=openai_temperature,
-        timeout_seconds=openai_timeout_seconds,
-        max_retries=openai_max_retries,
-    )
-
-
 def normalize_external_provider(provider: str) -> str:
     requested = provider.strip().lower()
     if requested in OPENAI_PROVIDER_NAMES:
@@ -342,21 +316,6 @@ def build_external_llm_client(
     if normalized == "anthropic":
         return LangChainAnthropicClient(**common)
     return LangChainGeminiClient(**common)
-
-
-def build_default_llm_client() -> LlmClient:
-    return build_llm_client(
-        provider=settings.llm_provider,
-        openai_api_key=settings.openai_api_key,
-        openai_model=settings.openai_model,
-        openai_temperature=settings.openai_temperature,
-        openai_timeout_seconds=settings.openai_timeout_seconds,
-        openai_max_retries=settings.openai_max_retries,
-    )
-
-
-def configured_llm_model_name() -> str:
-    return settings.openai_model
 
 
 def get_or_create_prompt_template(
@@ -421,27 +380,25 @@ def execute_llm_call(
     *,
     workspace_id: UUID,
     project_id: UUID,
-    generation_job_id: UUID | None,
+    pipeline_run_id: UUID | None,
     template: PromptTemplate,
     variables: dict[str, str],
-    client: LlmClient | None = None,
+    client: LlmClient,
     response_format: str | None = None,
 ) -> LlmCall:
     active_client = client
     prompt = render_prompt(template, variables)
     try:
-        if active_client is None:
-            active_client = build_default_llm_client()
         response = active_client.generate(
             LlmRequest(prompt=prompt, purpose=template.purpose, response_format=response_format)
         )
     except Exception as exc:
-        provider = getattr(active_client, "provider", "openai")
-        model_name = getattr(active_client, "model_name", configured_llm_model_name())
+        provider = getattr(active_client, "provider", "unknown")
+        model_name = getattr(active_client, "model_name", "unknown")
         call = LlmCall(
             workspace_id=workspace_id,
             project_id=project_id,
-            generation_job_id=generation_job_id,
+            pipeline_run_id=pipeline_run_id,
             prompt_template_id=template.id,
             provider=provider,
             model_name=model_name,
@@ -458,7 +415,7 @@ def execute_llm_call(
     call = LlmCall(
         workspace_id=workspace_id,
         project_id=project_id,
-        generation_job_id=generation_job_id,
+        pipeline_run_id=pipeline_run_id,
         prompt_template_id=template.id,
         provider=active_client.provider,
         model_name=active_client.model_name,

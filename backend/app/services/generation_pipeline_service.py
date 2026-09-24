@@ -8,12 +8,16 @@ from datetime import UTC, datetime
 from typing import Any, Callable
 from uuid import UUID
 
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
 from app.db.models import (
+    GenerationCorrection,
     GenerationPipelineRun,
     GenerationStageRevision,
+    LlmCall,
+    Project,
+    SrsDocument,
     UserAiProviderCredential,
     WorkspaceMember,
 )
@@ -41,6 +45,7 @@ from app.services.llm_service import LlmClient, LlmExecutionError, execute_llm_c
 from app.services.ollama_service import OllamaClient
 from app.services.project_service import get_active_project
 from app.services.rag_service import capture_correction, format_corrections_for_prompt, retrieve_corrections
+from app.services.srs_service import publish_pipeline_run
 from app.services.srsgen_service import SrsGenClient
 from app.services.workspace_service import require_workspace_role
 
@@ -130,7 +135,33 @@ def _run_read(db: Session, run: GenerationPipelineRun) -> dict[str, Any]:
         "created_by_user_id": run.created_by_user_id,
         "created_at": run.created_at,
         "updated_at": run.updated_at,
+        "srs_document_id": _published_document_id(db, run),
         "stages": [_stage_read(latest[stage]) for stage in PIPELINE_STAGES if stage in latest],
+    }
+
+
+def _published_document_id(db: Session, run: GenerationPipelineRun) -> UUID | None:
+    return db.scalar(
+        select(SrsDocument.id).where(SrsDocument.pipeline_run_id == run.id, SrsDocument.status == "active")
+    )
+
+
+def _run_summary(db: Session, run: GenerationPipelineRun, project_name: str | None = None) -> dict[str, Any]:
+    return {
+        "id": run.id,
+        "workspace_id": run.workspace_id,
+        "project_id": run.project_id,
+        "project_name": project_name,
+        "title": run.title,
+        "generation_mode": run.generation_mode,
+        "provider": run.provider,
+        "model_name": run.model_name,
+        "current_stage": run.current_stage,
+        "status": run.status,
+        "created_by_user_id": run.created_by_user_id,
+        "created_at": run.created_at,
+        "updated_at": run.updated_at,
+        "srs_document_id": _published_document_id(db, run),
     }
 
 
@@ -325,7 +356,39 @@ def list_pipeline_runs(
         )
         .order_by(GenerationPipelineRun.created_at.desc())
     ).all()
-    return [_run_read(db, run) for run in runs]
+    return [_run_summary(db, run) for run in runs]
+
+
+def list_workspace_pipeline_runs(db: Session, *, membership: WorkspaceMember) -> list[dict[str, Any]]:
+    rows = db.execute(
+        select(GenerationPipelineRun, Project.name)
+        .join(Project, Project.id == GenerationPipelineRun.project_id)
+        .where(GenerationPipelineRun.workspace_id == membership.workspace_id, Project.status == "active")
+        .order_by(GenerationPipelineRun.updated_at.desc())
+    ).all()
+    return [_run_summary(db, run, project_name) for run, project_name in rows]
+
+
+def rename_pipeline_run(
+    db: Session, *, membership: WorkspaceMember, project_id: UUID, run_id: UUID, title: str
+) -> dict[str, Any]:
+    require_workspace_role(membership, allowed_roles=PIPELINE_MUTATION_ROLES)
+    run = _get_run(db, membership=membership, project_id=project_id, run_id=run_id)
+    run.title = _clean(title, "Pipeline title is required")
+    db.commit()
+    db.refresh(run)
+    return _run_read(db, run)
+
+
+def delete_pipeline_run(db: Session, *, membership: WorkspaceMember, project_id: UUID, run_id: UUID) -> None:
+    """Delete a run and its stage history. A published SRS document and diagram are kept."""
+    require_workspace_role(membership, allowed_roles=PIPELINE_MUTATION_ROLES)
+    run = _get_run(db, membership=membership, project_id=project_id, run_id=run_id)
+    db.execute(update(SrsDocument).where(SrsDocument.pipeline_run_id == run.id).values(pipeline_run_id=None))
+    db.execute(update(LlmCall).where(LlmCall.pipeline_run_id == run.id).values(pipeline_run_id=None))
+    db.execute(delete(GenerationCorrection).where(GenerationCorrection.run_id == run.id))
+    db.delete(run)
+    db.commit()
 
 
 def save_stage_revision(
@@ -819,7 +882,7 @@ def _ollama_json_call(
         db,
         workspace_id=run.workspace_id,
         project_id=run.project_id,
-        generation_job_id=None,
+        pipeline_run_id=run.id,
         template=template,
         variables={"contract": contract, "upstream": json.dumps(upstream, default=str)},
         client=client,
@@ -1060,7 +1123,7 @@ def _generate_ai_stage(
         db,
         workspace_id=run.workspace_id,
         project_id=run.project_id,
-        generation_job_id=None,
+        pipeline_run_id=run.id,
         template=template,
         variables={"contract": contract, "upstream": json.dumps(upstream, default=str)},
         client=client,
@@ -1227,7 +1290,7 @@ def _ollama_suggest_answer(
             db,
             workspace_id=run.workspace_id,
             project_id=run.project_id,
-            generation_job_id=None,
+            pipeline_run_id=run.id,
             template=template,
             variables={
                 "sentence": str(question.get("sourceSentence") or ""),
@@ -1371,7 +1434,7 @@ def _generate_ollama_clarification_questions(db: Session, run: GenerationPipelin
         db,
         workspace_id=run.workspace_id,
         project_id=run.project_id,
-        generation_job_id=None,
+        pipeline_run_id=run.id,
         template=template,
         variables={"contract": _OLLAMA_CLARIFICATION_QUESTIONS_CONTRACT, "upstream": json.dumps(upstream, default=str)},
         client=client,
@@ -1542,6 +1605,8 @@ def generate_next_stage(
     if current_index == len(PIPELINE_STAGES) - 1:
         run.status = "completed"
         db.commit()
+        publish_pipeline_run(db, run=run, user_id=membership.user_id)
+        db.refresh(run)
         return _run_read(db, run)
     next_stage = PIPELINE_STAGES[current_index + 1]
     run.status = "running"

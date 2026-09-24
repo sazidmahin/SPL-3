@@ -8,7 +8,6 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_workspace_membership, get_db
 from app.db.models import WorkspaceMember
 from app.services.ai_settings_service import AiSettingsError
-from app.services.billing_service import BillingError
 from app.services.class_modeler_service import ClassModelerError, generate_class_model_from_text, ollama_status
 from app.services.llm_service import LlmConfigurationError, LlmExecutionError
 from app.services.project_service import ProjectNotFoundError
@@ -47,7 +46,7 @@ def generate_class_model_route(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except LlmExecutionError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"AI provider call failed: {exc}") from exc
-    except (ClassModelerError, BillingError, AiSettingsError, LlmConfigurationError) as exc:
+    except (ClassModelerError, AiSettingsError, LlmConfigurationError) as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
 
 

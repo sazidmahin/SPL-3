@@ -1,4 +1,4 @@
-﻿from datetime import date, datetime
+﻿from datetime import datetime
 from typing import Any
 from uuid import UUID
 
@@ -32,19 +32,6 @@ class AdminWorkspaceRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class AdminSubscriptionRead(BaseModel):
-    id: UUID
-    workspace_id: UUID
-    plan_id: UUID
-    status: str
-    current_period_start: date
-    current_period_end: date
-    created_at: datetime
-    updated_at: datetime
-
-    model_config = ConfigDict(from_attributes=True)
-
-
 class AdminProjectRead(BaseModel):
     id: UUID
     workspace_id: UUID
@@ -58,32 +45,39 @@ class AdminProjectRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class AdminGenerationJobRead(BaseModel):
+class AdminPipelineRunRead(BaseModel):
     id: UUID
     workspace_id: UUID
     project_id: UUID
-    requirement_input_id: UUID
-    job_type: str
+    title: str
+    generation_mode: str
+    provider: str | None
+    model_name: str | None
+    current_stage: str
     status: str
-    progress_percent: int
-    generate_class_diagram: bool
-    diagram_methods: list[str]
-    result_payload: dict[str, Any] | None
-    error_message: str | None
     created_by_user_id: UUID
     created_at: datetime
     updated_at: datetime
-    started_at: datetime | None
-    completed_at: datetime | None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class AdminOverviewRead(BaseModel):
+    users: int
+    workspaces: int
+    projects: int
+    pipeline_runs: int
+    completed_runs: int
+    srs_documents: int
+    diagrams: int
+    llm_calls: int
 
 
 class AdminLlmCallRead(BaseModel):
     id: UUID
     workspace_id: UUID
     project_id: UUID
-    generation_job_id: UUID | None
+    pipeline_run_id: UUID | None
     prompt_template_id: UUID | None
     provider: str
     model_name: str

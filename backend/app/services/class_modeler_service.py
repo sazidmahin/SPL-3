@@ -136,7 +136,7 @@ def generate_class_model_from_text(
         db,
         workspace_id=membership.workspace_id,
         project_id=project_id,
-        generation_job_id=None,
+        pipeline_run_id=None,
         template=template,
         variables={"contract": OLLAMA_CONTRACT if is_ollama else LLM_CONTRACT, "requirements": safe_text},
         client=client,

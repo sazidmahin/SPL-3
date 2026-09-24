@@ -12,7 +12,6 @@ from sqlalchemy.pool import StaticPool
 from app.api.deps import get_db
 from app.db import models  # noqa: F401
 from app.db.base import Base
-from app.db.models import Plan, Subscription, UsageCounter
 from app.main import app
 
 
@@ -82,17 +81,6 @@ def create_project(client: TestClient, token: str, workspace_id: str, name: str)
     return response.json()
 
 
-def upgrade_personal_workspace(db_session: Session, workspace_id: str) -> None:
-    subscription = db_session.scalar(
-        select(Subscription).where(Subscription.workspace_id == UUID(workspace_id))
-    )
-    assert subscription is not None
-    plan = db_session.scalar(select(Plan).where(Plan.code == "individual_pro"))
-    assert plan is not None
-    subscription.plan_id = plan.id
-    db_session.commit()
-
-
 def create_diagram(
     client: TestClient, token: str, workspace_id: str, project_id: str, title: str
 ) -> dict:
@@ -151,14 +139,6 @@ def test_manual_diagram_flow_persists_versions_and_current_xml(client: TestClien
     )
     assert versions_response.status_code == 200
     assert [version["version_number"] for version in versions_response.json()] == [1, 2]
-    blocked_export_response = client.get(
-        f"/api/v1/workspaces/{workspace_id}/projects/{project['id']}/diagrams/{diagram['id']}/export",
-        headers=auth_header(token),
-    )
-    assert blocked_export_response.status_code == 422
-    assert blocked_export_response.json()["detail"] == "Current plan does not allow this feature"
-
-    upgrade_personal_workspace(db_session, workspace_id)
     export_response = client.get(
         f"/api/v1/workspaces/{workspace_id}/projects/{project['id']}/diagrams/{diagram['id']}/export",
         headers=auth_header(token),
@@ -230,57 +210,18 @@ def test_viewer_can_read_diagrams_but_cannot_save_versions(client: TestClient) -
     )
     assert save_response.status_code == 403
 
-def test_generate_class_diagram_from_srs_document_persists_drawio_xml(
-    client: TestClient, db_session: Session
-) -> None:
-    token = register(client, "owner@example.com", "Owner User")
+def test_diagram_can_be_renamed_and_deleted(client: TestClient) -> None:
+    token = register(client, "rename@example.com", "Rename User")
     workspace_id = personal_workspace_id(client, token)
-    project = create_project(client, token, workspace_id, "Claims Portal")
-    client.get(
-        f"/api/v1/workspaces/{workspace_id}/billing/subscription",
-        headers=auth_header(token),
-    )
-    upgrade_personal_workspace(db_session, workspace_id)
+    project = create_project(client, token, workspace_id, "Library")
+    diagram = create_diagram(client, token, workspace_id, project["id"], "Draft")
+    base = f"/api/v1/workspaces/{workspace_id}/projects/{project['id']}/diagrams"
 
-    srs_response = client.post(
-        f"/api/v1/workspaces/{workspace_id}/projects/{project['id']}/srs/generate",
-        headers=auth_header(token),
-        json={
-            "title": "Claims MVP",
-            "raw_text": "Users submit claims. Admins approve claims. The system must respond within two seconds.",
-        },
-    )
-    assert srs_response.status_code == 201
-    srs_document_id = srs_response.json()["srs_document"]["id"]
+    renamed = client.patch(f"{base}/{diagram['id']}", headers=auth_header(token), json={"title": "Library model"})
+    assert renamed.status_code == 200
+    assert renamed.json()["title"] == "Library model"
 
-    rule_based_response = client.post(
-        f"/api/v1/workspaces/{workspace_id}/projects/{project['id']}/diagrams/class/generate",
-        headers=auth_header(token),
-        json={"srs_document_id": srs_document_id, "methods": ["rule_based"]},
-    )
-    assert rule_based_response.status_code == 201
-    body = rule_based_response.json()
-    assert body["source"] == "generated"
-    assert body["diagram_type"] == "class"
-    assert body["current"]["drawio_xml"].startswith("<mxfile")
-    rule_based_diagram_json = json.loads(body["current"]["diagram_json"])
-    assert rule_based_diagram_json["methods"] == ["rule_based"]
-    assert {"User", "Admin", "Claim"}.issubset(rule_based_diagram_json["rule_based_extraction"]["classes"])
-    assert "submitClaim()" in rule_based_diagram_json["rule_based_extraction"]["methods_by_class"]["User"]
-    assert "approveClaim()" in rule_based_diagram_json["rule_based_extraction"]["methods_by_class"]["Admin"]
-
-    llm_response = client.post(
-        f"/api/v1/workspaces/{workspace_id}/projects/{project['id']}/diagrams/class/generate",
-        headers=auth_header(token),
-        json={"srs_document_id": srs_document_id, "methods": ["llm"]},
-    )
-    assert llm_response.status_code == 201
-    llm_diagram_json = json.loads(llm_response.json()["current"]["diagram_json"])
-    assert llm_diagram_json["methods"] == ["llm"]
-    assert llm_diagram_json["generation_metadata"]["model_name"] == "deterministic-srs-v1"
-
-    counter = db_session.scalar(
-        select(UsageCounter).where(UsageCounter.workspace_id == UUID(workspace_id))
-    )
-    assert counter is not None
-    assert counter.ai_diagram_generations == 1
+    deleted = client.delete(f"{base}/{diagram['id']}", headers=auth_header(token))
+    assert deleted.status_code == 204
+    assert client.get(f"{base}/{diagram['id']}", headers=auth_header(token)).status_code == 404
+    assert client.get(base, headers=auth_header(token)).json() == []

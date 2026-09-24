@@ -534,3 +534,106 @@ def test_ai_settings_encrypt_key_and_gate_ai_gen(
     assert created.json()["provider"] == "openai"
     assert created.json()["model_name"] == custom_model
     assert api_key not in created.text
+
+
+def test_completed_pipeline_publishes_srs_document_and_diagram(client: TestClient) -> None:
+    token = register(client, "publish@example.com")
+    workspace_id, project_id = setup_project(client, token)
+    base_url = pipeline_url(workspace_id, project_id)
+    run = client.post(
+        base_url,
+        headers=auth_header(token),
+        json={
+            "title": "Library system",
+            "raw_text": (
+                "A librarian can add books. A member can borrow a book. "
+                "Each book has a title and an ISBN. The system must respond within 2 seconds."
+            ),
+            "generation_mode": "rule_based",
+        },
+    ).json()
+    assert run["srs_document_id"] is None
+
+    for _ in range(6):
+        run = approve_and_proceed(client, token, base_url, run)
+    assert run["status"] == "completed"
+    document_id = run["srs_document_id"]
+    assert document_id
+
+    srs_url = f"/api/v1/workspaces/{workspace_id}/projects/{project_id}/srs"
+    document = client.get(f"{srs_url}/{document_id}", headers=auth_header(token)).json()
+    assert document["pipeline_run_id"] == run["id"]
+    markdown = document["content_markdown"]
+    for heading in ("# Library system", "## 1. Introduction", "### 3.1 Functional requirements", "## 4. Domain Model"):
+        assert heading in markdown
+    assert "The system shall" in markdown
+    assert document["content_json"]["requirements"]
+
+    diagram = client.get(
+        f"/api/v1/workspaces/{workspace_id}/projects/{project_id}/diagrams/{document['diagram_id']}",
+        headers=auth_header(token),
+    )
+    assert diagram.status_code == 200
+    assert diagram.json()["source"] == "generated"
+    assert "<mxfile" in diagram.json()["current"]["drawio_xml"]
+
+    workspace_docs = client.get(f"/api/v1/workspaces/{workspace_id}/srs-documents", headers=auth_header(token)).json()
+    assert [item["id"] for item in workspace_docs] == [document_id]
+
+    runs = client.get(f"/api/v1/workspaces/{workspace_id}/generation-pipelines", headers=auth_header(token)).json()
+    assert runs[0]["id"] == run["id"]
+    assert runs[0]["project_name"] == "Generation Modes"
+    assert runs[0]["srs_document_id"] == document_id
+    project_runs = client.get(base_url, headers=auth_header(token)).json()
+    assert "stages" not in project_runs[0]
+
+    search = client.get(
+        f"/api/v1/workspaces/{workspace_id}/search", params={"q": "librar"}, headers=auth_header(token)
+    ).json()
+    assert [item["id"] for item in search["documents"]] == [document_id]
+    assert [item["id"] for item in search["runs"]] == [run["id"]]
+    assert search["diagrams"][0]["id"] == document["diagram_id"]
+
+    edited = client.patch(
+        f"{srs_url}/{document_id}",
+        headers=auth_header(token),
+        json={"title": "Library SRS", "content_markdown": "# Library SRS\n\nEdited."},
+    )
+    assert edited.status_code == 200
+    assert edited.json()["content_json"]["editedManually"] is True
+    exported = client.get(f"{srs_url}/{document_id}/export", headers=auth_header(token))
+    assert exported.status_code == 200
+    assert exported.text == "# Library SRS\n\nEdited."
+
+    renamed = client.patch(f"{base_url}/{run['id']}", headers=auth_header(token), json={"title": "Renamed run"})
+    assert renamed.json()["title"] == "Renamed run"
+    assert client.delete(f"{base_url}/{run['id']}", headers=auth_header(token)).status_code == 204
+    assert client.get(f"{base_url}/{run['id']}", headers=auth_header(token)).status_code == 404
+    # Deleting the run keeps the published document.
+    assert client.get(f"{srs_url}/{document_id}", headers=auth_header(token)).status_code == 200
+
+    assert client.delete(f"{srs_url}/{document_id}", headers=auth_header(token)).status_code == 204
+    assert client.get(srs_url, headers=auth_header(token)).json() == []
+
+
+def test_reapproving_a_reopened_run_refreshes_the_same_document(client: TestClient) -> None:
+    token = register(client, "republish@example.com")
+    workspace_id, project_id = setup_project(client, token)
+    base_url = pipeline_url(workspace_id, project_id)
+    run = client.post(
+        base_url,
+        headers=auth_header(token),
+        json={"title": "Orders", "raw_text": "Administrator can create Order.", "generation_mode": "rule_based"},
+    ).json()
+    for _ in range(6):
+        run = approve_and_proceed(client, token, base_url, run)
+    first_document = run["srs_document_id"]
+
+    reopen = client.post(f"{base_url}/{run['id']}/stages/xml/reopen", headers=auth_header(token))
+    assert reopen.status_code == 200
+    run = client.get(f"{base_url}/{run['id']}", headers=auth_header(token)).json()
+    run = approve_and_proceed(client, token, base_url, run)
+    assert run["status"] == "completed"
+    assert run["srs_document_id"] == first_document
+    docs = client.get(f"/api/v1/workspaces/{workspace_id}/srs-documents", headers=auth_header(token)).json()
+    assert len(docs) == 1
