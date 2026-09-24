@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -41,11 +41,27 @@ class Settings(BaseSettings):
     # for escaping a loop a purely greedy sampler cannot break out of on its own.
     ollama_temperature: float = 0.2
     ollama_timeout_seconds: int = 600
-    ollama_keep_alive: str = "5m"
-    ollama_num_ctx: int = 16384
+    # Keep the model resident while a user reviews a stage (often several minutes);
+    # reloading a model from disk on a CPU-only laptop costs seconds every stage.
+    ollama_keep_alive: str = "30m"
+    # One fixed context window for every call. Ollama restarts its runner (a full
+    # model reload) whenever num_ctx changes between requests, so a per-call window
+    # cost a reload on most stages. 8192 fits CPU laptops (KV cache ~0.5 GB for a
+    # 1-3B model) and is large enough for chunked inputs.
+    ollama_num_ctx: int = 8192
     ollama_num_predict: int = 1024
-    ollama_repeat_penalty: float = 1.4
-    ollama_repeat_last_n: int = 256
+    # Largest slice of user text/items sent in one call. Inputs beyond this are
+    # split into chunks and merged: small models answer shorter prompts better, and
+    # nothing is silently cut off (Ollama drops the *start* of an over-long prompt,
+    # which is where the instructions are).
+    ollama_chunk_tokens: int = 2000
+    # CPU threads for inference; unset lets Ollama pick (physical cores).
+    ollama_num_thread: int | None = None
+    # A strong repeat penalty fights JSON, which must repeat quotes, keys and
+    # braces; with schema-constrained output it produced mangled keys. Keep it mild
+    # and over a short window - output length is bounded by num_predict instead.
+    ollama_repeat_penalty: float = 1.1
+    ollama_repeat_last_n: int = 64
     ollama_embed_model: str = "nomic-embed-text"
     rag_enabled: bool = False
     rag_top_k: int = 2
@@ -80,6 +96,12 @@ class Settings(BaseSettings):
             "ollama": self.ollama_models,
         }.get(provider, "")
         return list(dict.fromkeys(model.strip() for model in raw.split(",") if model.strip()))
+
+    @field_validator("ollama_num_thread", mode="before")
+    @classmethod
+    def _blank_num_thread_is_auto(cls, value: object) -> object:
+        # OLLAMA_NUM_THREAD= (empty, as in .env.example / docker-compose) means "let Ollama decide".
+        return None if isinstance(value, str) and not value.strip() else value
 
     model_config = SettingsConfigDict(
         env_file=".env",

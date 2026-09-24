@@ -39,6 +39,11 @@ class LlmRequest:
     # JSON (e.g. Ollama's "format": "json"). None means the provider's default
     # free-text behavior; providers that don't support this simply ignore it.
     response_format: str | None = None
+    # Optional JSON Schema for providers with schema-constrained decoding (Ollama
+    # structured outputs). The model can then only emit JSON of exactly this shape.
+    json_schema: dict | None = None
+    # Optional per-call cap on generated tokens (providers that support it).
+    max_tokens: int | None = None
 
 
 @dataclass(frozen=True)
@@ -364,15 +369,19 @@ def get_active_prompt_template(db: Session, *, name: str) -> PromptTemplate:
     return template
 
 
-def render_prompt(template: PromptTemplate, variables: dict[str, str]) -> str:
-    rendered = template.template_text
-    for key, value in variables.items():
-        rendered = rendered.replace(f"{{{key}}}", value)
+_PLACEHOLDER = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
 
-    missing = re.findall(r"\{([A-Za-z_][A-Za-z0-9_]*)\}", rendered)
+
+def render_prompt(template: PromptTemplate, variables: dict[str, str]) -> str:
+    """Fill {placeholders} in one pass over the template only.
+
+    Values are never re-scanned, so user text that happens to contain "{name}" is
+    inserted verbatim instead of being mistaken for a missing variable.
+    """
+    missing = [name for name in _PLACEHOLDER.findall(template.template_text) if name not in variables]
     if missing:
         raise PromptRenderError(f"Missing prompt variable: {missing[0]}")
-    return rendered
+    return _PLACEHOLDER.sub(lambda match: variables[match.group(1)], template.template_text)
 
 
 def execute_llm_call(
@@ -385,12 +394,20 @@ def execute_llm_call(
     variables: dict[str, str],
     client: LlmClient,
     response_format: str | None = None,
+    json_schema: dict | None = None,
+    max_tokens: int | None = None,
 ) -> LlmCall:
     active_client = client
     prompt = render_prompt(template, variables)
     try:
         response = active_client.generate(
-            LlmRequest(prompt=prompt, purpose=template.purpose, response_format=response_format)
+            LlmRequest(
+                prompt=prompt,
+                purpose=template.purpose,
+                response_format=response_format,
+                json_schema=json_schema,
+                max_tokens=max_tokens,
+            )
         )
     except Exception as exc:
         provider = getattr(active_client, "provider", "unknown")

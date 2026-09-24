@@ -416,8 +416,10 @@ export function RunPage({ projectId, runId }: { projectId: string; runId: string
                 {busy === 'approve' ? <Loader2 className="animate-spin" /> : <CheckCircle2 />}
                 {busy === 'approve' ? (currentStage === 'xml' ? 'Publishing…' : 'Generating next stage…') : acceptLabel}
               </Button>
-              <p className="text-xs text-fg-3">
-                {currentStage === 'class-model' && !classModelReady
+              <p className="text-xs text-fg-3" aria-live="polite">
+                {busy === 'approve' && data?.generation_mode === 'ollama' && currentStage !== 'xml'
+                  ? 'The local model is working. Without a GPU a stage can take a few minutes, and long input is processed in parts.'
+                  : currentStage === 'class-model' && !classModelReady
                   ? 'Confirm the class names, then review the relationships before continuing.'
                   : currentStage === 'xml'
                   ? 'Publishes the SRS document and saves this diagram to Diagrams.'
