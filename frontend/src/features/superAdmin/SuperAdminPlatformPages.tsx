@@ -55,7 +55,7 @@ export function SuperAdminPlatformPage({ section, generationJobs, projects = [],
 
   const config = pageConfig[section]
   return (
-    <section className="grid gap-6" id={section}>
+    <section className="grid grid-cols-1 gap-6" id={section}>
       <PageHeader title={config.title} description={config.description} />
       <EmptyState
         icon={config.icon}

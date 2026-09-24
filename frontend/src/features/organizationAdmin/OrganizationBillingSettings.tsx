@@ -22,14 +22,14 @@ export function OrganizationBillingSettings({ activeWorkspace, subscription, usa
   ]
 
   return (
-    <section className="grid gap-6" id="billing">
+    <section className="grid grid-cols-1 gap-6" id="billing">
       <PageHeader
         eyebrow="Organization Admin"
         title="Billing & Usage"
         description={`Plan and usage for ${activeWorkspace?.workspace.name ?? 'this organization'}.`}
       />
 
-      <Card className="grid gap-4 p-6">
+      <Card className="grid grid-cols-1 gap-4 p-6">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 className="font-display text-lg font-bold text-fg">{plan?.name ?? 'No plan loaded'}</h2>
@@ -48,9 +48,9 @@ export function OrganizationBillingSettings({ activeWorkspace, subscription, usa
         </Chip>
       </Card>
 
-      <Card className="grid gap-4 p-6">
+      <Card className="grid grid-cols-1 gap-4 p-6">
         <PageHeader size="section" title="Usage this period" />
-        <div className="grid gap-4">
+        <div className="grid grid-cols-1 gap-4">
           {rows.map((row) => {
             const percent = row.limit > 0 ? Math.min(100, Math.round((row.used / row.limit) * 100)) : 0
             return (

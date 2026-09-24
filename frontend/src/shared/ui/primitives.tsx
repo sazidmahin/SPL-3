@@ -189,7 +189,7 @@ export function CompactList({ items, emptyText }: { items: CompactListItem[]; em
     return <p className="text-[13px] text-fg-3">{emptyText}</p>
   }
   return (
-    <div className="grid gap-2">
+    <div className="grid grid-cols-1 gap-2">
       {items.map((item) => (
         <div
           key={item.id}
@@ -278,7 +278,7 @@ type StepTrackProps = {
 
 export function StepTrack({ steps, current, className }: StepTrackProps) {
   return (
-    <div className={cn('flex items-center overflow-x-auto pb-1', className)}>
+    <div className={cn('flex items-center overflow-x-auto pb-1 [scrollbar-width:none]', className)}>
       {steps.map((label, index) => {
         const done = index < current
         const active = index === current
@@ -298,6 +298,7 @@ export function StepTrack({ steps, current, className }: StepTrackProps) {
               <span
                 className={cn(
                   'whitespace-nowrap text-[11px] font-semibold',
+                  !active && 'hidden sm:inline',
                   active ? 'text-accent' : done ? 'text-fg-2' : 'text-fg-3',
                 )}
               >

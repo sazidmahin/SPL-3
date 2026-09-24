@@ -11,7 +11,7 @@ type AuthIconName = 'user' | 'mail' | 'lock' | 'eye' | 'home' | 'check' | 'plus'
 export function AuthFrame({ artwork, children }: { artwork: AuthArtwork; children: ReactNode }) {
   const { theme, toggleTheme } = useTheme()
   return (
-    <main className="relative grid min-h-svh bg-bg bg-[image:var(--app-glow)] bg-no-repeat lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)]">
+    <main className="relative grid grid-cols-1 min-h-svh bg-bg bg-[image:var(--app-glow)] bg-no-repeat lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)]">
       <section className="relative flex flex-col px-5 py-6 sm:px-10 lg:px-16">
         <header className="flex items-center justify-between">
           <div className="flex items-center gap-2.5">
@@ -57,7 +57,7 @@ function AuthVisualPanel({ artwork }: { artwork: AuthArtwork }) {
         </span>
       </div>
 
-      <section className="relative my-10 grid gap-3" aria-hidden="true">
+      <section className="relative my-10 grid grid-cols-1 gap-3" aria-hidden="true">
         <article className="rounded-2xl border border-white/10 bg-white/[0.07] p-5 backdrop-blur-md">
           <div className="flex items-center gap-2.5">
             <span className="grid size-9 place-items-center rounded-xl bg-gradient-to-br from-indigo-400 to-violet-500">
@@ -99,7 +99,7 @@ function AuthVisualPanel({ artwork }: { artwork: AuthArtwork }) {
 
 function PreviewCard({ icon: Icon, label, value }: { icon: LucideIcon; label: string; value: string }) {
   return (
-    <article className="grid gap-1.5 rounded-2xl border border-white/10 bg-white/[0.06] p-4 backdrop-blur-md">
+    <article className="grid grid-cols-1 gap-1.5 rounded-2xl border border-white/10 bg-white/[0.06] p-4 backdrop-blur-md">
       <Icon className="size-4 text-indigo-200" />
       <strong className="font-display text-xl">{value}</strong>
       <small className="text-[11px] text-white/55">{label}</small>
@@ -122,7 +122,7 @@ const signupFeatures = [
 
 function FeatureChip({ icon: Icon, title, label }: { icon: LucideIcon; title: string; label: string }) {
   return (
-    <span className="grid gap-1 rounded-xl border border-white/10 bg-white/[0.05] p-3">
+    <span className="grid grid-cols-1 gap-1 rounded-xl border border-white/10 bg-white/[0.05] p-3">
       <Icon className="size-4 text-indigo-200" />
       <strong className="text-xs">{title}</strong>
       <small className="text-[10.5px] leading-4 text-white/55">{label}</small>
@@ -134,7 +134,7 @@ export function AuthField({ label, icon, type = 'text', value, placeholder, auto
   const [isPasswordVisible, setIsPasswordVisible] = useState(false)
   const isPasswordField = type === 'password'
   return (
-    <label className="grid gap-1.5">
+    <label className="grid grid-cols-1 gap-1.5">
       <span className="text-[13px] font-semibold text-fg">{label}</span>
       <span
         className={cn(

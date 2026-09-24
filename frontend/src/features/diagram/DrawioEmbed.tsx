@@ -61,7 +61,7 @@ export const DrawioEmbed = forwardRef<DrawioEmbedHandle, Props>(function DrawioE
   }))
 
   return (
-    <div className="grid gap-2">
+    <div className="grid grid-cols-1 gap-2">
       <iframe
         ref={frame}
         className={`${className} w-full rounded-lg border border-border bg-surface-2`}

@@ -79,8 +79,8 @@ export function ProjectWorkspaceView({
     .slice(0, 4)
 
   return (
-    <section className="grid gap-4" id="project-workspace">
-      <Card className="grid gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+    <section className="grid grid-cols-1 gap-4" id="project-workspace">
+      <Card className="grid grid-cols-1 gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
         <PageHeader eyebrow="Project workspace" title={projectTitle} description={projectDescription} />
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3" aria-label="Project summary">
           <SummaryPill label="SRS docs" value={srsDocuments.length + pipelineRuns.length} />
@@ -89,8 +89,8 @@ export function ProjectWorkspaceView({
         </div>
       </Card>
 
-      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_20.5rem]">
-        <Card className="grid gap-4 p-5">
+      <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(0,1fr)_20.5rem]">
+        <Card className="grid grid-cols-1 gap-4 p-5">
           <PageHeader size="section" eyebrow="Requirements" title="Traceable requirements" />
           {requirements.length === 0 ? (
             <EmptyState
@@ -99,9 +99,9 @@ export function ProjectWorkspaceView({
               description="Run the SRS generation pipeline to extract and review requirements for this project."
             />
           ) : (
-            <div className="grid gap-2 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {requirements.slice(0, 8).map((requirement) => (
-                <div key={requirement.id} className="grid gap-1 rounded-lg border border-border bg-surface-2 p-3">
+                <div key={requirement.id} className="grid grid-cols-1 gap-1 rounded-lg border border-border bg-surface-2 p-3">
                   <span className="text-[11px] font-bold uppercase tracking-wide text-fg-3">{requirement.type}</span>
                   <p className="text-[13px] leading-6 text-fg-2">{requirement.statement}</p>
                 </div>
@@ -109,7 +109,7 @@ export function ProjectWorkspaceView({
             </div>
           )}
         </Card>
-        <aside className="grid gap-4">
+        <aside className="grid grid-cols-1 gap-4">
           <RecentCard label="SRS documents" title="Recent docs" items={recentDocs} emptyText="No SRS documents yet." />
           <RecentCard
             label="Diagrams"
@@ -126,7 +126,7 @@ export function ProjectWorkspaceView({
         </aside>
       </div>
 
-      <div className="grid gap-4">
+      <div className="grid grid-cols-1 gap-4">
         {srsTools}
         {diagramTools}
       </div>
@@ -146,7 +146,7 @@ function RecentCard({
   emptyText: string
 }) {
   return (
-    <Card className="grid gap-4 p-5">
+    <Card className="grid grid-cols-1 gap-4 p-5">
       <PageHeader size="section" eyebrow={label} title={title} />
       <CompactList items={items} emptyText={emptyText} />
     </Card>
@@ -155,7 +155,7 @@ function RecentCard({
 
 function SummaryPill({ label, value }: { label: string; value: number }) {
   return (
-    <div className="grid min-w-20 justify-items-center gap-1 rounded-md border border-border bg-surface-2 px-3 py-2.5">
+    <div className="grid grid-cols-1 min-w-20 justify-items-center gap-1 rounded-md border border-border bg-surface-2 px-3 py-2.5">
       <strong className="font-display text-xl font-extrabold leading-none text-fg">{value}</strong>
       <span className="text-center text-xs font-semibold text-fg-3">{label}</span>
     </div>

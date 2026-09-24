@@ -87,8 +87,8 @@ export function CompareView({ left, right }: Props) {
   ]
 
   return (
-    <div className="grid gap-5">
-      <div className="grid gap-3 sm:grid-cols-3">
+    <div className="grid grid-cols-1 gap-5">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         {scores.map((score) => (
           <div key={score.label} className="rounded-xl border border-border bg-surface px-4 py-3">
             <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-fg-3">{score.label} agreement</div>
@@ -108,12 +108,12 @@ export function CompareView({ left, right }: Props) {
         <span className="flex items-center gap-1.5"><span className="size-2.5 rounded-sm bg-accent2/40" /> only in {right.label}</span>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         {[
           { title: left.label, icon: rule.mode === 'llm' ? Sparkles : Cpu, result: rule, tone: 'accent' as const },
           { title: right.label, icon: llm.mode === 'llm' ? Sparkles : Cpu, result: llm, tone: 'ai' as const },
         ].map((side) => (
-          <div key={side.title} className="grid gap-2">
+          <div key={side.title} className="grid grid-cols-1 gap-2">
             <div className="flex items-center gap-2">
               <side.icon className="size-4 text-fg-2" />
               <span className="font-display text-[14px] font-bold text-fg">{side.title}</span>
@@ -154,9 +154,9 @@ export function CompareView({ left, right }: Props) {
         </table>
       </div>
 
-      <div className="grid gap-2">
+      <div className="grid grid-cols-1 gap-2">
         <h3 className="font-display text-[14px] font-bold text-fg">Relationships</h3>
-        <ul className="grid gap-1.5 md:grid-cols-2">
+        <ul className="grid grid-cols-1 gap-1.5 md:grid-cols-2">
           {diff.edgeRows.map((row) => (
             <li
               key={row.key}

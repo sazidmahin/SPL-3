@@ -296,8 +296,8 @@ export function App() {
       ]
 
   const workspaceTools = (
-    <aside className="grid min-w-0 gap-4 lg:sticky lg:top-20">
-      <div className="grid gap-4" id="workspace">
+    <aside className="grid grid-cols-1 min-w-0 gap-4 lg:sticky lg:top-20">
+      <div className="grid grid-cols-1 gap-4" id="workspace">
         <Card className="flex items-center gap-3 p-4">
           <Avatar name={currentUser.full_name} className="size-10 text-xs" />
           <div className="min-w-0">
@@ -309,7 +309,7 @@ export function App() {
         <WorkspacePanel {...controller.workspacePanel} />
         <CreateWorkspacePanel {...controller.createWorkspacePanel} />
       </div>
-      <div className="grid gap-4" id="billing">
+      <div className="grid grid-cols-1 gap-4" id="billing">
         <BillingPanel {...controller.billingPanel} />
       </div>
       <CreateDiagramPanel {...controller.createDiagramPanel} />
@@ -356,7 +356,7 @@ export function App() {
 
     if (activeSection === 'ai-settings') {
       return (
-        <section className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_23.75rem]">
+        <section className="grid grid-cols-1 items-start gap-5 xl:grid-cols-[minmax(0,1fr)_23.75rem]">
           <div className="min-w-0">
             <AiSettingsPanel {...controller.aiSettingsPanel} />
           </div>
@@ -450,7 +450,7 @@ export function App() {
 
     if (activeSection === 'diagram-editor') {
       return (
-        <section className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_23.75rem]">
+        <section className="grid grid-cols-1 items-start gap-5 xl:grid-cols-[minmax(0,1fr)_23.75rem]">
           <div className="min-w-0">
             <DiagramsPanel {...controller.diagramsPanel} />
           </div>
@@ -471,7 +471,7 @@ export function App() {
 
     if (['srs', 'requirements', 'exports'].includes(activeSection)) {
       return (
-        <section className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_23.75rem]">
+        <section className="grid grid-cols-1 items-start gap-5 xl:grid-cols-[minmax(0,1fr)_23.75rem]">
           <div className="min-w-0">{projectWorkspace}</div>
           {workspaceTools}
         </section>
@@ -488,7 +488,7 @@ export function App() {
 
     if (['profile', 'settings', 'ai-settings', 'admin', 'members'].includes(activeSection)) {
       return (
-        <section className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_23.75rem]">
+        <section className="grid grid-cols-1 items-start gap-5 xl:grid-cols-[minmax(0,1fr)_23.75rem]">
           <div className="min-w-0">
             <SettingsProfile user={currentUser} {...controller.aiSettingsPanel} />
           </div>
