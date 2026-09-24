@@ -45,7 +45,7 @@ import { AiSettingsPanel, SettingsProfile } from '../features/settings/SettingsP
 import { SrsGenerationFlow } from '../features/srs/SrsGenerationFlow'
 import { SrsPanel } from '../features/srs/SrsPanel'
 import { CreateWorkspacePanel, WorkspacePanel } from '../features/workspace/WorkspacePanels'
-import { Card, TooltipProvider } from '../shared/ui'
+import { Avatar, Card, TooltipProvider } from '../shared/ui'
 import { Sidebar } from './Sidebar'
 import type { NavGroup, NavItem } from './Sidebar'
 import { Topbar } from './Topbar'
@@ -168,8 +168,14 @@ export function App() {
   const { session, error, signOut } = controller.shell
   const [activeSection, setActiveSection] = useState<SectionId>(() => sectionFromHash())
 
+  const [mobileNavOpen, setMobileNavOpen] = useState(false)
+
   useEffect(() => {
-    const handleHashChange = () => setActiveSection(sectionFromHash())
+    const handleHashChange = () => {
+      setActiveSection(sectionFromHash())
+      setMobileNavOpen(false)
+      window.scrollTo({ top: 0 })
+    }
     window.addEventListener('hashchange', handleHashChange)
     return () => window.removeEventListener('hashchange', handleHashChange)
   }, [])
@@ -292,10 +298,13 @@ export function App() {
   const workspaceTools = (
     <aside className="grid min-w-0 gap-4 lg:sticky lg:top-20">
       <div className="grid gap-4" id="workspace">
-        <Card className="p-5">
-          <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-accent">Signed in</span>
-          <h2 className="mt-1 font-display text-lg font-bold text-fg">{currentUser.full_name}</h2>
-          <p className="text-[13px] text-fg-2">{currentUser.email}</p>
+        <Card className="flex items-center gap-3 p-4">
+          <Avatar name={currentUser.full_name} className="size-10 text-xs" />
+          <div className="min-w-0">
+            <span className="text-[10.5px] font-bold uppercase tracking-[0.14em] text-accent">Signed in</span>
+            <h2 className="truncate font-display text-[15px] font-bold text-fg">{currentUser.full_name}</h2>
+            <p className="truncate text-[12.5px] text-fg-2">{currentUser.email}</p>
+          </div>
         </Card>
         <WorkspacePanel {...controller.workspacePanel} />
         <CreateWorkspacePanel {...controller.createWorkspacePanel} />
@@ -534,7 +543,7 @@ export function App() {
 
   return (
     <TooltipProvider delayDuration={200}>
-      <div className="flex min-h-svh bg-bg">
+      <div className="flex min-h-svh bg-bg bg-[image:var(--app-glow)] bg-no-repeat">
         <Sidebar
           user={currentUser}
           roleLabel={roleLabel}
@@ -542,6 +551,8 @@ export function App() {
           activeSection={activeSection}
           workspaces={controller.workspacePanel.workspaces}
           activeWorkspace={activeWorkspace}
+          mobileOpen={mobileNavOpen}
+          onMobileClose={() => setMobileNavOpen(false)}
           onSelectWorkspace={controller.workspacePanel.onSelectWorkspace}
           onSignOut={signOut}
         />
@@ -550,13 +561,18 @@ export function App() {
             workspaceName={activeWorkspace?.workspace.name ?? 'Personal Workspace'}
             sectionLabel={sectionLabels[activeSection] ?? 'Dashboard'}
             user={currentUser}
+            onOpenNav={() => setMobileNavOpen(true)}
             onSignOut={signOut}
           />
-          <main className="mx-auto w-full max-w-[1440px] flex-1 px-4 py-6 sm:px-8 sm:py-7">
+          <main className="mx-auto w-full max-w-[1440px] flex-1 px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
             {error ? (
-              <p className="mb-4 rounded-md border border-danger/25 bg-danger/10 px-3 py-2 text-sm text-danger">{error}</p>
+              <p role="alert" className="mb-5 flex items-start gap-2 rounded-lg border border-danger/25 bg-danger/[0.07] px-3.5 py-2.5 text-[13px] font-medium text-danger">
+                {error}
+              </p>
             ) : null}
-            {renderActiveSection()}
+            <div key={activeSection} className="animate-fade-in">
+              {renderActiveSection()}
+            </div>
             <FooterSection />
           </main>
         </div>

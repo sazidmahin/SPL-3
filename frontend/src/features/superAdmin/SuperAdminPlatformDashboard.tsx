@@ -6,7 +6,7 @@ import type { Diagram } from '../../domains/diagram/types'
 import type { Project } from '../../domains/project/types'
 import type { GenerationJob, SrsDocument } from '../../domains/srs/types'
 import type { WorkspaceMembership } from '../../domains/workspace/types'
-import { Card, Chip, DataTable, EmptyState, PageHeader, StatTile } from '../../shared/ui'
+import { Card, FALLBACK_CHART_COLOR, Chip, DataTable, EmptyState, PageHeader, StatTile, STATUS_CHART_COLORS } from '../../shared/ui'
 
 type SuperAdminPlatformDashboardProps = {
   user: AuthUser
@@ -17,14 +17,6 @@ type SuperAdminPlatformDashboardProps = {
   generationJobs: GenerationJob[]
   subscription: Subscription | null
   usage: Usage | null
-}
-
-const JOB_STATUS_COLORS: Record<string, string> = {
-  completed: '#00d4aa',
-  running: '#38bdf8',
-  pending: '#818cf8',
-  partially_completed: '#fbbf24',
-  failed: '#f87171',
 }
 
 export function SuperAdminPlatformDashboard({
@@ -42,7 +34,7 @@ export function SuperAdminPlatformDashboard({
   const donutData = Object.entries(jobsByStatus).map(([status, value]) => ({
     name: status.replaceAll('_', ' '),
     value,
-    color: JOB_STATUS_COLORS[status] ?? '#94a3b8',
+    color: STATUS_CHART_COLORS[status] ?? FALLBACK_CHART_COLOR,
   }))
 
   const recentJobs = [...generationJobs].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 6)
