@@ -47,9 +47,9 @@ export function Breakdown({ result }: { result: ClassModelerResult }) {
   return (
     <>
       {analysis.sentences.length ? (
-        <div className="grid gap-3">
+        <div className="grid grid-cols-1 gap-3">
           <StepHeading step={1} title="Read each sentence" description="Recognise what kind of statement it is and what it says about the domain." />
-          <ol className="grid gap-2">
+          <ol className="grid grid-cols-1 gap-2">
             {analysis.sentences.map((sentence) => (
               <li key={sentence.index} className="rounded-md border border-border bg-surface-2 px-3 py-2.5">
                 <div className="flex flex-wrap items-center gap-2">
@@ -57,7 +57,7 @@ export function Breakdown({ result }: { result: ClassModelerResult }) {
                   <Chip tone={kindTone[sentence.kind] ?? 'neutral'}>{sentence.kind}</Chip>
                   <span className="text-[13px] text-fg">{sentence.text}</span>
                 </div>
-                <ul className="mt-1.5 grid gap-0.5 pl-8">
+                <ul className="mt-1.5 grid grid-cols-1 gap-0.5 pl-8">
                   {sentence.findings.map((finding) => (
                     <li key={finding} className="font-mono text-[12px] text-fg-2">→ {finding}</li>
                   ))}
@@ -68,17 +68,17 @@ export function Breakdown({ result }: { result: ClassModelerResult }) {
         </div>
       ) : null}
 
-      <div className="grid gap-3">
+      <div className="grid grid-cols-1 gap-3">
         <StepHeading step={offset + 1} title="Decide every noun" description="Class, attribute of its owner, merged synonym, or rejected — with the reason." />
         {analysis.nouns.length ? (
-          <div className="grid gap-3 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
             {Object.entries(grouped).map(([decision, nouns]) => (
               <div key={decision} className="rounded-md border border-border p-3">
                 <div className="mb-2 flex items-center gap-2">
                   <Chip tone={decisionTone[decision] ?? 'neutral'}>{decision}</Chip>
                   <span className="text-xs text-fg-3">{nouns.length}</span>
                 </div>
-                <ul className="grid gap-1.5">
+                <ul className="grid grid-cols-1 gap-1.5">
                   {nouns.map((noun) => (
                     <li key={noun.name} className="text-[12.5px]">
                       <span className="font-semibold text-fg">{noun.name}</span>
@@ -95,7 +95,7 @@ export function Breakdown({ result }: { result: ClassModelerResult }) {
         )}
       </div>
 
-      <div className="grid gap-3">
+      <div className="grid grid-cols-1 gap-3">
         <StepHeading step={offset + 2} title="Turn verbs into methods" description="A verb becomes a method on the class that performs it, with the acted-on object as a parameter." />
         {analysis.verbs.length ? (
           <DataTable>
@@ -129,9 +129,9 @@ export function Breakdown({ result }: { result: ClassModelerResult }) {
       </div>
 
       {analysis.generalisation.length || analysis.warnings.length ? (
-        <div className="grid gap-3">
+        <div className="grid grid-cols-1 gap-3">
           <StepHeading step={offset + 3} title="Tidy up" description="Generalisation and anything the text left open." />
-          <ul className="grid gap-1 text-[12.5px]">
+          <ul className="grid grid-cols-1 gap-1 text-[12.5px]">
             {analysis.generalisation.map((item) => (
               <li key={item} className="text-fg-2">↑ {item}</li>
             ))}

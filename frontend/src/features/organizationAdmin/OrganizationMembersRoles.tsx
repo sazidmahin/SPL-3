@@ -12,7 +12,7 @@ type OrganizationMembersRolesProps = {
 
 export function OrganizationMembersRoles({ user, activeWorkspace, subscription }: OrganizationMembersRolesProps) {
   return (
-    <section className="grid gap-6" id="members">
+    <section className="grid grid-cols-1 gap-6" id="members">
       <PageHeader
         eyebrow="Organization Admin"
         title="Members & Roles"

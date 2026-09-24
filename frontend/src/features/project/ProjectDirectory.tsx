@@ -68,7 +68,7 @@ export function ProjectDirectory({
   }
 
   return (
-    <section className="grid gap-5" id="projects">
+    <section className="grid grid-cols-1 gap-5" id="projects">
       <PageHeader
         title="Projects"
         description={`${projects.length} project${projects.length === 1 ? '' : 's'} in ${activeWorkspace?.workspace.name ?? 'this workspace'}`}
@@ -134,7 +134,7 @@ export function ProjectDirectory({
           }
         />
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {visible.map((project) => (
             <button
               key={project.id}
@@ -178,7 +178,7 @@ export function ProjectDirectory({
           description="Give your project a name and a short description."
           onOpenAutoFocus={(event) => event.preventDefault()}
         >
-          <form id="create-project-form" className="grid gap-4" onSubmit={handleSubmit}>
+          <form id="create-project-form" className="grid grid-cols-1 gap-4" onSubmit={handleSubmit}>
             <Field label="Project name" htmlFor="project-name" required hint={`${projectName.length} / 100`}>
               <Input
                 id="project-name"

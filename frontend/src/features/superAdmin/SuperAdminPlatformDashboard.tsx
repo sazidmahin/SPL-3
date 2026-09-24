@@ -6,7 +6,7 @@ import type { Diagram } from '../../domains/diagram/types'
 import type { Project } from '../../domains/project/types'
 import type { GenerationJob, SrsDocument } from '../../domains/srs/types'
 import type { WorkspaceMembership } from '../../domains/workspace/types'
-import { Card, Chip, DataTable, EmptyState, PageHeader, StatTile } from '../../shared/ui'
+import { Card, FALLBACK_CHART_COLOR, Chip, DataTable, EmptyState, PageHeader, StatTile, STATUS_CHART_COLORS } from '../../shared/ui'
 
 type SuperAdminPlatformDashboardProps = {
   user: AuthUser
@@ -17,14 +17,6 @@ type SuperAdminPlatformDashboardProps = {
   generationJobs: GenerationJob[]
   subscription: Subscription | null
   usage: Usage | null
-}
-
-const JOB_STATUS_COLORS: Record<string, string> = {
-  completed: '#00d4aa',
-  running: '#38bdf8',
-  pending: '#818cf8',
-  partially_completed: '#fbbf24',
-  failed: '#f87171',
 }
 
 export function SuperAdminPlatformDashboard({
@@ -42,26 +34,26 @@ export function SuperAdminPlatformDashboard({
   const donutData = Object.entries(jobsByStatus).map(([status, value]) => ({
     name: status.replaceAll('_', ' '),
     value,
-    color: JOB_STATUS_COLORS[status] ?? '#94a3b8',
+    color: STATUS_CHART_COLORS[status] ?? FALLBACK_CHART_COLOR,
   }))
 
   const recentJobs = [...generationJobs].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 6)
 
   return (
-    <section className="grid gap-6" id="overview">
+    <section className="grid grid-cols-1 gap-6" id="overview">
       <PageHeader
         title="Platform Overview"
         description={`Signed in on ${activeWorkspace?.workspace.name ?? 'the platform'}.`}
       />
 
-      <div className="grid gap-3.5 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 xl:grid-cols-4">
         <StatTile label="Projects" value={projects.length} icon={Folder} />
         <StatTile label="SRS Documents" value={srsDocuments.length} icon={FileText} />
         <StatTile label="Diagrams" value={diagrams.length} icon={Network} />
         <StatTile label="AI Jobs" value={generationJobs.length} icon={WandSparkles} />
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
         <Card className="p-5">
           <PageHeader size="section" title="Recent AI Jobs" />
           {recentJobs.length === 0 ? (
@@ -114,7 +106,7 @@ export function SuperAdminPlatformDashboard({
                   </PieChart>
                 </ResponsiveContainer>
               </div>
-              <div className="mt-3 grid gap-2">
+              <div className="mt-3 grid grid-cols-1 gap-2">
                 {donutData.map((entry) => (
                   <div key={entry.name} className="flex items-center justify-between text-[12.5px]">
                     <span className="flex items-center gap-2 capitalize text-fg-2">
@@ -133,7 +125,7 @@ export function SuperAdminPlatformDashboard({
       {usage ? (
         <Card className="p-5">
           <PageHeader size="section" title="This Workspace Usage" />
-          <div className="mt-3 grid gap-3 sm:grid-cols-3">
+          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
             {[
               { label: 'SRS generations', value: usage.srs_generations },
               { label: 'AI diagrams', value: usage.ai_diagram_generations },
