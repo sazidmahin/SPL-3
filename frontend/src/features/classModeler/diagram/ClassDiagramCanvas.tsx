@@ -3,7 +3,7 @@ import { useCallback, useId, useImperativeHandle, useMemo, useState } from 'reac
 import type { Ref } from 'react'
 import { Background, BackgroundVariant, MiniMap, ReactFlow, ReactFlowProvider, useNodesState, useReactFlow } from '@xyflow/react'
 import { LayoutGrid, Maximize2, MousePointerClick, X, ZoomIn, ZoomOut } from 'lucide-react'
-import type { ClassModelerResult, ModelClass, ModelRelationship } from '../../../domains/classModeler/types'
+import type { ClassModelerResult, ModelClass, ModelRelationship } from '../../../api'
 import { Button, Chip, Tooltip, cn } from '../../../shared/ui'
 import { explainRelationship, relationshipGuide, stereotypeGuide } from '../relationshipGuide'
 import { buildDiagramSvg, svgToPng } from './exportImage'

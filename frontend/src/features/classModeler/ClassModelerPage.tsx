@@ -24,13 +24,12 @@ import {
   Table2,
   WandSparkles,
 } from 'lucide-react'
-import { fetchOllamaModels, generateClassModel } from '../../domains/classModeler/api'
-import type { ClassModelerMode, ClassModelerResult, LlmProvider, ModelClass, ModelEnum, ModelRelationship, OllamaModels } from '../../domains/classModeler/types'
-import { createManualDiagram } from '../../domains/diagram/api'
-import type { Project } from '../../domains/project/types'
-import type { WorkspaceMembership } from '../../domains/workspace/types'
+import { classModelerApi, diagramApi } from '../../api'
+import type { ClassModelerMode, ClassModelerResult, LlmProvider, ModelClass, ModelEnum, ModelRelationship, OllamaModels, Project } from '../../api'
+import { useSession } from '../../app/core/session'
+import { navigate, routes } from '../../app/core/router'
 import { downloadDataUrl, downloadTextFile } from '../../shared/download'
-import { Button, Chip, Select, Tabs, TabsContent, TabsList, TabsTrigger, Textarea, cn } from '../../shared/ui'
+import { Button, Chip, Select, Tabs, TabsContent, TabsList, TabsTrigger, Textarea, cn, useFeedback } from '../../shared/ui'
 import { DrawioEmbed, type DrawioEmbedHandle } from '../diagram/DrawioEmbed'
 import { Breakdown } from './Breakdown'
 import { CompareView } from './CompareView'
@@ -41,10 +40,7 @@ import { RelationshipGlyph, RelationshipLegend } from './RelationshipLegend'
 import { explainRelationship } from './relationshipGuide'
 
 type Props = {
-  accessToken: string
-  activeWorkspace: WorkspaceMembership | undefined
-  activeProject: Project | undefined
-  onDiagramSaved?: () => void
+  projects: Project[]
 }
 
 type Engine = ClassModelerMode | 'compare'
@@ -134,7 +130,11 @@ function errorMessage(caught: unknown, fallback: string) {
   return caught instanceof Error && caught.message ? caught.message : fallback
 }
 
-export function ClassModelerPage({ accessToken, activeWorkspace, activeProject, onDiagramSaved }: Props) {
+export function ClassModelerPage({ projects }: Props) {
+  const { workspaceId } = useSession()
+  const { toast } = useFeedback()
+  const [projectId, setProjectId] = useState(projects[0]?.id ?? '')
+  const activeProject = projects.find((item) => item.id === projectId)
   const [text, setText] = useState(samples[0].text)
   const [engine, setEngine] = useState<Engine>('rule_based')
   const [llmProvider, setLlmProvider] = useState<LlmProvider>('ollama')
@@ -153,7 +153,6 @@ export function ClassModelerPage({ accessToken, activeWorkspace, activeProject, 
   const canvasRef = useRef<ClassDiagramHandle>(null)
   const runCounter = useRef(0)
 
-  const workspaceId = activeWorkspace?.workspace.id
   const needsProject = engine !== 'rule_based' && !activeProject
   // With Ollama chosen, only an installed model can run (nothing is picked
   // until the server has answered with its model list).
@@ -170,7 +169,7 @@ export function ClassModelerPage({ accessToken, activeWorkspace, activeProject, 
     setRunning((current) => [...current, mode])
     setErrors((current) => ({ ...current, [mode]: undefined }))
     try {
-      const next = await generateClassModel(accessToken, workspaceId!, {
+      const next = await classModelerApi.generate(workspaceId, {
         text,
         mode,
         ...(activeProject ? { project_id: activeProject.id } : {}),
@@ -194,7 +193,7 @@ export function ClassModelerPage({ accessToken, activeWorkspace, activeProject, 
     if (!workspaceId) return
     setIsLoadingModels(true)
     try {
-      const status = await fetchOllamaModels(accessToken, workspaceId)
+      const status = await classModelerApi.ollamaModels(workspaceId)
       setOllama(status)
       setOllamaModel((current) => {
         if (current && status.installed.includes(current)) return current
@@ -246,13 +245,14 @@ export function ClassModelerPage({ accessToken, activeWorkspace, activeProject, 
     setIsSaving(true)
     try {
       const firstClass = result.model.classes[0]?.name ?? 'Domain'
-      await createManualDiagram(accessToken, workspaceId, activeProject.id, {
+      const saved = await diagramApi.create(workspaceId, activeProject.id, {
         title: `${firstClass} class model (${result.mode === 'llm' ? 'LLM' : 'rule-based'})`,
         diagram_type: 'class',
         drawio_xml: result.drawioXml,
       })
       setNotice(`Saved to ${activeProject.name} → Diagrams.`)
-      onDiagramSaved?.()
+      toast('Diagram saved', { description: `Open it from ${activeProject.name} → Diagrams.` })
+      void saved
     } catch (caught) {
       setErrors((current) => ({ ...current, [result.mode]: errorMessage(caught, 'Unable to save the diagram') }))
     } finally {
@@ -480,6 +480,22 @@ export function ClassModelerPage({ accessToken, activeWorkspace, activeProject, 
               )}
             </div>
           ) : null}
+          <label className="grid grid-cols-1 gap-1.5">
+            <span className="text-[12px] font-semibold text-fg">Project</span>
+            <Select value={projectId} onChange={(event) => setProjectId(event.target.value)} inputSize="sm" aria-label="Project for saving and LLM logging">
+              {!projects.length ? <option value="">No projects yet</option> : null}
+              {projects.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </Select>
+            {!projects.length ? (
+              <button type="button" className="w-max text-[11.5px] font-semibold text-accent hover:underline" onClick={() => navigate(routes.projects(), { new: '1' })}>
+                Create a project
+              </button>
+            ) : null}
+          </label>
           {needsProject ? (
             <p className="flex gap-1.5 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-[11.5px] text-fg-2">
               <AlertTriangle className="mt-px size-3.5 shrink-0 text-warning" />

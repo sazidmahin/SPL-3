@@ -1,5 +1,6 @@
 """Workspace-wide search across projects, SRS documents, generation runs and diagrams."""
 
+import re
 from typing import Any
 
 from sqlalchemy import func, or_, select
@@ -13,7 +14,7 @@ MAX_QUERY_LENGTH = 200
 def _snippet(text: str | None, needle: str, width: int = 90) -> str | None:
     if not text:
         return None
-    flat = " ".join(text.split())
+    flat = " ".join(re.sub(r"[#*_`>|]+", " ", text).split())
     index = flat.lower().find(needle.lower())
     if index < 0:
         return flat[:width] + ("…" if len(flat) > width else "")

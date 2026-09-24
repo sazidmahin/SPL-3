@@ -1,7 +1,7 @@
 import { ChevronsUpDown, LogOut, Plus, Settings, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import type { AuthUser } from '../domains/auth/types'
-import type { WorkspaceMembership } from '../domains/workspace/types'
+import type { AuthUser, WorkspaceMembership } from '../api'
+import { href, routes } from './core/router'
 import {
   Avatar,
   BrandMark,
@@ -14,7 +14,7 @@ import {
   initials,
 } from '../shared/ui'
 
-export type NavItem = { id: string; label: string; icon: LucideIcon }
+export type NavItem = { id: string; label: string; icon: LucideIcon; path: string }
 export type NavGroup = { title?: string; items: NavItem[] }
 
 type SidebarProps = {
@@ -42,7 +42,7 @@ export function Sidebar({
   onSelectWorkspace,
   onSignOut,
 }: SidebarProps) {
-  const workspaceName = activeWorkspace?.workspace.name ?? 'Personal Workspace'
+  const workspaceName = activeWorkspace?.workspace.name ?? 'No workspace'
 
   return (
     <>
@@ -65,10 +65,7 @@ export function Sidebar({
       >
         <div className="flex items-center gap-2.5 px-4 pb-3 pt-5">
           <BrandMark className="size-9" />
-          <div className="min-w-0 flex-1">
-            <div className="font-display text-[17px] font-extrabold leading-tight tracking-tight text-sidebar-fg-active">SpecTwin</div>
-            <div className="truncate text-[10.5px] text-sidebar-fg">IIT, University of Dhaka</div>
-          </div>
+          <div className="min-w-0 flex-1 font-display text-[18px] font-extrabold tracking-tight text-sidebar-fg-active">SpecTwin</div>
           <button
             type="button"
             className="grid size-8 place-items-center rounded-md text-sidebar-fg transition hover:bg-white/[0.06] hover:text-sidebar-fg-active lg:hidden"
@@ -88,7 +85,7 @@ export function Sidebar({
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[13px] font-semibold text-sidebar-fg-active">{workspaceName}</span>
                 <span className="block truncate text-[10.5px] capitalize text-sidebar-fg">
-                  {activeWorkspace?.workspace.type ?? 'personal'} workspace
+                  {activeWorkspace ? `${activeWorkspace.workspace.type} workspace` : 'Create one in Settings'}
                 </span>
               </span>
               <ChevronsUpDown className="size-3.5 shrink-0 text-sidebar-fg" />
@@ -115,6 +112,11 @@ export function Sidebar({
                 )
               })
             )}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={() => { window.location.hash = href(routes.settings('workspaces')) }}>
+              <Plus className="size-4" />
+              New organization workspace
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
 
@@ -134,7 +136,7 @@ export function Sidebar({
                 return (
                   <a
                     key={item.id}
-                    href={`#${item.id}`}
+                    href={href(item.path)}
                     aria-current={active ? 'page' : undefined}
                     onClick={onMobileClose}
                     className={cn(
@@ -158,12 +160,12 @@ export function Sidebar({
 
         <div className="border-t border-sidebar-border p-3">
           <a
-            href="#projects"
+            href={href(routes.generate())}
             onClick={onMobileClose}
             className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-gradient-to-r from-accent to-accent2-dim px-3 py-2.5 text-[13px] font-semibold text-white shadow-[0_8px_20px_-8px_color-mix(in_oklab,var(--color-accent)_90%,transparent)] transition hover:brightness-110"
           >
             <Plus className="size-4" />
-            New Project
+            New SRS
           </a>
           <div className="mt-3 flex items-center gap-2.5 rounded-lg px-1.5 py-1">
             <Avatar name={user.full_name} />
@@ -181,7 +183,7 @@ export function Sidebar({
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" side="top">
-                <DropdownMenuItem onSelect={() => { window.location.hash = 'settings' }}>
+                <DropdownMenuItem onSelect={() => { window.location.hash = href(routes.settings()) }}>
                   <Settings className="size-4" />
                   Settings
                 </DropdownMenuItem>

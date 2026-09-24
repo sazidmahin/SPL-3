@@ -6,9 +6,8 @@ export function FooterSection() {
       <div className="flex items-center gap-2">
         <BrandMark className="size-6 rounded-md shadow-none" />
         <span className="font-display font-bold text-fg-2">SpecTwin</span>
-        <span className="hidden sm:inline">· Software Requirements Platform</span>
       </div>
-      <span>&copy; {new Date().getFullYear()} IIT, University of Dhaka</span>
+      <span>&copy; {new Date().getFullYear()} SpecTwin · Free for everyone</span>
     </footer>
   )
 }

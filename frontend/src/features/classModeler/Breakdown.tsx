@@ -1,4 +1,4 @@
-import type { ClassModelerResult, NounDecision } from '../../domains/classModeler/types'
+import type { ClassModelerResult, NounDecision } from '../../api'
 import { Chip, DataTable } from '../../shared/ui'
 import type { Tone } from '../../shared/ui'
 

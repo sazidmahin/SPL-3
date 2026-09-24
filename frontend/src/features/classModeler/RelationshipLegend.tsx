@@ -1,4 +1,4 @@
-import type { ClassModelerResult } from '../../domains/classModeler/types'
+import type { ClassModelerResult } from '../../api'
 import { cn } from '../../shared/ui'
 import type { RelationshipKind } from './relationshipGuide'
 import { explainRelationship, relationshipGuide, stereotypeGuide } from './relationshipGuide'

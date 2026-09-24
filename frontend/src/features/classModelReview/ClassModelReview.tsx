@@ -1,6 +1,6 @@
 import { AlertTriangle, ArrowLeft, ArrowRight, Plus, Trash2 } from 'lucide-react'
 import { useState } from 'react'
-import type { PipelineStageRevision } from '../../domains/generationPipeline/types'
+import type { PipelineStageRevision } from '../../api'
 import { Button, inputClasses } from '../../shared/ui'
 
 type Entity = Record<string, unknown>

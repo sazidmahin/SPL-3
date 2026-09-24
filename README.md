@@ -2,17 +2,25 @@
 
 Software Project Lab 3, IIT, University of Dhaka.
 
-SPL-3 is a multi-tenant SRS and class-diagram generation platform. The current implementation is split into:
+**SpecTwin** is a free, multi-tenant platform that turns a plain-language description of a system into a
+reviewed Software Requirements Specification and a UML class diagram. The implementation is split into:
 
-- `backend/`: FastAPI, SQLAlchemy, Alembic, auth, workspace billing, SRS generation, diagram generation, exports, and platform-admin APIs.
-- `frontend/`: React/Vite client organized by domain, feature, and shared UI modules.
+- `backend/`: FastAPI, SQLAlchemy, Alembic — auth, workspaces and members, the six-stage generation pipeline,
+  SRS documents, diagrams, workspace search and platform-admin APIs.
+- `frontend/`: React/Vite client — `src/api` (typed API client), `src/app` (shell, router, session),
+  `src/pages` (one file per screen), `src/features` (stage editors, class modeler, draw.io) and `src/shared/ui`.
 - `.specsmd/`: product, API, database, architecture, and implementation-ticket context for AI-DLC agents.
 
 ## Current Architecture Notes
 
 Normal product APIs remain workspace-scoped through `workspace_id` and workspace membership checks. Platform administration is intentionally separate under `/api/v1/admin` and requires `users.platform_role = super_admin`.
 
-SRS generation can optionally generate class-diagram artifacts in the same flow. Generated SRS content and generated diagrams include metadata for auditability, and diagram requirement links preserve traceability between extracted requirements and generated diagram elements.
+SRS generation is a reviewed pipeline: input → clarifications → final story → requirements → class model →
+draw.io diagram. Accepting the last stage publishes an IEEE-style SRS document (markdown, with a traceability
+matrix) and saves the class diagram to the project; reopening and re-accepting a stage refreshes the same document.
+
+Everything is free. The platform ships no AI key: the Rule-Based engine and local Ollama need none, and users who
+want a hosted model (OpenAI, Anthropic, Gemini) add their own key under Settings → AI providers.
 
 ## Backend Verification
 

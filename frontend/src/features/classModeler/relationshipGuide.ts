@@ -1,4 +1,4 @@
-import type { ModelClass, ModelRelationship } from '../../domains/classModeler/types'
+import type { ModelClass, ModelRelationship } from '../../api'
 
 export type RelationshipKind = ModelRelationship['type']
 

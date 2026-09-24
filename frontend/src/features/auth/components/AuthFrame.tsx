@@ -1,6 +1,6 @@
 import { BrainCircuit, Check, CircleHelp, Eye, EyeOff, FileText, GitBranch, Home, LockKeyhole, Mail, Moon, Network, Plus, ShieldCheck, Sparkles, Sun, User, Users, Wand2, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useTheme } from '../../../shared/theme'
 import { BrandMark, cn } from '../../../shared/ui'
@@ -16,10 +16,7 @@ export function AuthFrame({ artwork, children }: { artwork: AuthArtwork; childre
         <header className="flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <BrandMark className="size-9" />
-            <div>
-              <div className="font-display text-[17px] font-extrabold leading-tight tracking-tight text-fg">SpecTwin</div>
-              <div className="text-[11px] text-fg-3">Software Requirements Platform</div>
-            </div>
+            <div className="font-display text-[19px] font-extrabold tracking-tight text-fg">SpecTwin</div>
           </div>
           <button
             type="button"
@@ -33,7 +30,7 @@ export function AuthFrame({ artwork, children }: { artwork: AuthArtwork; childre
         <div className="flex flex-1 items-center justify-center py-10">
           <div className="w-full max-w-[26rem] animate-rise-in">{children}</div>
         </div>
-        <footer className="text-center text-xs text-fg-3 lg:text-left">&copy; {new Date().getFullYear()} IIT, University of Dhaka</footer>
+        <footer className="text-center text-xs text-fg-3 lg:text-left">&copy; {new Date().getFullYear()} SpecTwin</footer>
       </section>
       <AuthVisualPanel artwork={artwork} />
     </main>
@@ -133,9 +130,12 @@ function FeatureChip({ icon: Icon, title, label }: { icon: LucideIcon; title: st
 export function AuthField({ label, icon, type = 'text', value, placeholder, autoComplete, inputMode, required, minLength, error, onChange }: { label: string; icon: AuthIconName; type?: string; value: string; placeholder: string; autoComplete?: string; inputMode?: 'email' | 'numeric'; required?: boolean; minLength?: number; error?: string; onChange: (value: string) => void }) {
   const [isPasswordVisible, setIsPasswordVisible] = useState(false)
   const isPasswordField = type === 'password'
+  const id = useId()
   return (
-    <label className="grid grid-cols-1 gap-1.5">
-      <span className="text-[13px] font-semibold text-fg">{label}</span>
+    <div className="grid grid-cols-1 gap-1.5">
+      <label htmlFor={id} className="text-[13px] font-semibold text-fg">
+        {label}
+      </label>
       <span
         className={cn(
           'flex h-11 items-center gap-2.5 rounded-lg border bg-surface px-3 shadow-[var(--elev-1)] transition',
@@ -148,8 +148,10 @@ export function AuthField({ label, icon, type = 'text', value, placeholder, auto
           <AuthIcon name={icon} />
         </span>
         <input
+          id={id}
           className="min-w-0 flex-1 bg-transparent text-sm text-fg outline-none placeholder:text-fg-3"
           aria-invalid={Boolean(error)}
+          aria-describedby={error ? `${id}-error` : undefined}
           autoComplete={autoComplete}
           inputMode={inputMode}
           minLength={minLength}
@@ -173,8 +175,12 @@ export function AuthField({ label, icon, type = 'text', value, placeholder, auto
           </button>
         ) : null}
       </span>
-      {error ? <small className="text-xs font-medium text-danger">{error}</small> : null}
-    </label>
+      {error ? (
+        <small id={`${id}-error`} className="text-xs font-medium text-danger">
+          {error}
+        </small>
+      ) : null}
+    </div>
   )
 }
 
