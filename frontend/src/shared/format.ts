@@ -30,6 +30,7 @@ export const ENGINE_LABELS: Record<GenerationMode, string> = {
   ollama: 'Local AI (Ollama)',
   byok: 'AI provider',
   srsgen: 'SrsGen',
+  ai: 'AI generation',
 }
 
 export const STAGE_LABELS: Record<string, string> = {

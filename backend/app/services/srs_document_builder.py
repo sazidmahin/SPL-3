@@ -13,6 +13,7 @@ ENGINE_LABELS = {
     "ollama": "Local AI (Ollama)",
     "byok": "AI provider (your API key)",
     "srsgen": "SrsGen",
+    "ai": "AI generation",
 }
 
 

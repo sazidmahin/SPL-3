@@ -110,8 +110,8 @@ export function CompareView({ left, right }: Props) {
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         {[
-          { title: left.label, icon: rule.mode === 'llm' ? Sparkles : Cpu, result: rule, tone: 'accent' as const },
-          { title: right.label, icon: llm.mode === 'llm' ? Sparkles : Cpu, result: llm, tone: 'ai' as const },
+          { title: left.label, icon: rule.mode === 'rule_based' ? Cpu : Sparkles, result: rule, tone: 'accent' as const },
+          { title: right.label, icon: llm.mode === 'rule_based' ? Cpu : Sparkles, result: llm, tone: 'ai' as const },
         ].map((side) => (
           <div key={side.title} className="grid grid-cols-1 gap-2">
             <div className="flex items-center gap-2">

@@ -18,9 +18,9 @@ router = APIRouter(prefix="/workspaces/{workspace_id}/class-modeler", tags=["cla
 
 class ClassModelerRequest(BaseModel):
     text: str = Field(min_length=1, max_length=20000)
-    mode: Literal["rule_based", "llm"] = "rule_based"
+    mode: Literal["rule_based", "llm", "ai"] = "rule_based"
     project_id: UUID | None = None
-    llm_provider: Literal["ollama", "byok"] | None = None
+    llm_provider: Literal["ollama", "ai"] | None = None
     model_name: str | None = Field(default=None, max_length=128)
 
 

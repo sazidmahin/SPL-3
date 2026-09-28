@@ -63,6 +63,18 @@ class Settings(BaseSettings):
     ollama_repeat_penalty: float = 1.1
     ollama_repeat_last_n: int = 64
     ollama_embed_model: str = "nomic-embed-text"
+    # Platform-managed hosted "AI generation" mode (app/services/hosted_ai_service.py).
+    # One server-side key serves every user; the mode is hidden when it is unset.
+    openrouter_api_key: str | None = None
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    openrouter_model: str = "openai/gpt-4o-mini"
+    # Comma-separated models tried in order when the primary one is rate-limited or down.
+    openrouter_fallback_models: str = ""
+    openrouter_temperature: float = 0.2
+    openrouter_timeout_seconds: int = 120
+    openrouter_max_tokens: int = 4096
+    openrouter_max_retries: int = 2
+    openrouter_site_url: str | None = None
     rag_enabled: bool = False
     rag_top_k: int = 2
     rag_min_similarity: float = 0.55
@@ -94,6 +106,7 @@ class Settings(BaseSettings):
             "anthropic": self.anthropic_models,
             "gemini": self.gemini_models,
             "ollama": self.ollama_models,
+            "openrouter_fallback": self.openrouter_fallback_models,
         }.get(provider, "")
         return list(dict.fromkeys(model.strip() for model in raw.split(",") if model.strip()))
 

@@ -88,7 +88,7 @@ function Shell() {
       '/class-diagram-generation': routes.classModeler(),
       '/generate-srs': routes.generate(),
       '/ai-jobs': routes.generations(),
-      '/ai-settings': routes.settings('ai'),
+      '/ai-settings': routes.settings(),
       '/profile': routes.settings(),
     }
     if (legacy[route.path]) navigate(legacy[route.path], undefined, { replace: true })

@@ -721,3 +721,27 @@ def test_ollama_pipeline_chunks_large_input_and_merges_the_answers(
     from_enum = relationship_call.json_schema["properties"]["relationships"]["items"]["properties"]["from"]["enum"]
     assert set(from_enum) == {"Member", "Book"}
     assert len(stages["class-model"]["relationships"]) == 1
+
+
+def test_hosted_ai_mode_creates_run_without_user_key(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.core.config import settings
+
+    token = register(client, "hosted-ai@example.com")
+    workspace_id, project_id = setup_project(client, token)
+    base_url = pipeline_url(workspace_id, project_id)
+    body = {"title": "Orders", "raw_text": "A customer can place an order.", "generation_mode": "ai"}
+
+    monkeypatch.setattr(settings, "openrouter_api_key", None)
+    assert client.get("/api/v1/users/me/ai-settings/hosted", headers=auth_header(token)).json() == {"available": False}
+    unavailable = client.post(base_url, headers=auth_header(token), json=body)
+    assert unavailable.status_code == 422
+    assert "openrouter" not in unavailable.text.lower()
+
+    monkeypatch.setattr(settings, "openrouter_api_key", "platform-key")
+    monkeypatch.setattr(settings, "openrouter_model", "vendor/model-a")
+    assert client.get("/api/v1/users/me/ai-settings/hosted", headers=auth_header(token)).json() == {"available": True}
+    created = client.post(base_url, headers=auth_header(token), json=body)
+    assert created.status_code == 201, created.text
+    run = created.json()
+    assert run["generation_mode"] == "ai"
+    assert run["provider"] == "ai"

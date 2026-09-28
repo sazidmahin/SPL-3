@@ -1,13 +1,12 @@
 """Class Modeler: an OOP-course style requirement text in, a UML class model
 (classes, attributes, methods, relationships, enums) and draw.io XML out.
 
-Two engines share one response shape so the UI can show them side by side:
+Three engines share one response shape so the UI can show them side by side:
 - rule_based: app.rule_engine.oop_modeler (offline, deterministic, explains
   every decision)
-- llm: an LLM asked to do the same noun/verb analysis and return JSON, on
-  either a local Ollama model (llm_provider="ollama") or the user's own AI
-  provider from AI Settings (llm_provider="byok"); with no choice given it
-  prefers the user's provider and falls back to Ollama.
+- llm: a local Ollama model asked to do the same noun/verb analysis and return
+  JSON (llm_provider="ai" is still accepted and routes to hosted AI generation)
+- ai: the platform's hosted AI generation (no user key needed), same contract
 """
 
 from __future__ import annotations
@@ -19,7 +18,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from app.db.models import UserAiProviderCredential, WorkspaceMember
+from app.db.models import WorkspaceMember
 from app.rule_engine.oop_modeler import analyze_oop_text, build_model_drawio
 from app.rule_engine.pipeline import (
     MULTIPLICITY_PATTERN,
@@ -28,13 +27,8 @@ from app.rule_engine.pipeline import (
     pascal_case,
     snake_case,
 )
-from app.services.ai_settings_service import (
-    AiSettingsError,
-    build_client_for_credential,
-    get_active_ai_credential,
-    mark_credential_used,
-)
 from app.services.llm_json import parse_json_response as _parse_json_response
+from app.services.hosted_ai_service import HostedAiClient
 from app.services.llm_service import LlmClient, LlmConfigurationError, execute_llm_call, get_or_create_prompt_template
 from app.services.ollama_service import OllamaClient, ollama_models
 from app.services.ollama_tasks import estimate_tokens, halve_text, split_text
@@ -42,8 +36,8 @@ from app.services.project_service import get_active_project
 from app.services.workspace_service import require_workspace_role
 
 CLASS_MODELER_ROLES = {"owner", "admin", "member"}
-CLASS_MODELER_MODES = {"rule_based", "llm"}
-LLM_PROVIDERS = {"ollama", "byok"}
+CLASS_MODELER_MODES = {"rule_based", "llm", "ai"}
+LLM_PROVIDERS = {"ollama", "ai"}
 # Output budget per Ollama call. Long text is split into chunks (see
 # _generate_with_ollama), so each answer stays well inside this on a CPU laptop.
 OLLAMA_NUM_PREDICT = 2048
@@ -110,7 +104,7 @@ def generate_class_model_from_text(
         raise ClassModelerError(f"Requirement text is limited to {MAX_INPUT_CHARS} characters.")
     normalized_mode = (mode or "").strip().lower()
     if normalized_mode not in CLASS_MODELER_MODES:
-        raise ClassModelerError("Mode must be rule_based or llm.")
+        raise ClassModelerError("Mode must be rule_based, llm or ai.")
 
     if normalized_mode == "rule_based":
         result = analyze_oop_text(cleaned)
@@ -119,9 +113,9 @@ def generate_class_model_from_text(
     if project_id is None:
         raise ClassModelerError("Select a project first - LLM calls are logged against a project.")
     get_active_project(db, workspace_id=membership.workspace_id, project_id=project_id)
-    # Runs on the user's own provider key or a local Ollama model, like the
-    # BYOK/Ollama generation pipeline - so no platform AI quota is consumed.
-    client, credential = _llm_client(db, membership, llm_provider, model_name)
+    # Runs on the platform's hosted AI generation or a local Ollama model, like
+    # the AI generation / Ollama modes of the generation pipeline.
+    client = _hosted_client() if normalized_mode == "ai" else _llm_client(llm_provider, model_name)
     is_ollama = isinstance(client, OllamaClient)
     template = get_or_create_prompt_template(
         db,
@@ -144,8 +138,6 @@ def generate_class_model_from_text(
             client=client,
             response_format="json",
         )
-        if credential is not None:
-            mark_credential_used(db, credential)
         content = (call.response_payload or {}).get("content")
         payload = _parse_json_response(content) if isinstance(content, str) else None
     if not payload:
@@ -158,15 +150,16 @@ def generate_class_model_from_text(
     if not model["classes"]:
         raise ClassModelerError("The AI model returned no classes. Try again or use rule-based mode.")
     drawio_xml, validation = build_model_drawio(model)
+    engine = "ai" if isinstance(client, HostedAiClient) else "llm"
     return {
-        "mode": "llm",
+        "mode": engine,
         "provider": call.provider,
-        "modelName": call.model_name,
+        "modelName": None if engine == "ai" else call.model_name,
         "model": model,
         "drawioXml": drawio_xml,
         "validation": validation,
         "analysis": analysis,
-        "metadata": {"engine": "llm", "llmCallId": str(call.id)},
+        "metadata": {"engine": engine, "llmCallId": str(call.id)},
     }
 
 
@@ -317,33 +310,29 @@ def _ollama_client(model_name: str | None) -> OllamaClient:
     return client
 
 
-def _llm_client(
-    db: Session, membership: WorkspaceMember, llm_provider: str | None, model_name: str | None
-) -> tuple[LlmClient, UserAiProviderCredential | None]:
+def _hosted_client() -> HostedAiClient:
+    # The model is platform-configured; a user-supplied model_name is for Ollama/BYOK only.
+    client = HostedAiClient()
+    try:
+        client.validate_configuration()
+    except LlmConfigurationError as exc:
+        raise ClassModelerError(str(exc)) from exc
+    return client
+
+
+def _llm_client(llm_provider: str | None, model_name: str | None) -> LlmClient:
     """The client for the chosen LLM provider.
 
     ollama - a local Ollama model (the chosen one, else OLLAMA_MODEL).
-    byok   - the user's active, tested provider from AI Settings.
-    None   - byok when configured, otherwise Ollama.
+    ai     - the platform's hosted AI generation (no user key needed).
+    None   - Ollama.
     """
     provider = (llm_provider or "").strip().lower() or None
     if provider is not None and provider not in LLM_PROVIDERS:
-        raise ClassModelerError("LLM provider must be ollama or byok.")
-    if provider == "ollama":
-        return _ollama_client(model_name), None
-    try:
-        credential = get_active_ai_credential(db, user_id=membership.user_id)
-        return build_client_for_credential(credential, model_name=model_name or None), credential
-    except AiSettingsError as provider_error:
-        if provider == "byok":
-            raise ClassModelerError(f"{provider_error}. Add and test a provider in AI Settings, or pick Ollama.") from provider_error
-        try:
-            return _ollama_client(model_name), None
-        except ClassModelerError as ollama_error:
-            raise ClassModelerError(
-                f"No AI provider is available ({provider_error}). Add and test a provider in AI Settings, "
-                f"or run a local Ollama model ({ollama_error})."
-            ) from ollama_error
+        raise ClassModelerError("LLM provider must be ollama or ai.")
+    if provider == "ai":
+        return _hosted_client()
+    return _ollama_client(model_name)
 
 
 def ollama_status() -> dict[str, Any]:
