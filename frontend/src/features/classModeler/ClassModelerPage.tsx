@@ -17,15 +17,13 @@ import {
   Loader2,
   Network,
   RefreshCw,
-  Server,
-  KeyRound,
   Save,
   Sparkles,
   Table2,
   WandSparkles,
 } from 'lucide-react'
 import { classModelerApi, diagramApi } from '../../api'
-import type { ClassModelerMode, ClassModelerResult, LlmProvider, ModelClass, ModelEnum, ModelRelationship, OllamaModels, Project } from '../../api'
+import type { ClassModelerMode, ClassModelerResult, ModelClass, ModelEnum, ModelRelationship, OllamaModels, Project } from '../../api'
 import { useSession } from '../../app/core/session'
 import { navigate, routes } from '../../app/core/router'
 import { downloadDataUrl, downloadTextFile } from '../../shared/download'
@@ -50,14 +48,21 @@ type Run = { id: string; number: number; mode: ClassModelerMode; createdAt: Date
 
 const MAX_RUNS = 12
 
+const MODE_LABELS: Record<ClassModelerMode, string> = { rule_based: 'Rule-based', llm: 'LLM', ai: 'AI generation' }
+
+function ModeIcon({ mode, className }: { mode: ClassModelerMode; className?: string }) {
+  const Icon = mode === 'ai' ? WandSparkles : mode === 'llm' ? Sparkles : Cpu
+  return <Icon className={className} />
+}
+
 function runLabel(run: Run) {
-  const engine = run.mode === 'llm' ? `LLM${run.result.modelName ? ` (${run.result.modelName})` : ''}` : 'Rule-based'
+  const engine = run.mode === 'llm' && run.result.modelName ? `LLM (${run.result.modelName})` : MODE_LABELS[run.mode]
   return `#${run.number} ${engine}`
 }
 
 function fileStem(result: ClassModelerResult) {
   const first = result.model.classes[0]?.name ?? 'class'
-  return `${first.replace(/[^A-Za-z0-9]+/g, '-').toLowerCase()}-diagram-${result.mode === 'llm' ? 'llm' : 'rule'}`
+  return `${first.replace(/[^A-Za-z0-9]+/g, '-').toLowerCase()}-diagram-${result.mode === 'rule_based' ? 'rule' : result.mode}`
 }
 
 const samples: { label: string; text: string }[] = [
@@ -113,8 +118,15 @@ const engines: { id: Engine; title: string; description: string; icon: LucideIco
   {
     id: 'llm',
     title: 'LLM-based',
-    description: 'A local Ollama model or your own AI provider reads the task and designs the model.',
+    description: 'A local Ollama model reads the task and designs the model.',
     icon: Sparkles,
+    badge: 'Local',
+  },
+  {
+    id: 'ai',
+    title: 'AI generation',
+    description: 'A hosted AI model reads the task and designs the model. No API key or local setup needed.',
+    icon: WandSparkles,
     badge: 'AI',
   },
   {
@@ -137,7 +149,6 @@ export function ClassModelerPage({ projects }: Props) {
   const activeProject = projects.find((item) => item.id === projectId)
   const [text, setText] = useState(samples[0].text)
   const [engine, setEngine] = useState<Engine>('rule_based')
-  const [llmProvider, setLlmProvider] = useState<LlmProvider>('ollama')
   const [ollamaModel, setOllamaModel] = useState('')
   const [ollama, setOllama] = useState<OllamaModels | null>(null)
   const [isLoadingModels, setIsLoadingModels] = useState(false)
@@ -156,7 +167,8 @@ export function ClassModelerPage({ projects }: Props) {
   const needsProject = engine !== 'rule_based' && !activeProject
   // With Ollama chosen, only an installed model can run (nothing is picked
   // until the server has answered with its model list).
-  const ollamaMissing = engine !== 'rule_based' && llmProvider === 'ollama' && !ollamaModel
+  const usesOllama = engine === 'llm' || engine === 'compare'
+  const ollamaMissing = usesOllama && !ollamaModel
   const activeRun = runs.find((run) => run.id === activeRunId) ?? runs[0]
   const result = activeRun?.result
   const isGenerating = running.length > 0
@@ -173,9 +185,7 @@ export function ClassModelerPage({ projects }: Props) {
         text,
         mode,
         ...(activeProject ? { project_id: activeProject.id } : {}),
-        ...(mode === 'llm'
-          ? { llm_provider: llmProvider, ...(llmProvider === 'ollama' && ollamaModel ? { model_name: ollamaModel } : {}) }
-          : {}),
+        ...(mode === 'llm' ? { llm_provider: 'ollama' as const, ...(ollamaModel ? { model_name: ollamaModel } : {}) } : {}),
       })
       runCounter.current += 1
       const record: Run = { id: `run-${runCounter.current}`, number: runCounter.current, mode, createdAt: new Date(), text, result: next }
@@ -209,12 +219,7 @@ export function ClassModelerPage({ projects }: Props) {
 
   function chooseEngine(next: Engine) {
     setEngine(next)
-    if (next !== 'rule_based' && llmProvider === 'ollama' && !ollama && !isLoadingModels) void loadOllamaModels()
-  }
-
-  function chooseProvider(next: LlmProvider) {
-    setLlmProvider(next)
-    if (next === 'ollama' && !ollama && !isLoadingModels) void loadOllamaModels()
+    if ((next === 'llm' || next === 'compare') && !ollama && !isLoadingModels) void loadOllamaModels()
   }
 
   async function handleGenerate(event: FormEvent) {
@@ -246,7 +251,7 @@ export function ClassModelerPage({ projects }: Props) {
     try {
       const firstClass = result.model.classes[0]?.name ?? 'Domain'
       const saved = await diagramApi.create(workspaceId, activeProject.id, {
-        title: `${firstClass} class model (${result.mode === 'llm' ? 'LLM' : 'rule-based'})`,
+        title: `${firstClass} class model (${MODE_LABELS[result.mode]})`,
         diagram_type: 'class',
         drawio_xml: result.drawioXml,
       })
@@ -409,75 +414,47 @@ export function ClassModelerPage({ projects }: Props) {
               )
             })}
           </div>
-          {engine !== 'rule_based' ? (
+          {usesOllama ? (
             <div className="grid grid-cols-1 gap-2.5 rounded-xl border border-border bg-surface-2 p-3">
-              <span className="text-[11px] font-bold uppercase tracking-[0.08em] text-fg-3">LLM provider</span>
-              <div className="grid grid-cols-2 gap-1 rounded-lg bg-surface-3 p-1">
-                {(
-                  [
-                    { id: 'ollama', label: 'Ollama (local)', icon: Server },
-                    { id: 'byok', label: 'My AI provider', icon: KeyRound },
-                  ] as const
-                ).map((option) => (
+              <span className="text-[11px] font-bold uppercase tracking-[0.08em] text-fg-3">Ollama model</span>
+              <div className="grid grid-cols-1 gap-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <label htmlFor="ollama-model" className="text-[11.5px] font-semibold text-fg-2">
+                    Model
+                  </label>
                   <button
-                    key={option.id}
                     type="button"
-                    onClick={() => chooseProvider(option.id)}
-                    className={cn(
-                      'flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-[12px] font-semibold transition',
-                      llmProvider === option.id ? 'bg-surface text-fg shadow-sm' : 'text-fg-3 hover:text-fg',
-                    )}
+                    onClick={() => void loadOllamaModels()}
+                    className="flex items-center gap-1 text-[11px] font-semibold text-fg-3 transition hover:text-fg"
                   >
-                    <option.icon className="size-3.5" />
-                    {option.label}
+                    <RefreshCw className={cn('size-3', isLoadingModels && 'animate-spin')} /> Refresh
                   </button>
-                ))}
-              </div>
-
-              {llmProvider === 'ollama' ? (
-                <div className="grid grid-cols-1 gap-1.5">
-                  <div className="flex items-center justify-between gap-2">
-                    <label htmlFor="ollama-model" className="text-[11.5px] font-semibold text-fg-2">
-                      Model
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => void loadOllamaModels()}
-                      className="flex items-center gap-1 text-[11px] font-semibold text-fg-3 transition hover:text-fg"
-                    >
-                      <RefreshCw className={cn('size-3', isLoadingModels && 'animate-spin')} /> Refresh
-                    </button>
-                  </div>
-                  {ollama?.reachable && ollama.installed.length ? (
-                    <Select id="ollama-model" value={ollamaModel} onChange={(event) => setOllamaModel(event.target.value)}>
-                      {ollama.installed.map((name) => (
-                        <option key={name} value={name}>
-                          {name}
-                          {name === ollama.defaultModel ? ' (default)' : ''}
-                        </option>
-                      ))}
-                    </Select>
-                  ) : isLoadingModels ? (
-                    <p className="text-[11.5px] text-fg-3">Checking the local Ollama server…</p>
-                  ) : ollama ? (
-                    <p className="flex gap-1.5 rounded-lg border border-warning/30 bg-warning/10 px-2.5 py-2 text-[11.5px] leading-snug text-fg-2">
-                      <AlertTriangle className="mt-px size-3.5 shrink-0 text-warning" />
-                      <span>
-                        {ollama.reachable ? 'Ollama is running but no model is installed.' : 'Ollama is not reachable.'} Start it
-                        and pull a model, e.g. <code className="rounded bg-surface px-1 font-mono">ollama pull {ollama.defaultModel ?? 'llama3.2'}</code>,
-                        then Refresh.
-                      </span>
-                    </p>
-                  ) : null}
-                  <p className="text-[10.5px] leading-snug text-fg-3">
-                    Runs on your machine, no API key. Small models (1-3B) are fast but may miss details; 7B+ gives better class models.
-                  </p>
                 </div>
-              ) : (
-                <p className="text-[11.5px] leading-snug text-fg-3">
-                  Uses the active provider you added and tested in AI Settings (OpenAI, Claude or Gemini).
+                {ollama?.reachable && ollama.installed.length ? (
+                  <Select id="ollama-model" value={ollamaModel} onChange={(event) => setOllamaModel(event.target.value)}>
+                    {ollama.installed.map((name) => (
+                      <option key={name} value={name}>
+                        {name}
+                        {name === ollama.defaultModel ? ' (default)' : ''}
+                      </option>
+                    ))}
+                  </Select>
+                ) : isLoadingModels ? (
+                  <p className="text-[11.5px] text-fg-3">Checking the local Ollama server…</p>
+                ) : ollama ? (
+                  <p className="flex gap-1.5 rounded-lg border border-warning/30 bg-warning/10 px-2.5 py-2 text-[11.5px] leading-snug text-fg-2">
+                    <AlertTriangle className="mt-px size-3.5 shrink-0 text-warning" />
+                    <span>
+                      {ollama.reachable ? 'Ollama is running but no model is installed.' : 'Ollama is not reachable.'} Start it
+                      and pull a model, e.g. <code className="rounded bg-surface px-1 font-mono">ollama pull {ollama.defaultModel ?? 'llama3.2'}</code>,
+                      then Refresh.
+                    </span>
+                  </p>
+                ) : null}
+                <p className="text-[10.5px] leading-snug text-fg-3">
+                  Runs on your machine, no API key. Small models (1-3B) are fast but may miss details; 7B+ gives better class models.
                 </p>
-              )}
+              </div>
             </div>
           ) : null}
           <label className="grid grid-cols-1 gap-1.5">
@@ -516,10 +493,10 @@ export function ClassModelerPage({ projects }: Props) {
               ? running.length > 1
                 ? 'Running both engines…'
                 : running[0] === 'llm'
-                  ? llmProvider === 'ollama'
-                    ? `Asking ${ollamaModel || 'Ollama'}… (local models can take a minute)`
-                    : 'Asking the LLM…'
-                  : 'Analysing…'
+                  ? `Asking ${ollamaModel || 'Ollama'}… (local models can take a minute)`
+                  : running[0] === 'ai'
+                    ? 'Generating with AI…'
+                    : 'Analysing…'
               : engine === 'compare'
                 ? 'Generate & compare'
                 : 'Generate class model'}
@@ -531,7 +508,7 @@ export function ClassModelerPage({ projects }: Props) {
         <p key={mode} className="flex items-start gap-2 rounded-xl border border-danger/25 bg-danger/10 px-4 py-3 text-[13px] text-danger">
           <AlertTriangle className="mt-0.5 size-4 shrink-0" />
           <span>
-            <strong>{mode === 'llm' ? 'LLM' : 'Rule-based'}:</strong> {message}
+            <strong>{MODE_LABELS[mode]}:</strong> {message}
           </span>
         </p>
       ))}
@@ -560,8 +537,8 @@ export function ClassModelerPage({ projects }: Props) {
         <div className="grid grid-cols-1 gap-4 rounded-2xl border border-border bg-surface p-4 shadow-sm sm:p-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-2">
-              <Chip tone={result.mode === 'llm' ? 'ai' : 'accent'}>
-                {result.mode === 'llm' ? <Sparkles className="size-3" /> : <Cpu className="size-3" />}
+              <Chip tone={result.mode === 'rule_based' ? 'accent' : 'ai'}>
+                <ModeIcon mode={result.mode} className="size-3" />
                 {activeRun ? runLabel(activeRun) : 'Result'}
               </Chip>
               <ModelStats model={result.model} />
@@ -616,7 +593,7 @@ export function ClassModelerPage({ projects }: Props) {
                       : 'border-border bg-surface text-fg-2 hover:border-border-strong hover:text-fg',
                   )}
                 >
-                  {item.mode === 'llm' ? <Sparkles className="size-3" /> : <Cpu className="size-3" />}
+                  <ModeIcon mode={item.mode} className="size-3" />
                   {runLabel(item)}
                   <span className="font-normal text-fg-3">
                     · {item.result.model.classes.length} classes ·{' '}

@@ -215,13 +215,17 @@ def test_explicit_ollama_provider_model_choice_and_model_list(
     assert missing.status_code == 422
     assert "ollama pull mistral:latest" in missing.json()["detail"]
 
-    byok = client.post(
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "openrouter_api_key", None)
+    hosted = client.post(
         f"{base}/generate",
         headers=auth_header(token),
-        json={"text": TASK, "mode": "llm", "project_id": project_id, "llm_provider": "byok"},
+        json={"text": TASK, "mode": "llm", "project_id": project_id, "llm_provider": "ai"},
     )
-    assert byok.status_code == 422
-    assert "AI Settings" in byok.json()["detail"]
+    assert hosted.status_code == 422
+    assert "AI generation" in hosted.json()["detail"]
+    assert "openrouter" not in hosted.text.lower()
 
 
 def test_ollama_models_reports_unreachable_server(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -238,3 +242,37 @@ def test_ollama_models_reports_unreachable_server(client: TestClient, monkeypatc
     assert body["reachable"] is False
     assert "Cannot reach" in body["error"]
     assert body["suggested"]
+
+
+def test_ai_generation_mode_is_its_own_engine(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.core.config import settings
+    from app.services.hosted_ai_service import HostedAiClient
+
+    token = register(client, "ai-modeler@example.com")
+    workspace_id, project_id = setup_project(client, token)
+    base = f"/api/v1/workspaces/{workspace_id}/class-modeler"
+    monkeypatch.setattr(settings, "openrouter_api_key", "platform-key")
+    monkeypatch.setattr(settings, "openrouter_model", "vendor/model-a")
+
+    def fake_generate(self: HostedAiClient, request):
+        content = json.dumps({
+            "classes": [
+                {"name": "Book", "attributes": [{"name": "title", "type": "String"}], "methods": []},
+                {"name": "Member", "attributes": [{"name": "name", "type": "String"}], "methods": []},
+            ],
+            "relationships": [{"from": "Member", "to": "Book", "type": "association", "label": "borrows"}],
+        })
+        return LlmResponse(content=content, response_payload={"content": content}, prompt_tokens=5, completion_tokens=5)
+
+    monkeypatch.setattr(HostedAiClient, "generate", fake_generate)
+    response = client.post(
+        f"{base}/generate",
+        headers=auth_header(token),
+        json={"text": TASK, "mode": "ai", "project_id": project_id},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["mode"] == "ai" and body["provider"] == "ai"
+    assert body["modelName"] is None
+    assert {cls["name"] for cls in body["model"]["classes"]} == {"Book", "Member"}
+    assert "openrouter" not in response.text.lower()

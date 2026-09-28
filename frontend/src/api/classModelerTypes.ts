@@ -1,4 +1,4 @@
-export type ClassModelerMode = 'rule_based' | 'llm'
+export type ClassModelerMode = 'rule_based' | 'llm' | 'ai'
 
 export type ModelAttribute = { id: string; name: string; type: string; visibility: string }
 export type ModelParameter = { name: string; type: string }
@@ -64,7 +64,7 @@ export type ClassModelerResult = {
   }
 }
 
-export type LlmProvider = 'ollama' | 'byok'
+export type LlmProvider = 'ollama' | 'ai'
 
 export type OllamaModels = {
   reachable: boolean

@@ -309,7 +309,7 @@ export function RunPage({ projectId, runId }: { projectId: string; runId: string
         <Card className="flex flex-col gap-3 border-danger/25 bg-danger/[0.05] p-4 sm:flex-row sm:items-center">
           <XCircle className="size-5 shrink-0 text-danger" />
           <p className="min-w-0 flex-1 text-[13px] text-fg">
-            Generating the stage after <strong>{shownMeta?.label}</strong> failed. Check the engine (Ollama server or API key) and try again.
+            Generating the stage after <strong>{shownMeta?.label}</strong> failed. Check the engine (Ollama server or AI generation) and try again.
           </p>
           <Button size="sm" onClick={() => void retry()} disabled={busy !== null || !canEdit}>
             {busy === 'retry' ? <Loader2 className="animate-spin" /> : <RotateCcw />} Retry

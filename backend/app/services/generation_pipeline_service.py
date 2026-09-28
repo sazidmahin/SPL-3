@@ -43,6 +43,7 @@ from app.services.ai_settings_service import (
     mark_credential_used,
 )
 from app.services.llm_service import LlmClient, LlmExecutionError, execute_llm_call, get_or_create_prompt_template
+from app.services.hosted_ai_service import HostedAiClient
 from app.services.ollama_service import OllamaClient
 from app.services.ollama_tasks import (
     CallContext,
@@ -67,7 +68,7 @@ from app.services.workspace_service import require_workspace_role
 
 
 PIPELINE_STAGES = ["input", "clarifications", "final-story", "requirements", "class-model", "xml"]
-GENERATION_MODES = {"rule_based", "srsgen", "byok", "ollama"}
+GENERATION_MODES = {"rule_based", "srsgen", "byok", "ollama", "ai"}
 PIPELINE_MUTATION_ROLES = {"owner", "admin", "member"}
 logger = logging.getLogger(__name__)
 
@@ -303,7 +304,7 @@ def create_pipeline_run(
     get_active_project(db, workspace_id=membership.workspace_id, project_id=project_id)
     mode = generation_mode.strip().lower()
     if mode not in GENERATION_MODES:
-        raise GenerationPipelineStateError("Generation mode must be rule_based, srsgen, byok, or ollama")
+        raise GenerationPipelineStateError("Generation mode must be rule_based, srsgen, byok, ollama, or ai")
     provider = model_name = None
     credential_id = None
     if mode == "byok":
@@ -316,6 +317,11 @@ def create_pipeline_run(
         client.validate_configuration()
         provider = client.provider
         model_name = client.model_name
+    elif mode == "ai":
+        hosted_client = HostedAiClient()
+        hosted_client.validate_configuration()
+        provider = hosted_client.provider
+        model_name = hosted_client.model_name
     elif mode == "ollama":
         ollama_client = OllamaClient()
         ollama_client.validate_configuration()
@@ -570,6 +576,8 @@ def _client_for_run(db: Session, run: GenerationPipelineRun) -> tuple[LlmClient,
         return SrsGenClient(), None
     if run.generation_mode == "ollama":
         return OllamaClient(model_name=run.model_name), None
+    if run.generation_mode == "ai":
+        return HostedAiClient(model_name=run.model_name), None
     if run.generation_mode != "byok" or run.provider_credential_id is None:
         raise GenerationPipelineStateError("This pipeline run has no AI generation client")
     credential = db.scalar(
@@ -791,7 +799,7 @@ def _generate_ai_stage(
     stage_name: str,
     upstream: dict[str, Any],
 ) -> dict[str, Any]:
-    """One-shot generation for hosted models (BYOK / SRSGen). Ollama runs use the
+    """One-shot generation for hosted models (BYOK / AI generation / SRSGen). Ollama runs use the
     chunked, schema-constrained stage functions below instead."""
     client, credential = _client_for_run(db, run)
     template = get_or_create_prompt_template(
