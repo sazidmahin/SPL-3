@@ -309,7 +309,7 @@ export function RunPage({ projectId, runId }: { projectId: string; runId: string
         <Card className="flex flex-col gap-3 border-danger/25 bg-danger/[0.05] p-4 sm:flex-row sm:items-center">
           <XCircle className="size-5 shrink-0 text-danger" />
           <p className="min-w-0 flex-1 text-[13px] text-fg">
-            Generating the stage after <strong>{shownMeta?.label}</strong> failed. Check the engine (Ollama server or API key) and try again.
+            Generating the stage after <strong>{shownMeta?.label}</strong> failed. Check the engine (Ollama server or AI generation) and try again.
           </p>
           <Button size="sm" onClick={() => void retry()} disabled={busy !== null || !canEdit}>
             {busy === 'retry' ? <Loader2 className="animate-spin" /> : <RotateCcw />} Retry
@@ -416,8 +416,10 @@ export function RunPage({ projectId, runId }: { projectId: string; runId: string
                 {busy === 'approve' ? <Loader2 className="animate-spin" /> : <CheckCircle2 />}
                 {busy === 'approve' ? (currentStage === 'xml' ? 'Publishing…' : 'Generating next stage…') : acceptLabel}
               </Button>
-              <p className="text-xs text-fg-3">
-                {currentStage === 'class-model' && !classModelReady
+              <p className="text-xs text-fg-3" aria-live="polite">
+                {busy === 'approve' && data?.generation_mode === 'ollama' && currentStage !== 'xml'
+                  ? 'The local model is working. Without a GPU a stage can take a few minutes, and long input is processed in parts.'
+                  : currentStage === 'class-model' && !classModelReady
                   ? 'Confirm the class names, then review the relationships before continuing.'
                   : currentStage === 'xml'
                   ? 'Publishes the SRS document and saves this diagram to Diagrams.'

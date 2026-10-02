@@ -1,17 +1,18 @@
 """Class Modeler: an OOP-course style requirement text in, a UML class model
 (classes, attributes, methods, relationships, enums) and draw.io XML out.
 
-Two engines share one response shape so the UI can show them side by side:
+Three engines share one response shape so the UI can show them side by side:
 - rule_based: app.rule_engine.oop_modeler (offline, deterministic, explains
   every decision)
-- llm: an LLM asked to do the same noun/verb analysis and return JSON, on
-  either a local Ollama model (llm_provider="ollama") or the user's own AI
-  provider from AI Settings (llm_provider="byok"); with no choice given it
-  prefers the user's provider and falls back to Ollama.
+- llm: an LLM asked to do the same noun/verb analysis and return JSON, on a
+  local Ollama model (llm_provider="ollama", the default) or the user's own AI
+  provider from AI Settings (llm_provider="byok")
+- ai: the platform's hosted AI generation (no user key needed), same contract
 """
 
 from __future__ import annotations
 
+import json
 import re
 from typing import Any
 from uuid import UUID
@@ -33,18 +34,20 @@ from app.services.ai_settings_service import (
     get_active_ai_credential,
     mark_credential_used,
 )
-from app.services.generation_pipeline_service import _parse_json_response
+from app.services.llm_json import parse_json_response as _parse_json_response
+from app.services.hosted_ai_service import HostedAiClient
 from app.services.llm_service import LlmClient, LlmConfigurationError, execute_llm_call, get_or_create_prompt_template
 from app.services.ollama_service import OllamaClient, ollama_models
+from app.services.ollama_tasks import estimate_tokens, halve_text, split_text
 from app.services.project_service import get_active_project
 from app.services.workspace_service import require_workspace_role
 
 CLASS_MODELER_ROLES = {"owner", "admin", "member"}
-CLASS_MODELER_MODES = {"rule_based", "llm"}
-LLM_PROVIDERS = {"ollama", "byok"}
-# The class model is long JSON; the default Ollama output budget is sized for
-# short answers and would cut it off mid-object.
-OLLAMA_NUM_PREDICT = 4096
+CLASS_MODELER_MODES = {"rule_based", "llm", "ai"}
+LLM_PROVIDERS = {"ollama", "byok", "ai"}
+# Output budget per Ollama call. Long text is split into chunks (see
+# _generate_with_ollama), so each answer stays well inside this on a CPU laptop.
+OLLAMA_NUM_PREDICT = 2048
 MAX_INPUT_CHARS = 20000
 CARDINALITY_TYPES = {"association", "aggregation", "composition"}
 
@@ -108,7 +111,7 @@ def generate_class_model_from_text(
         raise ClassModelerError(f"Requirement text is limited to {MAX_INPUT_CHARS} characters.")
     normalized_mode = (mode or "").strip().lower()
     if normalized_mode not in CLASS_MODELER_MODES:
-        raise ClassModelerError("Mode must be rule_based or llm.")
+        raise ClassModelerError("Mode must be rule_based, llm or ai.")
 
     if normalized_mode == "rule_based":
         result = analyze_oop_text(cleaned)
@@ -117,9 +120,13 @@ def generate_class_model_from_text(
     if project_id is None:
         raise ClassModelerError("Select a project first - LLM calls are logged against a project.")
     get_active_project(db, workspace_id=membership.workspace_id, project_id=project_id)
-    # Runs on the user's own provider key or a local Ollama model, like the
-    # BYOK/Ollama generation pipeline - so no platform AI quota is consumed.
-    client, credential = _llm_client(db, membership, llm_provider, model_name)
+    # Runs on the platform's hosted AI generation, a local Ollama model or the
+    # user's own provider key - the same three engines the generation pipeline
+    # offers, so no platform AI quota is consumed by the latter two.
+    if normalized_mode == "ai":
+        client, credential = _hosted_client(), None
+    else:
+        client, credential = _llm_client(db, membership, llm_provider, model_name)
     is_ollama = isinstance(client, OllamaClient)
     template = get_or_create_prompt_template(
         db,
@@ -129,29 +136,24 @@ def generate_class_model_from_text(
             LLM_INSTRUCTION + " {contract}\n\nREQUIREMENT_TEXT_START\n{requirements}\nREQUIREMENT_TEXT_END"
         ),
     )
-    # render_prompt rejects any "{word}" left after substitution, so braces in
-    # the user's own text must not look like template placeholders.
-    safe_text = cleaned.replace("{", "(").replace("}", ")")
-    call = execute_llm_call(
-        db,
-        workspace_id=membership.workspace_id,
-        project_id=project_id,
-        pipeline_run_id=None,
-        template=template,
-        variables={"contract": OLLAMA_CONTRACT if is_ollama else LLM_CONTRACT, "requirements": safe_text},
-        client=client,
-        response_format="json",
-    )
-    if credential is not None:
-        mark_credential_used(db, credential)
-    content = (call.response_payload or {}).get("content")
-    payload = _parse_json_response(content) if isinstance(content, str) else None
+    if is_ollama:
+        call, payload = _generate_with_ollama(db, membership, project_id, template, client, cleaned)
+    else:
+        call = execute_llm_call(
+            db,
+            workspace_id=membership.workspace_id,
+            project_id=project_id,
+            pipeline_run_id=None,
+            template=template,
+            variables={"contract": LLM_CONTRACT, "requirements": cleaned},
+            client=client,
+            response_format="json",
+        )
+        if credential is not None:
+            mark_credential_used(db, credential)
+        content = (call.response_payload or {}).get("content")
+        payload = _parse_json_response(content) if isinstance(content, str) else None
     if not payload:
-        if is_ollama and call.completion_tokens >= client.num_predict:
-            raise ClassModelerError(
-                f"The Ollama model's answer was cut off at {client.num_predict} tokens before the JSON was complete. "
-                "Try a shorter task or a larger model."
-            )
         raise ClassModelerError(
             "The AI model did not return a valid class model. Try again"
             + (", pick a larger Ollama model," if is_ollama else "")
@@ -161,16 +163,155 @@ def generate_class_model_from_text(
     if not model["classes"]:
         raise ClassModelerError("The AI model returned no classes. Try again or use rule-based mode.")
     drawio_xml, validation = build_model_drawio(model)
+    engine = "ai" if isinstance(client, HostedAiClient) else "llm"
     return {
-        "mode": "llm",
+        "mode": engine,
         "provider": call.provider,
-        "modelName": call.model_name,
+        "modelName": None if engine == "ai" else call.model_name,
         "model": model,
         "drawioXml": drawio_xml,
         "validation": validation,
         "analysis": analysis,
-        "metadata": {"engine": "llm", "llmCallId": str(call.id)},
+        "metadata": {"engine": engine, "llmCallId": str(call.id)},
     }
+
+
+OLLAMA_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "classes": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "interface": {"type": "boolean"},
+                    "abstract": {"type": "boolean"},
+                    "attributes": {"type": "array", "items": {"type": "string"}},
+                    "methods": {"type": "array", "items": {"type": "string"}},
+                },
+                "required": ["name", "attributes", "methods"],
+            },
+        },
+        "relationships": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "from": {"type": "string"},
+                    "to": {"type": "string"},
+                    "type": {
+                        "type": "string",
+                        "enum": ["association", "aggregation", "composition", "inheritance", "realization", "dependency"],
+                    },
+                    "label": {"type": "string"},
+                    "sourceMultiplicity": {"type": "string"},
+                    "targetMultiplicity": {"type": "string"},
+                },
+                "required": ["from", "to", "type"],
+            },
+        },
+        "enums": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {"name": {"type": "string"}, "literals": {"type": "array", "items": {"type": "string"}}},
+                "required": ["name", "literals"],
+            },
+        },
+    },
+    "required": ["classes", "relationships"],
+}
+
+
+def _merge_chunk_payloads(payloads: list[dict[str, Any]]) -> dict[str, Any]:
+    """Merge per-chunk answers: classes by name (members unioned), relationships
+    and enums deduplicated. Nothing is added that a chunk did not return."""
+    classes: dict[str, dict[str, Any]] = {}
+    relationships: dict[str, dict[str, Any]] = {}
+    enums: dict[str, dict[str, Any]] = {}
+    for payload in payloads:
+        for item in payload.get("classes") or []:
+            if not isinstance(item, dict) or not str(item.get("name") or "").strip():
+                continue
+            key = re.sub(r"[^a-z0-9]", "", str(item["name"]).lower())
+            target = classes.setdefault(key, {**item, "attributes": [], "methods": []})
+            for member_key in ("attributes", "methods"):
+                seen = {json.dumps(value, sort_keys=True) for value in target[member_key]}
+                for value in item.get(member_key) or item.get({"attributes": "fields", "methods": "operations"}[member_key]) or []:
+                    marker = json.dumps(value, sort_keys=True)
+                    if marker not in seen:
+                        seen.add(marker)
+                        target[member_key].append(value)
+        for item in payload.get("relationships") or []:
+            if isinstance(item, dict):
+                relationships.setdefault(f"{item.get('from')}|{item.get('to')}|{item.get('type')}".lower(), item)
+        for item in payload.get("enums") or []:
+            if isinstance(item, dict) and item.get("name"):
+                enums.setdefault(str(item["name"]).lower(), item)
+    return {
+        "classes": list(classes.values()),
+        "relationships": list(relationships.values()),
+        "enums": list(enums.values()),
+        "nouns": [item for payload in payloads for item in payload.get("nouns") or []],
+        "verbs": [item for payload in payloads for item in payload.get("verbs") or []],
+    }
+
+
+def _generate_with_ollama(
+    db: Session,
+    membership: WorkspaceMember,
+    project_id: UUID,
+    template: Any,
+    client: OllamaClient,
+    text: str,
+) -> tuple[Any, dict[str, Any] | None]:
+    """Long text is split into chunks that fit the model's fixed context window
+    (Ollama silently drops the *start* of an oversized prompt - the instructions),
+    each answer is schema-constrained, and the chunk answers are merged. A chunk
+    whose answer is cut off by the output limit is split in half and retried."""
+    overhead = estimate_tokens(LLM_INSTRUCTION + OLLAMA_CONTRACT) + 100
+    chunks = split_text(text, client.input_token_budget(OLLAMA_NUM_PREDICT, overhead_tokens=overhead))
+    payloads: list[dict[str, Any]] = []
+    last_call: Any = None
+
+    def run(chunk: str, depth: int = 0) -> None:
+        nonlocal last_call
+        call = execute_llm_call(
+            db,
+            workspace_id=membership.workspace_id,
+            project_id=project_id,
+            pipeline_run_id=None,
+            template=template,
+            variables={"contract": OLLAMA_CONTRACT, "requirements": chunk},
+            client=client,
+            response_format="json",
+            json_schema=OLLAMA_SCHEMA,
+            max_tokens=OLLAMA_NUM_PREDICT,
+        )
+        last_call = call
+        response = call.response_payload or {}
+        content = response.get("content")
+        payload = _parse_json_response(content) if isinstance(content, str) else None
+        cut_off = response.get("done_reason") == "length" or call.completion_tokens >= OLLAMA_NUM_PREDICT
+        if payload is None and cut_off:
+            halves = halve_text(chunk)
+            if depth >= 2 or len(halves) < 2:
+                raise ClassModelerError(
+                    f"The Ollama model's answer was cut off at {OLLAMA_NUM_PREDICT} tokens before the JSON was "
+                    "complete, even after splitting the text. Try a shorter task or a larger model."
+                )
+            for half in halves:
+                run(half, depth + 1)
+            return
+        if payload:
+            payloads.append(payload)
+
+    for chunk in chunks:
+        run(chunk)
+    if not payloads:
+        return last_call, None
+    return last_call, payloads[0] if len(payloads) == 1 else _merge_chunk_payloads(payloads)
 
 
 def _ollama_client(model_name: str | None) -> OllamaClient:
@@ -182,33 +323,40 @@ def _ollama_client(model_name: str | None) -> OllamaClient:
     return client
 
 
+def _hosted_client() -> HostedAiClient:
+    # The model is platform-configured; a user-supplied model_name is for Ollama/BYOK only.
+    client = HostedAiClient()
+    try:
+        client.validate_configuration()
+    except LlmConfigurationError as exc:
+        raise ClassModelerError(str(exc)) from exc
+    return client
+
+
 def _llm_client(
     db: Session, membership: WorkspaceMember, llm_provider: str | None, model_name: str | None
 ) -> tuple[LlmClient, UserAiProviderCredential | None]:
-    """The client for the chosen LLM provider.
+    """The client for the chosen LLM provider, and the credential it spends.
 
     ollama - a local Ollama model (the chosen one, else OLLAMA_MODEL).
     byok   - the user's active, tested provider from AI Settings.
-    None   - byok when configured, otherwise Ollama.
+    ai     - the platform's hosted AI generation (no user key needed).
+    None   - Ollama, which needs neither a key nor a platform budget.
     """
     provider = (llm_provider or "").strip().lower() or None
     if provider is not None and provider not in LLM_PROVIDERS:
-        raise ClassModelerError("LLM provider must be ollama or byok.")
-    if provider == "ollama":
-        return _ollama_client(model_name), None
-    try:
-        credential = get_active_ai_credential(db, user_id=membership.user_id)
-        return build_client_for_credential(credential, model_name=model_name or None), credential
-    except AiSettingsError as provider_error:
-        if provider == "byok":
-            raise ClassModelerError(f"{provider_error}. Add and test a provider in AI Settings, or pick Ollama.") from provider_error
+        raise ClassModelerError("LLM provider must be ollama, byok or ai.")
+    if provider == "ai":
+        return _hosted_client(), None
+    if provider == "byok":
         try:
-            return _ollama_client(model_name), None
-        except ClassModelerError as ollama_error:
+            credential = get_active_ai_credential(db, user_id=membership.user_id)
+        except AiSettingsError as exc:
             raise ClassModelerError(
-                f"No AI provider is available ({provider_error}). Add and test a provider in AI Settings, "
-                f"or run a local Ollama model ({ollama_error})."
-            ) from ollama_error
+                f"{exc}. Add and test a provider in AI Settings, or pick another engine."
+            ) from exc
+        return build_client_for_credential(credential, model_name=model_name or None), credential
+    return _ollama_client(model_name), None
 
 
 def ollama_status() -> dict[str, Any]:

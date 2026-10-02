@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
-import { ArrowRight, Cpu, KeyRound, Loader2, Play, Plus, Server, Sparkles } from 'lucide-react'
+import { ArrowRight, Cpu, KeyRound, Loader2, Play, Plus, Server, Sparkles, WandSparkles } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { aiSettingsApi, errorMessage, pipelineApi, projectApi } from '../api'
 import type { GenerationMode, Project } from '../api'
@@ -51,8 +51,15 @@ const ENGINES: EngineOption[] = [
   {
     id: 'ollama',
     title: 'Local AI (Ollama)',
-    description: 'An open model running on the Ollama server bundled with SpecTwin.',
+    description: 'An open model running in Ollama on your machine. Works without a GPU; each stage takes longer.',
     icon: Server,
+    badge: 'No key needed',
+  },
+  {
+    id: 'ai',
+    title: 'AI generation',
+    description: 'A hosted AI model writes every stage. Fast, high quality and ready to use.',
+    icon: WandSparkles,
     badge: 'No key needed',
   },
   {
@@ -74,6 +81,7 @@ export function GeneratePage() {
   const { query } = useRoute()
   const { toast } = useFeedback()
   const projects = useAsync(() => projectApi.list(workspaceId), [workspaceId], Boolean(workspaceId))
+  const hosted = useAsync(() => aiSettingsApi.hosted(), [])
   const providers = useAsync(() => aiSettingsApi.providers(), [])
   const recent = useAsync(() => pipelineApi.listWorkspace(workspaceId), [workspaceId], Boolean(workspaceId))
 
@@ -86,6 +94,7 @@ export function GeneratePage() {
   const [error, setError] = useState<string | null>(null)
 
   const activeProjects = useMemo(() => (projects.data ?? []).filter((item) => item.status === 'active'), [projects.data])
+  const hostedAvailable = Boolean(hosted.data?.available)
   const byokProvider = providers.data?.find((item) => item.credential?.is_default && item.credential.status === 'valid')
 
   // An explicit choice wins, then ?project= from the link that opened this page, then the first project.
@@ -102,6 +111,8 @@ export function GeneratePage() {
     ? 'Describe the system you want to specify.'
     : text.trim().length < 20
     ? 'Add a little more detail (at least a sentence or two).'
+    : mode === 'ai' && !hostedAvailable
+    ? 'AI generation is not available right now. Pick another engine.'
     : mode === 'byok' && !byokProvider
     ? 'Add and verify an API key in Settings → AI providers first.'
     : null
@@ -208,10 +219,11 @@ export function GeneratePage() {
 
             <fieldset className="grid grid-cols-1 gap-2">
               <legend className="mb-2 text-[12.5px] font-semibold text-fg">Engine</legend>
-              <div className="grid grid-cols-1 gap-2.5 md:grid-cols-3">
+              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
                 {ENGINES.map((engine) => {
                   const Icon = engine.icon
-                  const unavailable = engine.id === 'byok' && !byokProvider
+                  const hostedOff = engine.id === 'ai' && !hosted.loading && !hostedAvailable
+                  const byokMissing = engine.id === 'byok' && !providers.loading && !byokProvider
                   const selected = mode === engine.id
                   return (
                     <label
@@ -241,7 +253,9 @@ export function GeneratePage() {
                           ? `Uses ${byokProvider.label} · ${byokProvider.credential.selected_model}`
                           : engine.description}
                       </span>
-                      {unavailable ? (
+                      {hostedOff ? (
+                        <span className="text-xs font-semibold text-fg-3">Not available right now</span>
+                      ) : byokMissing ? (
                         <a href={href(routes.settings('ai'))} className="text-xs font-semibold text-accent hover:underline">
                           Add your API key →
                         </a>

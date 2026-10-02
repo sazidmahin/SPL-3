@@ -64,7 +64,7 @@ class OllamaClient:
         self.temperature = settings.ollama_temperature if temperature is None else temperature
         self.timeout_seconds = timeout_seconds or settings.ollama_timeout_seconds
         self.keep_alive = keep_alive or settings.ollama_keep_alive
-        self.num_ctx_max = num_ctx or settings.ollama_num_ctx
+        self.num_ctx = num_ctx or settings.ollama_num_ctx
         # Cap output length: without this, a small local model asked to do a task
         # beyond its ability can ramble/repeat indefinitely instead of naturally
         # stopping, turning a call that should take seconds into one that takes
@@ -142,28 +142,33 @@ class OllamaClient:
             f"Run: ollama pull {wanted}"
         )
 
-    def _context_window_for(self, prompt: str) -> int:
-        """Size the KV cache to what the prompt actually needs.
+    # --------------------------------------------------------------- budgets
+    def input_token_budget(self, num_predict: int | None = None, *, overhead_tokens: int = 700) -> int:
+        """Tokens of task input (user text, story, requirements) one call can carry.
 
-        On CPU, attention cost scales with num_ctx regardless of how much of it
-        is used, so always requesting the configured max (e.g. 16384) makes
-        short prompts pay the cost of the longest one. Round up to the next
-        power of two, floor 2048, capped at ``num_ctx_max``.
-
-        Headroom must track self.num_predict, not a flat guess: a stage allowed
-        to generate up to num_predict tokens (e.g. 4096 for class-model/
-        requirements/final-story - see _OLLAMA_VERBOSE_STAGE_NUM_PREDICT) needs
-        that much room actually reserved, or a long prompt (a big SRS input plus
-        upstream JSON) sizes num_ctx to fit only a short completion - the model
-        then runs out of context mid-generation on exactly the largest, most
-        complex inputs, producing garbled/truncated JSON (observed: relationships
-        silently coming back empty) instead of a clear error.
+        The window is fixed (see Settings.ollama_num_ctx), so the room left for input
+        is what remains after the completion budget and the fixed prompt scaffolding.
+        Capped by ollama_chunk_tokens: small models answer shorter prompts better.
         """
-        estimated_tokens = int(len(prompt) / 3.2) + self.num_predict  # ~chars-per-token + completion headroom
-        window = 2048
-        while window < estimated_tokens and window < self.num_ctx_max:
-            window *= 2
-        return min(window, self.num_ctx_max)
+        completion = num_predict or self.num_predict
+        room = self.num_ctx - completion - overhead_tokens
+        return max(400, min(room, settings.ollama_chunk_tokens))
+
+    def warm_up(self) -> None:
+        """Load the model with the same options real calls use, so the first stage
+        does not pay the model-load time. Best effort: failures are ignored."""
+        try:
+            self._post(
+                "/api/chat",
+                {
+                    "model": self.model_name,
+                    "messages": [],
+                    "keep_alive": self.keep_alive,
+                    "options": self._options(1),
+                },
+            )
+        except Exception:  # noqa: BLE001 - warm-up must never break a request
+            pass
 
     # --------------------------------------------------------------- generation
     # Temperature > 0 (see Settings.ollama_temperature) means a repeat-loop abort
@@ -182,116 +187,72 @@ class OllamaClient:
                     raise
                 attempt += 1
 
+    def _options(self, num_predict: int) -> dict[str, Any]:
+        options: dict[str, Any] = {
+            "temperature": self.temperature,
+            # Always the same window: changing num_ctx between calls makes Ollama
+            # reload the model, which on a CPU laptop costs seconds every time.
+            "num_ctx": self.num_ctx,
+            "num_predict": num_predict,
+            "repeat_penalty": self.repeat_penalty,
+            "repeat_last_n": self.repeat_last_n,
+        }
+        if settings.ollama_num_thread:
+            options["num_thread"] = settings.ollama_num_thread
+        return options
+
     def _generate_once(self, request: LlmRequest) -> LlmResponse:
-        num_ctx = self._context_window_for(request.prompt)
-        try:
-            chat_model = self._langchain_chat_model(num_ctx, response_format=request.response_format)
-        except LlmConfigurationError:
-            chat_model = None
-
-        if chat_model is not None:
-            try:
-                message = chat_model.invoke(request.prompt)
-            except Exception as exc:
-                # langchain-ollama surfaces a server-side abort (e.g. the "token
-                # repeat limit" circuit breaker - see _raise_ollama_failure) as
-                # ollama.ResponseError(error, status_code), whose str() is
-                # "<error> (status code: <n>)" - exactly the raw message this was
-                # previously leaking unwrapped, since this call had no try/except
-                # at all (unlike the raw-HTTP fallback path below it).
-                detail = str(getattr(exc, "error", None) or exc)
-                _raise_ollama_failure(detail, cause=exc)
-                raise  # pragma: no cover - _raise_ollama_failure always raises
-            content = getattr(message, "content", message)
-            if not isinstance(content, str):
-                content = str(content)
-            metadata = getattr(message, "response_metadata", None) or {}
-            prompt_tokens = int(metadata.get("prompt_eval_count") or len(request.prompt.split()))
-            completion_tokens = int(metadata.get("eval_count") or max(1, len(content.split())))
-            payload: dict[str, Any] = {
-                "content": content,
-                "provider": self.provider,
-                "model_name": self.model_name,
-                "response_metadata": _json_ready(metadata),
-            }
-            return LlmResponse(
-                content=content.strip(),
-                response_payload=payload,
-                prompt_tokens=prompt_tokens,
-                completion_tokens=completion_tokens,
-            )
-
-        # Fallback: talk to the Ollama HTTP API directly.
-        body = {
+        num_predict = request.max_tokens or self.num_predict
+        body: dict[str, Any] = {
             "model": self.model_name,
-            "prompt": request.prompt,
+            "messages": [{"role": "user", "content": request.prompt}],
             "stream": False,
             "keep_alive": self.keep_alive,
-            "options": {
-                "temperature": self.temperature,
-                "num_ctx": num_ctx,
-                "num_predict": self.num_predict,
-                "repeat_penalty": self.repeat_penalty,
-                "repeat_last_n": self.repeat_last_n,
-            },
+            "options": self._options(num_predict),
         }
-        if request.response_format == "json":
-            # Ollama's own grammar-constrained decoding (not a text-parsing rule of
-            # ours) - it forces every sampled token to keep the output valid JSON,
-            # instead of us trying to parse/repair whatever free text comes back.
+        if request.json_schema is not None:
+            # Structured outputs: Ollama compiles the schema into a grammar, so every
+            # sampled token keeps the answer valid JSON of exactly this shape.
+            body["format"] = request.json_schema
+        elif request.response_format == "json":
             body["format"] = "json"
         try:
-            data = self._post("/api/generate", body)
+            data = self._post("/api/chat", body)
         except HTTPError as exc:
             detail = exc.read().decode("utf-8", "ignore") if hasattr(exc, "read") else str(exc)
             _raise_ollama_failure(detail, cause=exc)
         except (URLError, OSError, ValueError) as exc:
-            raise LlmExecutionError(f"Ollama generation failed: {exc}") from exc
+            raise LlmExecutionError(
+                f"Ollama generation failed ({exc}). Is Ollama running at {self.base_url}?"
+            ) from exc
+        if data.get("error"):
+            _raise_ollama_failure(str(data["error"]))
 
-        content = str(data.get("response", "")).strip()
-        prompt_tokens = int(data.get("prompt_eval_count") or len(request.prompt.split()))
-        completion_tokens = int(data.get("eval_count") or max(1, len(content.split())))
+        message = data.get("message") or {}
+        content = str(message.get("content") or data.get("response") or "").strip()
+        prompt_tokens = int(data.get("prompt_eval_count") or max(1, len(request.prompt) // 4))
+        completion_tokens = int(data.get("eval_count") or max(1, len(content) // 4))
+        done_reason = data.get("done_reason")
+        if done_reason is None and completion_tokens >= num_predict:
+            done_reason = "length"
         return LlmResponse(
             content=content,
             response_payload={
                 "content": content,
                 "provider": self.provider,
                 "model_name": self.model_name,
+                "done_reason": done_reason,
+                "num_ctx": self.num_ctx,
+                "num_predict": num_predict,
+                # Nanosecond timings from Ollama, kept for diagnosing slow stages.
+                "load_duration": data.get("load_duration"),
+                "prompt_eval_duration": data.get("prompt_eval_duration"),
+                "eval_duration": data.get("eval_duration"),
                 "total_duration": data.get("total_duration"),
-                "done_reason": data.get("done_reason"),
             },
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
         )
-
-    def _langchain_chat_model(self, num_ctx: int, *, response_format: str | None = None) -> Any | None:
-        try:
-            from langchain_ollama import ChatOllama
-        except ImportError as exc:  # pragma: no cover - optional dependency
-            raise LlmConfigurationError("langchain-ollama is not installed") from exc
-        return ChatOllama(
-            base_url=self.base_url,
-            model=self.model_name,
-            temperature=self.temperature,
-            client_kwargs={"timeout": self.timeout_seconds},
-            keep_alive=self.keep_alive,
-            num_ctx=num_ctx,
-            num_predict=self.num_predict,
-            repeat_penalty=self.repeat_penalty,
-            repeat_last_n=self.repeat_last_n,
-            # "format" is a real ChatOllama field (confirmed against the
-            # installed langchain-ollama version), not a generic kwarg - set
-            # directly here rather than via .bind(), which was unverified.
-            format="json" if response_format == "json" else "",
-        )
-
-
-def _json_ready(value: Any) -> Any:
-    try:
-        json.dumps(value)
-        return value
-    except TypeError:
-        return json.loads(json.dumps(value, default=str))
 
 
 def ollama_models() -> list[str]:

@@ -153,7 +153,7 @@ _OLLAMA_NON_JSON_RESPONSES = {
         "How long should an unapproved order remain pending?\n"
         "The order total must be calculated automatically."
     ),
-    "pipeline_clarifications_answer_suggestion": "Ten items",
+    "pipeline_clarifications_answer_batch": "1. Ten items\n2. Ten items",
     "pipeline_final-story_ollama_independent": (
         "A customer places an order for one or more products.\n"
         "An admin reviews and approves pending orders.\n"
@@ -640,3 +640,186 @@ def test_reapproving_a_reopened_run_refreshes_the_same_document(client: TestClie
     assert run["srs_document_id"] == first_document
     docs = client.get(f"/api/v1/workspaces/{workspace_id}/srs-documents", headers=auth_header(token)).json()
     assert len(docs) == 1
+
+
+def test_ollama_pipeline_chunks_large_input_and_merges_the_answers(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A long requirement text must never be sent as one prompt bigger than the
+    model's window (Ollama drops the *start* of such a prompt - the instructions).
+    It is split into chunks, every call is schema-constrained with a bounded
+    output budget, and the per-chunk answers are merged and deduplicated."""
+    from app.core.config import settings
+
+    monkeypatch.setattr(OllamaClient, "validate_configuration", lambda self: None)
+    monkeypatch.setattr(OllamaClient, "warm_up", lambda self: None)
+    requests: list = []
+
+    def fake_generate(self: OllamaClient, request):
+        requests.append(request)
+        purpose = request.purpose
+        if purpose == "pipeline_clarifications_ollama_questions":
+            content = json.dumps({"clarificationQuestions": [
+                {"text": "Who approves a loan?", "category": "missing actor", "reason": "r", "sourceSentence": "s"}
+            ]})
+        elif purpose == "pipeline_clarifications_answer_batch":
+            content = json.dumps({"answers": [{"id": "ollama_q1", "answer": "The librarian."}]})
+        elif purpose == "pipeline_final-story_ollama_independent":
+            n = sum(1 for call in requests if call.purpose == purpose)
+            content = json.dumps({"atomicStorySections": [
+                {"normalizedSentence": f"Need {n}."}, {"normalizedSentence": "A member can borrow a book."}
+            ]})
+        elif purpose == "pipeline_requirements_ollama_independent":
+            content = json.dumps({"requirements": [
+                {"statement": "The system shall let a member borrow a book.", "requirementType": "functional", "actor": "Member"}
+            ]})
+        elif purpose == "pipeline_class-model_ollama_classes":
+            content = json.dumps({"classes": [
+                {"name": "Member", "fields": ["name"], "methods": ["borrow"]},
+                {"name": "Book", "fields": ["title"], "methods": []},
+            ]})
+        elif purpose == "pipeline_class-model_ollama_relationships":
+            content = json.dumps({"relationships": [{"from": "Member", "to": "Book", "type": "association", "label": "borrows"}]})
+        else:
+            content = "{}"
+        return LlmResponse(content=content, response_payload={"content": content}, prompt_tokens=1, completion_tokens=1)
+
+    monkeypatch.setattr(OllamaClient, "generate", fake_generate)
+    token = register(client, "ollama-large@example.com")
+    workspace_id, project_id = setup_project(client, token)
+    base_url = pipeline_url(workspace_id, project_id)
+    paragraph = (
+        "A member can borrow up to five books. A librarian adds, updates and removes books. "
+        "Each branch {i} has opening hours and sends reminders two days before a loan is due. "
+    )
+    raw_text = "\n\n".join(paragraph.replace("{i}", str(i)) * 3 for i in range(120))  # ~70k characters
+    created = client.post(
+        base_url, headers=auth_header(token), json={"title": "Library", "raw_text": raw_text, "generation_mode": "ollama"}
+    )
+    assert created.status_code == 201, created.text
+    run = created.json()
+    for _ in range(4):
+        run = approve_and_proceed(client, token, base_url, run)
+    assert run["current_stage"] == "class-model"
+
+    window_chars = settings.ollama_num_ctx * 3.5
+    assert all(len(request.prompt) < window_chars for request in requests), "a prompt overflowed the context window"
+    assert all(request.json_schema and request.max_tokens for request in requests)
+    story_calls = [r for r in requests if r.purpose == "pipeline_final-story_ollama_independent"]
+    assert len(story_calls) > 3  # the input was chunked...
+    stages = {stage["stage_name"]: stage["payload"] for stage in run["stages"]}
+    sentences = [s["normalizedSentence"] for s in stages["final-story"]["atomicStorySections"]]
+    assert sentences.count("A member can borrow a book.") == 1  # ...and the answers merged without duplicates
+    assert len(sentences) == len(story_calls) + 1
+    # one batched call drafts every clarification answer (not one call per question)
+    assert sum(1 for r in requests if r.purpose == "pipeline_clarifications_answer_batch") == 1
+    assert stages["clarifications"]["answers"][0]["answerText"] == "The librarian"
+    classes = {item["name"] for item in stages["class-model"]["classes"]}
+    assert classes == {"Member", "Book"}
+    relationship_call = next(r for r in requests if r.purpose == "pipeline_class-model_ollama_relationships")
+    from_enum = relationship_call.json_schema["properties"]["relationships"]["items"]["properties"]["from"]["enum"]
+    assert set(from_enum) == {"Member", "Book"}
+    assert len(stages["class-model"]["relationships"]) == 1
+
+
+def test_hosted_ai_mode_creates_run_without_user_key(
+    client: TestClient, db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.core.config import settings
+
+    token = register(client, "hosted-ai@example.com")
+    workspace_id, project_id = setup_project(client, token)
+    base_url = pipeline_url(workspace_id, project_id)
+    body = {"title": "Orders", "raw_text": "A customer can place an order.", "generation_mode": "ai"}
+
+    monkeypatch.setattr(settings, "openrouter_api_key", None)
+    assert client.get("/api/v1/users/me/ai-settings/hosted", headers=auth_header(token)).json() == {"available": False}
+    unavailable = client.post(base_url, headers=auth_header(token), json=body)
+    assert unavailable.status_code == 422
+    assert "openrouter" not in unavailable.text.lower()
+
+    monkeypatch.setattr(settings, "openrouter_api_key", "platform-key")
+    monkeypatch.setattr(settings, "openrouter_model", "vendor/model-a")
+    assert client.get("/api/v1/users/me/ai-settings/hosted", headers=auth_header(token)).json() == {"available": True}
+    created = client.post(base_url, headers=auth_header(token), json=body)
+    assert created.status_code == 201, created.text
+    run = created.json()
+    assert run["generation_mode"] == "ai"
+    assert run["provider"] == "ai"
+    # The hosted model is platform-configured, so the run never carries the
+    # vendor's model id to the workspace or into the published SRS document.
+    assert run["model_name"] is None
+    assert "vendor/model-a" not in created.text
+
+    # A client is still resolved for the run: the configured model fills in.
+    from uuid import UUID
+
+    from app.db.models import GenerationPipelineRun
+    from app.services.generation_pipeline_service import _client_for_run
+
+    stored = db_session.get(GenerationPipelineRun, UUID(run["id"]))
+    resolved, credential = _client_for_run(db_session, stored)
+    assert credential is None
+    assert resolved.provider == "ai" and resolved.model_name == "vendor/model-a"
+
+
+def test_hosted_ai_mode_writes_a_stage_over_its_own_http_layer(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """End to end over HostedAiClient's real request/response handling (only the
+    socket is faked), so the wiring from mode "ai" to a written stage is covered."""
+    import io
+    import json as json_module
+
+    from app.core.config import settings
+    from app.services import hosted_ai_service
+
+    token = register(client, "hosted-ai-stage@example.com")
+    workspace_id, project_id = setup_project(client, token)
+    base_url = pipeline_url(workspace_id, project_id)
+    monkeypatch.setattr(settings, "openrouter_api_key", "platform-key")
+    monkeypatch.setattr(settings, "openrouter_model", "vendor/model-a")
+    monkeypatch.setattr(settings, "openrouter_fallback_models", "")
+
+    stage_payload = {
+        "facts": [{"id": "f1", "text": "A customer places an order."}],
+        "sentences": [{"id": "s1", "text": "A customer can place an order."}],
+        "clarificationQuestions": [{"id": "q1", "text": "Can an order hold many products?", "status": "open"}],
+    }
+    requests_sent: list[dict] = []
+
+    class _FakeResponse(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            self.close()
+
+    def fake_urlopen(request, timeout):
+        requests_sent.append({"body": json_module.loads(request.data), "headers": dict(request.headers)})
+        body = {
+            "model": "vendor/model-a",
+            "choices": [{"message": {"content": json_module.dumps(stage_payload)}, "finish_reason": "stop"}],
+            "usage": {"prompt_tokens": 20, "completion_tokens": 30},
+        }
+        return _FakeResponse(json_module.dumps(body).encode("utf-8"))
+
+    monkeypatch.setattr(hosted_ai_service, "urlopen", fake_urlopen)
+
+    run = client.post(
+        base_url,
+        headers=auth_header(token),
+        json={"title": "Orders", "raw_text": "A customer can place an order.", "generation_mode": "ai"},
+    ).json()
+    run = approve_and_proceed(client, token, base_url, run)
+
+    assert run["current_stage"] == "clarifications"
+    stages = {stage["stage_name"]: stage["payload"] for stage in run["stages"]}
+    assert stages["clarifications"]["clarificationQuestions"][0]["text"] == "Can an order hold many products?"
+    # The call really went out over the hosted client, with the platform key.
+    assert requests_sent and requests_sent[0]["body"]["model"] == "vendor/model-a"
+    assert requests_sent[0]["headers"]["Authorization"] == "Bearer platform-key"
+    # Nothing about the vendor reaches the workspace.
+    assert run["model_name"] is None
+    assert "vendor/model-a" not in json.dumps(run)

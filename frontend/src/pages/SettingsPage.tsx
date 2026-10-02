@@ -94,9 +94,10 @@ function AiProvidersSection() {
       <Card className="flex gap-3 border-accent/20 bg-accent/[0.05] p-4">
         <KeyRound className="mt-0.5 size-5 shrink-0 text-accent" />
         <p className="text-[13px] leading-relaxed text-fg-2">
-          SpecTwin is free and ships no AI key of its own. The <strong className="text-fg">Rule-Based</strong> engine and{' '}
-          <strong className="text-fg">local Ollama</strong> need no key. To use a hosted model, add <em>your own</em> API key below — it is encrypted at
-          rest and only used for your requests. The provider marked <strong className="text-fg">Active</strong> is used by the “Your AI provider” engine.
+          SpecTwin is free. The <strong className="text-fg">Rule-Based</strong>, <strong className="text-fg">local Ollama</strong> and{' '}
+          <strong className="text-fg">AI generation</strong> engines all need no key of yours. To run a hosted model on your own account instead, add{' '}
+          <em>your own</em> API key below — it is encrypted at rest and only used for your requests. The provider marked{' '}
+          <strong className="text-fg">Active</strong> is the one the “Your AI provider” engine uses.
         </p>
       </Card>
       {providers.loading && !providers.data ? (

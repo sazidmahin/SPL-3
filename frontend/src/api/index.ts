@@ -185,6 +185,7 @@ export const classModelerApi = {
 const aiBase = '/users/me/ai-settings'
 export const aiSettingsApi = {
   providers: () => request<AiProviderSetting[]>(`${aiBase}/providers`),
+  hosted: () => request<{ available: boolean }>(`${aiBase}/hosted`),
   models: (provider: AiProviderId) => request<string[]>(`${aiBase}/credentials/${provider}/models`),
   save: (provider: AiProviderId, payload: { api_key: string; selected_model: string; is_default: boolean }) =>
     request<AiCredential>(`${aiBase}/credentials/${provider}`, { method: 'PUT', body: payload }),
