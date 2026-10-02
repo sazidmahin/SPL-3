@@ -22,7 +22,9 @@ COPY alembic.ini ./
 COPY alembic ./alembic
 COPY app ./app
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+# Strip CRLF in case the script was checked out on Windows.
+RUN sed -i 's/\r$//' /usr/local/bin/docker-entrypoint.sh \
+    && chmod +x /usr/local/bin/docker-entrypoint.sh
 
 EXPOSE 8000
 
