@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
-import { ArrowRight, Cpu, Loader2, Play, Plus, Server, Sparkles, WandSparkles } from 'lucide-react'
+import { ArrowRight, Cpu, KeyRound, Loader2, Play, Plus, Server, Sparkles, WandSparkles } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { aiSettingsApi, errorMessage, pipelineApi, projectApi } from '../api'
 import type { GenerationMode, Project } from '../api'
@@ -62,6 +62,13 @@ const ENGINES: EngineOption[] = [
     icon: WandSparkles,
     badge: 'No key needed',
   },
+  {
+    id: 'byok',
+    title: 'Your AI provider',
+    description: 'OpenAI, Anthropic or Gemini using the API key you add in Settings.',
+    icon: KeyRound,
+    badge: 'Your API key',
+  },
 ]
 
 function defaultTitle(raw: string, projectName?: string) {
@@ -75,6 +82,7 @@ export function GeneratePage() {
   const { toast } = useFeedback()
   const projects = useAsync(() => projectApi.list(workspaceId), [workspaceId], Boolean(workspaceId))
   const hosted = useAsync(() => aiSettingsApi.hosted(), [])
+  const providers = useAsync(() => aiSettingsApi.providers(), [])
   const recent = useAsync(() => pipelineApi.listWorkspace(workspaceId), [workspaceId], Boolean(workspaceId))
 
   const [chosenProjectId, setProjectId] = useState('')
@@ -87,6 +95,7 @@ export function GeneratePage() {
 
   const activeProjects = useMemo(() => (projects.data ?? []).filter((item) => item.status === 'active'), [projects.data])
   const hostedAvailable = Boolean(hosted.data?.available)
+  const byokProvider = providers.data?.find((item) => item.credential?.is_default && item.credential.status === 'valid')
 
   // An explicit choice wins, then ?project= from the link that opened this page, then the first project.
   const requestedProjectId = query.get('project') ?? ''
@@ -104,6 +113,8 @@ export function GeneratePage() {
     ? 'Add a little more detail (at least a sentence or two).'
     : mode === 'ai' && !hostedAvailable
     ? 'AI generation is not available right now. Pick another engine.'
+    : mode === 'byok' && !byokProvider
+    ? 'Add and verify an API key in Settings → AI providers first.'
     : null
 
   async function start(event: FormEvent<HTMLFormElement>) {
@@ -208,10 +219,11 @@ export function GeneratePage() {
 
             <fieldset className="grid grid-cols-1 gap-2">
               <legend className="mb-2 text-[12.5px] font-semibold text-fg">Engine</legend>
-              <div className="grid grid-cols-1 gap-2.5 md:grid-cols-3">
+              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
                 {ENGINES.map((engine) => {
                   const Icon = engine.icon
                   const hostedOff = engine.id === 'ai' && !hosted.loading && !hostedAvailable
+                  const byokMissing = engine.id === 'byok' && !providers.loading && !byokProvider
                   const selected = mode === engine.id
                   return (
                     <label
@@ -237,10 +249,16 @@ export function GeneratePage() {
                       </div>
                       <span className="text-[13.5px] font-semibold text-fg">{engine.title}</span>
                       <span className="text-xs leading-relaxed text-fg-3">
-                        {engine.description}
+                        {engine.id === 'byok' && byokProvider?.credential
+                          ? `Uses ${byokProvider.label} · ${byokProvider.credential.selected_model}`
+                          : engine.description}
                       </span>
                       {hostedOff ? (
                         <span className="text-xs font-semibold text-fg-3">Not available right now</span>
+                      ) : byokMissing ? (
+                        <a href={href(routes.settings('ai'))} className="text-xs font-semibold text-accent hover:underline">
+                          Add your API key →
+                        </a>
                       ) : null}
                     </label>
                   )

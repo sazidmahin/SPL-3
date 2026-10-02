@@ -723,7 +723,9 @@ def test_ollama_pipeline_chunks_large_input_and_merges_the_answers(
     assert len(stages["class-model"]["relationships"]) == 1
 
 
-def test_hosted_ai_mode_creates_run_without_user_key(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_hosted_ai_mode_creates_run_without_user_key(
+    client: TestClient, db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
     from app.core.config import settings
 
     token = register(client, "hosted-ai@example.com")
@@ -745,3 +747,79 @@ def test_hosted_ai_mode_creates_run_without_user_key(client: TestClient, monkeyp
     run = created.json()
     assert run["generation_mode"] == "ai"
     assert run["provider"] == "ai"
+    # The hosted model is platform-configured, so the run never carries the
+    # vendor's model id to the workspace or into the published SRS document.
+    assert run["model_name"] is None
+    assert "vendor/model-a" not in created.text
+
+    # A client is still resolved for the run: the configured model fills in.
+    from uuid import UUID
+
+    from app.db.models import GenerationPipelineRun
+    from app.services.generation_pipeline_service import _client_for_run
+
+    stored = db_session.get(GenerationPipelineRun, UUID(run["id"]))
+    resolved, credential = _client_for_run(db_session, stored)
+    assert credential is None
+    assert resolved.provider == "ai" and resolved.model_name == "vendor/model-a"
+
+
+def test_hosted_ai_mode_writes_a_stage_over_its_own_http_layer(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """End to end over HostedAiClient's real request/response handling (only the
+    socket is faked), so the wiring from mode "ai" to a written stage is covered."""
+    import io
+    import json as json_module
+
+    from app.core.config import settings
+    from app.services import hosted_ai_service
+
+    token = register(client, "hosted-ai-stage@example.com")
+    workspace_id, project_id = setup_project(client, token)
+    base_url = pipeline_url(workspace_id, project_id)
+    monkeypatch.setattr(settings, "openrouter_api_key", "platform-key")
+    monkeypatch.setattr(settings, "openrouter_model", "vendor/model-a")
+    monkeypatch.setattr(settings, "openrouter_fallback_models", "")
+
+    stage_payload = {
+        "facts": [{"id": "f1", "text": "A customer places an order."}],
+        "sentences": [{"id": "s1", "text": "A customer can place an order."}],
+        "clarificationQuestions": [{"id": "q1", "text": "Can an order hold many products?", "status": "open"}],
+    }
+    requests_sent: list[dict] = []
+
+    class _FakeResponse(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            self.close()
+
+    def fake_urlopen(request, timeout):
+        requests_sent.append({"body": json_module.loads(request.data), "headers": dict(request.headers)})
+        body = {
+            "model": "vendor/model-a",
+            "choices": [{"message": {"content": json_module.dumps(stage_payload)}, "finish_reason": "stop"}],
+            "usage": {"prompt_tokens": 20, "completion_tokens": 30},
+        }
+        return _FakeResponse(json_module.dumps(body).encode("utf-8"))
+
+    monkeypatch.setattr(hosted_ai_service, "urlopen", fake_urlopen)
+
+    run = client.post(
+        base_url,
+        headers=auth_header(token),
+        json={"title": "Orders", "raw_text": "A customer can place an order.", "generation_mode": "ai"},
+    ).json()
+    run = approve_and_proceed(client, token, base_url, run)
+
+    assert run["current_stage"] == "clarifications"
+    stages = {stage["stage_name"]: stage["payload"] for stage in run["stages"]}
+    assert stages["clarifications"]["clarificationQuestions"][0]["text"] == "Can an order hold many products?"
+    # The call really went out over the hosted client, with the platform key.
+    assert requests_sent and requests_sent[0]["body"]["model"] == "vendor/model-a"
+    assert requests_sent[0]["headers"]["Authorization"] == "Bearer platform-key"
+    # Nothing about the vendor reaches the workspace.
+    assert run["model_name"] is None
+    assert "vendor/model-a" not in json.dumps(run)

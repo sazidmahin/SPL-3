@@ -17,14 +17,17 @@ import {
   Loader2,
   Network,
   RefreshCw,
+  Server,
+  KeyRound,
   Save,
   Sparkles,
   Table2,
   WandSparkles,
 } from 'lucide-react'
-import { classModelerApi, diagramApi } from '../../api'
-import type { ClassModelerMode, ClassModelerResult, ModelClass, ModelEnum, ModelRelationship, OllamaModels, Project } from '../../api'
+import { aiSettingsApi, classModelerApi, diagramApi } from '../../api'
+import type { ClassModelerMode, ClassModelerResult, LlmProvider, ModelClass, ModelEnum, ModelRelationship, OllamaModels, Project } from '../../api'
 import { useSession } from '../../app/core/session'
+import { useAsync } from '../../app/core/useAsync'
 import { navigate, routes } from '../../app/core/router'
 import { downloadDataUrl, downloadTextFile } from '../../shared/download'
 import { Button, Chip, Select, Tabs, TabsContent, TabsList, TabsTrigger, Textarea, cn, useFeedback } from '../../shared/ui'
@@ -149,6 +152,7 @@ export function ClassModelerPage({ projects }: Props) {
   const activeProject = projects.find((item) => item.id === projectId)
   const [text, setText] = useState(samples[0].text)
   const [engine, setEngine] = useState<Engine>('rule_based')
+  const [llmProvider, setLlmProvider] = useState<LlmProvider>('ollama')
   const [ollamaModel, setOllamaModel] = useState('')
   const [ollama, setOllama] = useState<OllamaModels | null>(null)
   const [isLoadingModels, setIsLoadingModels] = useState(false)
@@ -163,12 +167,18 @@ export function ClassModelerPage({ projects }: Props) {
   const drawioRef = useRef<DrawioEmbedHandle>(null)
   const canvasRef = useRef<ClassDiagramHandle>(null)
   const runCounter = useRef(0)
+  // The hosted engine is hidden rather than offered-then-refused when the
+  // platform ships no key (see GET /users/me/ai-settings/hosted).
+  const hosted = useAsync(() => aiSettingsApi.hosted(), [])
+  const hostedAvailable = Boolean(hosted.data?.available)
 
   const needsProject = engine !== 'rule_based' && !activeProject
   // With Ollama chosen, only an installed model can run (nothing is picked
-  // until the server has answered with its model list).
-  const usesOllama = engine === 'llm' || engine === 'compare'
+  // until the server has answered with its model list). "Compare both" always
+  // pairs the rule engine with Ollama.
+  const usesOllama = (engine === 'llm' && llmProvider === 'ollama') || engine === 'compare'
   const ollamaMissing = usesOllama && !ollamaModel
+  const hostedMissing = engine === 'ai' && !hosted.loading && !hostedAvailable
   const activeRun = runs.find((run) => run.id === activeRunId) ?? runs[0]
   const result = activeRun?.result
   const isGenerating = running.length > 0
@@ -185,7 +195,9 @@ export function ClassModelerPage({ projects }: Props) {
         text,
         mode,
         ...(activeProject ? { project_id: activeProject.id } : {}),
-        ...(mode === 'llm' ? { llm_provider: 'ollama' as const, ...(ollamaModel ? { model_name: ollamaModel } : {}) } : {}),
+        ...(mode === 'llm'
+          ? { llm_provider: llmProvider, ...(llmProvider === 'ollama' && ollamaModel ? { model_name: ollamaModel } : {}) }
+          : {}),
       })
       runCounter.current += 1
       const record: Run = { id: `run-${runCounter.current}`, number: runCounter.current, mode, createdAt: new Date(), text, result: next }
@@ -219,7 +231,12 @@ export function ClassModelerPage({ projects }: Props) {
 
   function chooseEngine(next: Engine) {
     setEngine(next)
-    if ((next === 'llm' || next === 'compare') && !ollama && !isLoadingModels) void loadOllamaModels()
+    if (((next === 'llm' && llmProvider === 'ollama') || next === 'compare') && !ollama && !isLoadingModels) void loadOllamaModels()
+  }
+
+  function chooseProvider(next: LlmProvider) {
+    setLlmProvider(next)
+    if (next === 'ollama' && !ollama && !isLoadingModels) void loadOllamaModels()
   }
 
   async function handleGenerate(event: FormEvent) {
@@ -381,6 +398,7 @@ export function ClassModelerPage({ projects }: Props) {
           <div role="radiogroup" className="grid grid-cols-1 gap-2">
             {engines.map((item) => {
               const active = engine === item.id
+              const unavailable = item.id === 'ai' && !hosted.loading && !hostedAvailable
               return (
                 <button
                   key={item.id}
@@ -405,7 +423,7 @@ export function ClassModelerPage({ projects }: Props) {
                     <span className="flex items-center gap-1.5">
                       <span className="text-[13.5px] font-bold text-fg">{item.title}</span>
                       <span className="rounded-full bg-fg/5 px-1.5 py-px text-[9.5px] font-bold uppercase tracking-[0.06em] text-fg-3">
-                        {item.badge}
+                        {unavailable ? 'Unavailable' : item.badge}
                       </span>
                     </span>
                     <span className="mt-0.5 block text-[11.5px] leading-snug text-fg-3">{item.description}</span>
@@ -414,6 +432,37 @@ export function ClassModelerPage({ projects }: Props) {
               )
             })}
           </div>
+          {engine === 'llm' ? (
+            <div className="grid grid-cols-1 gap-2.5 rounded-xl border border-border bg-surface-2 p-3">
+              <span className="text-[11px] font-bold uppercase tracking-[0.08em] text-fg-3">LLM provider</span>
+              <div className="grid grid-cols-2 gap-1 rounded-lg bg-surface-3 p-1">
+                {(
+                  [
+                    { id: 'ollama', label: 'Ollama (local)', icon: Server },
+                    { id: 'byok', label: 'My AI provider', icon: KeyRound },
+                  ] as const
+                ).map((option) => (
+                  <button
+                    key={option.id}
+                    type="button"
+                    onClick={() => chooseProvider(option.id)}
+                    className={cn(
+                      'flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-[12px] font-semibold transition',
+                      llmProvider === option.id ? 'bg-surface text-fg shadow-sm' : 'text-fg-3 hover:text-fg',
+                    )}
+                  >
+                    <option.icon className="size-3.5" />
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+              {llmProvider === 'byok' ? (
+                <p className="text-[11.5px] leading-snug text-fg-3">
+                  Uses the active provider you added and tested in Settings → AI providers (OpenAI, Claude or Gemini).
+                </p>
+              ) : null}
+            </div>
+          ) : null}
           {usesOllama ? (
             <div className="grid grid-cols-1 gap-2.5 rounded-xl border border-border bg-surface-2 p-3">
               <span className="text-[11px] font-bold uppercase tracking-[0.08em] text-fg-3">Ollama model</span>
@@ -473,7 +522,12 @@ export function ClassModelerPage({ projects }: Props) {
               </button>
             ) : null}
           </label>
-          {needsProject ? (
+          {hostedMissing ? (
+            <p className="flex gap-1.5 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-[11.5px] text-fg-2">
+              <AlertTriangle className="mt-px size-3.5 shrink-0 text-warning" />
+              AI generation is not available right now. Pick Rule-based, or an LLM engine.
+            </p>
+          ) : needsProject ? (
             <p className="flex gap-1.5 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-[11.5px] text-fg-2">
               <AlertTriangle className="mt-px size-3.5 shrink-0 text-warning" />
               Select a project first - LLM calls are logged per project.
@@ -485,7 +539,7 @@ export function ClassModelerPage({ projects }: Props) {
             type="submit"
             size="lg"
             variant={engine === 'rule_based' ? 'primary' : 'ai'}
-            disabled={isGenerating || !workspaceId || !text.trim() || needsProject || ollamaMissing}
+            disabled={isGenerating || !workspaceId || !text.trim() || needsProject || ollamaMissing || hostedMissing}
             className="mt-1 w-full"
           >
             {isGenerating ? <Loader2 className="animate-spin" /> : <WandSparkles />}
@@ -493,7 +547,9 @@ export function ClassModelerPage({ projects }: Props) {
               ? running.length > 1
                 ? 'Running both engines…'
                 : running[0] === 'llm'
-                  ? `Asking ${ollamaModel || 'Ollama'}… (local models can take a minute)`
+                  ? llmProvider === 'ollama'
+                    ? `Asking ${ollamaModel || 'Ollama'}… (local models can take a minute)`
+                    : 'Asking the LLM…'
                   : running[0] === 'ai'
                     ? 'Generating with AI…'
                     : 'Analysing…'

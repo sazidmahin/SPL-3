@@ -19,8 +19,15 @@ SRS generation is a reviewed pipeline: input → clarifications → final story 
 draw.io diagram. Accepting the last stage publishes an IEEE-style SRS document (markdown, with a traceability
 matrix) and saves the class diagram to the project; reopening and re-accepting a stage refreshes the same document.
 
-Everything is free. The platform ships no AI key: the Rule-Based engine and local Ollama need none, and users who
-want a hosted model (OpenAI, Anthropic, Gemini) add their own key under Settings → AI providers.
+Everything is free. Four engines write the pipeline, and none of them bills the user:
+
+- **Rule-Based** — deterministic NLP rules, offline and explainable.
+- **Local AI (Ollama)** — an open model on the user's own machine, no key.
+- **AI generation** — a hosted model on one platform-managed key
+  (`OPENROUTER_API_KEY`, see `backend/app/services/hosted_ai_service.py`). The engine is hidden when the key is unset,
+  and the upstream vendor and its model ids stay out of the API and the UI, which only ever say "AI generation".
+- **Your AI provider** — OpenAI, Anthropic or Gemini on the user's own key, added under Settings → AI providers and
+  encrypted at rest.
 
 ## Backend Verification
 

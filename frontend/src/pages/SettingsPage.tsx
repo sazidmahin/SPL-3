@@ -1,15 +1,19 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
-import { Building2, Loader2, Moon, Plus, ShieldCheck, Sun, User } from 'lucide-react'
-import { errorMessage, workspaceApi } from '../api'
+import { Building2, CheckCircle2, KeyRound, Loader2, Moon, Plus, ShieldCheck, Sun, User } from 'lucide-react'
+import { aiSettingsApi, errorMessage, workspaceApi } from '../api'
+import type { AiProviderSetting } from '../api'
+import { ErrorState, LoadingState } from '../app/components/PageStates'
 import { href, navigate, routes } from '../app/core/router'
 import { useSession } from '../app/core/session'
+import { useAsync } from '../app/core/useAsync'
 import { formatDate, humanize, slugify } from '../shared/format'
 import { useTheme } from '../shared/theme'
-import { Avatar, Button, Card, Chip, Field, Input, PageHeader, cn, initials, useFeedback } from '../shared/ui'
+import { Avatar, Button, Card, Chip, Field, Input, PageHeader, Select, cn, initials, useFeedback } from '../shared/ui'
 
 const TABS = [
   { id: 'profile', label: 'Profile', icon: User },
+  { id: 'ai', label: 'AI providers', icon: KeyRound },
   { id: 'workspaces', label: 'Workspaces', icon: Building2 },
 ] as const
 
@@ -17,7 +21,7 @@ export function SettingsPage({ tab }: { tab?: string }) {
   const active = TABS.some((item) => item.id === tab) ? tab : 'profile'
   return (
     <section className="grid grid-cols-1 gap-5">
-      <PageHeader title="Settings" description="Your profile and your workspaces." />
+      <PageHeader title="Settings" description="Your profile, your own AI provider keys and your workspaces." />
       <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-[13rem_minmax(0,1fr)]">
         <nav className="flex gap-1 overflow-x-auto lg:sticky lg:top-20 lg:flex-col" aria-label="Settings sections">
           {TABS.map((item) => {
@@ -41,6 +45,7 @@ export function SettingsPage({ tab }: { tab?: string }) {
         </nav>
         <div className="min-w-0">
           {active === 'profile' ? <ProfileSection /> : null}
+          {active === 'ai' ? <AiProvidersSection /> : null}
           {active === 'workspaces' ? <WorkspacesSection /> : null}
         </div>
       </div>
@@ -79,6 +84,195 @@ function ProfileSection() {
         </Button>
       </Card>
     </div>
+  )
+}
+
+function AiProvidersSection() {
+  const providers = useAsync(() => aiSettingsApi.providers(), [])
+  return (
+    <div className="grid grid-cols-1 gap-4">
+      <Card className="flex gap-3 border-accent/20 bg-accent/[0.05] p-4">
+        <KeyRound className="mt-0.5 size-5 shrink-0 text-accent" />
+        <p className="text-[13px] leading-relaxed text-fg-2">
+          SpecTwin is free. The <strong className="text-fg">Rule-Based</strong>, <strong className="text-fg">local Ollama</strong> and{' '}
+          <strong className="text-fg">AI generation</strong> engines all need no key of yours. To run a hosted model on your own account instead, add{' '}
+          <em>your own</em> API key below — it is encrypted at rest and only used for your requests. The provider marked{' '}
+          <strong className="text-fg">Active</strong> is the one the “Your AI provider” engine uses.
+        </p>
+      </Card>
+      {providers.loading && !providers.data ? (
+        <LoadingState rows={3} />
+      ) : providers.error ? (
+        <ErrorState message={providers.error} onRetry={providers.reload} />
+      ) : (
+        (providers.data ?? []).map((provider) => (
+          <ProviderCard
+            key={`${provider.provider}:${provider.credential?.updated_at ?? 'none'}`}
+            provider={provider}
+            onChanged={() => void providers.reload()}
+          />
+        ))
+      )}
+    </div>
+  )
+}
+
+function ProviderCard({ provider, onChanged }: { provider: AiProviderSetting; onChanged: () => void }) {
+  const { toast, confirm } = useFeedback()
+  const credential = provider.credential
+  const [apiKey, setApiKey] = useState('')
+  const [model, setModel] = useState(credential?.selected_model ?? provider.default_model)
+  const [models, setModels] = useState(provider.models)
+  const [busy, setBusy] = useState<string | null>(null)
+  const status = credential?.status ?? 'not configured'
+  const modelOptions = Array.from(new Set([model, ...models].filter(Boolean)))
+
+  async function run(label: string, action: () => Promise<void>) {
+    setBusy(label)
+    try {
+      await action()
+    } catch (caught) {
+      toast(`${provider.label}: ${label} failed`, { description: errorMessage(caught), tone: 'error' })
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const spinner = (label: string) => (busy === label ? <Loader2 className="animate-spin" /> : null)
+
+  return (
+    <Card className="grid grid-cols-1 gap-4 p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="flex items-center gap-2 font-display text-[15px] font-bold text-fg">
+            {provider.label}
+            {credential?.is_default ? <Chip tone="accent">Active</Chip> : null}
+          </h3>
+          <p className="mt-0.5 text-[12.5px] text-fg-2">
+            {credential?.configured ? `Key ending •••• ${credential.key_last_four}` : 'No API key saved'}
+          </p>
+        </div>
+        <Chip tone={status === 'valid' ? 'success' : status === 'invalid' ? 'danger' : 'muted'}>{humanize(status)}</Chip>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <Field label="API key" htmlFor={`key-${provider.provider}`}>
+          <Input
+            id={`key-${provider.provider}`}
+            type="password"
+            autoComplete="off"
+            value={apiKey}
+            placeholder={credential ? 'Paste a new key to replace the saved one' : 'Paste your API key'}
+            onChange={(event) => setApiKey(event.target.value)}
+          />
+        </Field>
+        <Field label="Model" htmlFor={`model-${provider.provider}`}>
+          <Select id={`model-${provider.provider}`} value={model} onChange={(event) => setModel(event.target.value)}>
+            {modelOptions.map((item) => (
+              <option key={item} value={item}>
+                {item}
+              </option>
+            ))}
+          </Select>
+        </Field>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <Button
+          size="sm"
+          disabled={busy !== null || !apiKey.trim()}
+          onClick={() =>
+            void run('Save', async () => {
+              await aiSettingsApi.save(provider.provider, { api_key: apiKey.trim(), selected_model: model, is_default: credential?.is_default ?? true })
+              setApiKey('')
+              toast(`${provider.label} key saved`, { description: 'Run “Test connection” to verify it.' })
+              onChanged()
+            })
+          }
+        >
+          {spinner('Save')} Save key
+        </Button>
+        {credential ? (
+          <>
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={busy !== null}
+              onClick={() =>
+                void run('Test', async () => {
+                  const result = await aiSettingsApi.test(provider.provider)
+                  toast(result.status === 'valid' ? `${provider.label} is connected` : `${provider.label} key is not valid`, {
+                    tone: result.status === 'valid' ? 'success' : 'error',
+                  })
+                  onChanged()
+                })
+              }
+            >
+              {spinner('Test') ?? <CheckCircle2 />} Test connection
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={busy !== null || model === credential.selected_model}
+              onClick={() =>
+                void run('Save model', async () => {
+                  await aiSettingsApi.patch(provider.provider, { selected_model: model })
+                  toast('Model updated', { description: model })
+                  onChanged()
+                })
+              }
+            >
+              {spinner('Save model')} Save model
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={busy !== null}
+              onClick={() =>
+                void run('Load models', async () => {
+                  const loaded = await aiSettingsApi.models(provider.provider)
+                  setModels(loaded)
+                  toast(`Loaded ${loaded.length} models`)
+                })
+              }
+            >
+              {spinner('Load models')} Refresh model list
+            </Button>
+            {!credential.is_default ? (
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={busy !== null}
+                onClick={() =>
+                  void run('Activate', async () => {
+                    await aiSettingsApi.patch(provider.provider, { is_default: true })
+                    toast(`${provider.label} is now your active provider`)
+                    onChanged()
+                  })
+                }
+              >
+                {spinner('Activate')} Make active
+              </Button>
+            ) : null}
+            <Button
+              size="sm"
+              variant="danger"
+              disabled={busy !== null}
+              onClick={async () => {
+                if (!(await confirm({ title: `Remove your ${provider.label} key?`, description: 'Generations using this provider will stop working until you add a key again.', confirmLabel: 'Remove key' }))) return
+                void run('Remove', async () => {
+                  await aiSettingsApi.remove(provider.provider)
+                  toast(`${provider.label} key removed`)
+                  onChanged()
+                })
+              }}
+            >
+              Remove
+            </Button>
+          </>
+        ) : null}
+      </div>
+    </Card>
   )
 }
 

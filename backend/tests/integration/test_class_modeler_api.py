@@ -227,6 +227,16 @@ def test_explicit_ollama_provider_model_choice_and_model_list(
     assert "AI generation" in hosted.json()["detail"]
     assert "openrouter" not in hosted.text.lower()
 
+    # The user's own provider key is still a choice of its own, next to the
+    # local model and the platform's hosted engine.
+    byok = client.post(
+        f"{base}/generate",
+        headers=auth_header(token),
+        json={"text": TASK, "mode": "llm", "project_id": project_id, "llm_provider": "byok"},
+    )
+    assert byok.status_code == 422
+    assert "AI Settings" in byok.json()["detail"]
+
 
 def test_ollama_models_reports_unreachable_server(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     from app.services.llm_service import LlmConfigurationError

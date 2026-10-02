@@ -25,6 +25,14 @@ HOSTED_AI_PROVIDER = "ai"
 _RETRYABLE_STATUS = {408, 429, 500, 502, 503, 504}
 
 
+class _UpstreamRouteError(Exception):
+    """An error body served with HTTP 200, carrying already-scrubbed text."""
+
+    def __init__(self, detail: str) -> None:
+        super().__init__(detail)
+        self.detail = detail
+
+
 def hosted_ai_available() -> bool:
     return bool((settings.openrouter_api_key or "").strip() and settings.openrouter_model.strip())
 
@@ -49,9 +57,7 @@ class HostedAiClient:
         self.timeout_seconds = timeout_seconds or settings.openrouter_timeout_seconds
         self.max_tokens = max_tokens or settings.openrouter_max_tokens
         # Tried in order when the primary model is rate-limited or down.
-        self.fallback_models = [
-            model for model in settings.provider_models("openrouter_fallback") if model != self.model_name
-        ]
+        self.fallback_models = [model for model in settings.openrouter_models if model != self.model_name]
 
     def validate_configuration(self) -> None:
         if not self.api_key or not self.model_name:
@@ -80,6 +86,14 @@ class HostedAiClient:
         content = str(message.get("content") or "").strip()
         if not content:
             raise LlmExecutionError("AI generation returned an empty answer. Please try again.")
+        # "length" means the answer stopped at the token budget, so JSON output is
+        # cut off mid-structure. Say so instead of letting a truncated artifact
+        # travel downstream as if the model had answered.
+        if choice.get("finish_reason") == "length":
+            raise LlmExecutionError(
+                "AI generation ran out of room before finishing its answer. "
+                "Shorten the requirement text and try again."
+            )
         usage = data.get("usage") or {}
         prompt_tokens = int(usage.get("prompt_tokens") or max(1, len(request.prompt) // 4))
         completion_tokens = int(usage.get("completion_tokens") or max(1, len(content) // 4))
@@ -98,15 +112,19 @@ class HostedAiClient:
     def _post_with_retry(self, body: dict[str, Any]) -> dict[str, Any]:
         retries_left = max(0, settings.openrouter_max_retries)
         attempt = 0
+        json_mode_dropped = False
         while True:
             try:
                 return self._post(body)
             except HTTPError as exc:
                 detail = _error_detail(exc)
-                # Not every model supports JSON mode; the prompt already asks for
-                # JSON, so drop the hint instead of failing the call.
-                if exc.code == 400 and "response_format" in body:
+                # Not every model supports JSON mode. The prompt already asks for
+                # JSON, so drop the hint and retry once - but only when the server
+                # actually complained about it, so a 400 about the model or the
+                # prompt length is not silently turned into a second doomed call.
+                if exc.code == 400 and "response_format" in body and not json_mode_dropped and _is_json_mode_error(detail):
                     body = {key: value for key, value in body.items() if key != "response_format"}
+                    json_mode_dropped = True
                     continue
                 if exc.code in {401, 402, 403}:
                     raise LlmExecutionError("AI generation is not available right now. Please try again later.") from exc
@@ -117,6 +135,14 @@ class HostedAiClient:
                 if exc.code == 429:
                     raise LlmExecutionError("AI generation is busy right now. Please try again in a minute.") from exc
                 raise LlmExecutionError(f"AI generation failed ({exc.code}): {detail}") from exc
+            except _UpstreamRouteError as exc:
+                # An error delivered with HTTP 200 (the upstream model failed
+                # mid-route) is as transient as a 502, so give it the same budget.
+                if attempt < retries_left:
+                    time.sleep(min(2**attempt, 8))
+                    attempt += 1
+                    continue
+                raise LlmExecutionError(f"AI generation failed: {exc.detail}") from exc
             except (URLError, OSError, ValueError) as exc:
                 if attempt < retries_left:
                     time.sleep(min(2**attempt, 8))
@@ -145,7 +171,7 @@ class HostedAiClient:
         if isinstance(data, dict) and data.get("error"):
             error = data["error"]
             message = error.get("message") if isinstance(error, dict) else str(error)
-            raise LlmExecutionError(f"AI generation failed: {_scrub(str(message))}")
+            raise _UpstreamRouteError(_scrub(str(message))[:300])
         return data
 
 
@@ -160,6 +186,22 @@ def _error_detail(exc: HTTPError) -> str:
     return _scrub(str(message))[:300]
 
 
+def _is_json_mode_error(detail: str) -> bool:
+    lowered = detail.lower()
+    return "response_format" in lowered or "json mode" in lowered or "json_object" in lowered
+
+
 def _scrub(message: str) -> str:
-    """Keep the vendor name out of anything a user can see."""
-    return message.replace("OpenRouter", "AI service").replace("openrouter", "ai-service")
+    """Keep the vendor out of anything a user can see.
+
+    That means the vendor's name, the platform key (upstream errors can quote the
+    offending header back) and the model ids, which name the vendor just as
+    plainly as "OpenRouter" does - the UI only ever says "AI generation".
+    """
+    scrubbed = message.replace("OpenRouter", "AI service").replace("openrouter", "ai-service")
+    key = (settings.openrouter_api_key or "").strip()
+    if key:
+        scrubbed = scrubbed.replace(key, "***")
+    for model in settings.openrouter_models:
+        scrubbed = scrubbed.replace(model, "the AI model")
+    return scrubbed

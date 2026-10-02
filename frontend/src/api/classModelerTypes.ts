@@ -64,7 +64,7 @@ export type ClassModelerResult = {
   }
 }
 
-export type LlmProvider = 'ollama' | 'ai'
+export type LlmProvider = 'ollama' | 'byok' | 'ai'
 
 export type OllamaModels = {
   reachable: boolean
