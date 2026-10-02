@@ -76,3 +76,38 @@ docker compose down -v         # also drop the Postgres + Ollama volumes
   installed in the backend image. Use **Ollama** for local inference in Docker.
 - All backend configuration comes from the compose `environment:` block; the container
   does not read `backend/.env`.
+
+## Local models on a CPU-only laptop
+
+By default the backend talks to the Ollama installed on your machine
+(`OLLAMA_BASE_URL=http://host.docker.internal:11434`), so inference runs natively on your
+CPU/GPU, not inside Docker. The Ollama pipeline is built to stay usable without a GPU:
+
+- **Fixed context window** (`OLLAMA_NUM_CTX=8192`). Ollama reloads the model whenever
+  `num_ctx` changes, so every call uses the same window.
+- **The model stays loaded** (`OLLAMA_KEEP_ALIVE=30m`), and creating an Ollama run loads it in
+  the background while you review the input.
+- **Compact prompts.** Each stage sends only what it needs, for example the story sentences for
+  requirements and the requirement statements for classes. It never sends the whole previous stage.
+- **Long input is chunked** (`OLLAMA_CHUNK_TOKENS=2000`). Chunk answers are merged and deduplicated.
+  Nothing is cut off silently. Ollama drops the *start* of an over-long prompt, which is where the
+  instructions are.
+- **Bounded, schema-constrained answers.** Each task has its own output budget, and Ollama is given
+  a JSON schema, so the answer is valid JSON of the right shape.
+  - If the answer is still not JSON, it is repaired.
+  - If it cannot be repaired, the model is asked once to reformat its own answer.
+  - Failing that, the stage falls back to extracting lines from the text.
+  - An answer cut off at the output limit has its chunk split in half and retried.
+- **One call for all clarification answers**, instead of one call per question.
+
+Tuning:
+
+| Variable              | Default | When to change                                                       |
+| --------------------- | ------- | -------------------------------------------------------------------- |
+| `OLLAMA_MODEL`        | `llama3.2:1b` | `qwen2.5:1.5b` / `qwen2.5:3b` follow JSON better; 3B needs ~4 GB RAM |
+| `OLLAMA_NUM_CTX`      | `8192`  | Lower to `4096` on 8 GB RAM machines (chunks get smaller)           |
+| `OLLAMA_CHUNK_TOKENS` | `2000`  | Lower for faster, smaller calls; higher for fewer calls              |
+| `OLLAMA_NUM_THREAD`   | empty   | Set to your physical core count if Ollama picks badly                |
+| `OLLAMA_KEEP_ALIVE`   | `30m`   | How long the model stays in memory between stages                    |
+
+Check what is loaded, and whether it runs on CPU or GPU, with `ollama ps`.

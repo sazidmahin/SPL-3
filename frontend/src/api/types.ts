@@ -63,7 +63,7 @@ export type Project = {
   updated_at: string
 }
 
-export type GenerationMode = 'rule_based' | 'srsgen' | 'byok' | 'ollama'
+export type GenerationMode = 'rule_based' | 'srsgen' | 'byok' | 'ollama' | 'ai'
 export type PipelineStage = 'input' | 'clarifications' | 'final-story' | 'requirements' | 'class-model' | 'xml'
 
 export type PipelineStageRevision = {

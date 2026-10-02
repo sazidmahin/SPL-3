@@ -18,9 +18,9 @@ router = APIRouter(prefix="/workspaces/{workspace_id}/class-modeler", tags=["cla
 
 class ClassModelerRequest(BaseModel):
     text: str = Field(min_length=1, max_length=20000)
-    mode: Literal["rule_based", "llm"] = "rule_based"
+    mode: Literal["rule_based", "llm", "ai"] = "rule_based"
     project_id: UUID | None = None
-    llm_provider: Literal["ollama", "byok"] | None = None
+    llm_provider: Literal["ollama", "byok", "ai"] | None = None
     model_name: str | None = Field(default=None, max_length=128)
 
 
@@ -45,7 +45,7 @@ def generate_class_model_route(
     except ProjectNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except LlmExecutionError as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"AI provider call failed: {exc}") from exc
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Generation call failed: {exc}") from exc
     except (ClassModelerError, AiSettingsError, LlmConfigurationError) as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
 

@@ -19,6 +19,7 @@ from app.services.ai_settings_service import (
     test_ai_credential,
     update_ai_credential,
 )
+from app.services.hosted_ai_service import hosted_ai_available
 
 router = APIRouter(prefix="/users/me/ai-settings", tags=["ai-settings"])
 
@@ -27,6 +28,13 @@ def _raise_settings_error(exc: Exception) -> HTTPException:
     if isinstance(exc, AiCredentialNotFoundError):
         return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
     return HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc))
+
+
+@router.get("/hosted")
+def get_hosted_ai_status(user: User = Depends(get_current_user)) -> dict[str, bool]:
+    """Whether the platform's own AI generation (no user key needed) is switched on."""
+    del user
+    return {"available": hosted_ai_available()}
 
 
 @router.get("/providers", response_model=list[AiProviderSettingRead])
