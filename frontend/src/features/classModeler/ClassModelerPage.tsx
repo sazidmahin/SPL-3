@@ -19,6 +19,9 @@ import {
   RefreshCw,
   Server,
   KeyRound,
+  Pencil,
+  Eye,
+  BrainCircuit,
   Save,
   Sparkles,
   Table2,
@@ -34,6 +37,10 @@ import { Button, Chip, Select, Tabs, TabsContent, TabsList, TabsTrigger, Textare
 import { DrawioEmbed, type DrawioEmbedHandle } from '../diagram/DrawioEmbed'
 import { Breakdown } from './Breakdown'
 import { CompareView } from './CompareView'
+import { buildDrawioXml } from '../diagram/drawioXml'
+import { classModelSignature, parseDrawioClassModel } from '../diagram/drawioModel'
+import { ClassModelEditor } from './ClassModelEditor'
+import type { ClassModel } from './modelEdits'
 import { ClassDiagramCanvas } from './diagram/ClassDiagramCanvas'
 import type { ClassDiagramHandle } from './diagram/ClassDiagramCanvas'
 import { methodSignature } from './diagram/layout'
@@ -47,7 +54,17 @@ type Props = {
 type Engine = ClassModelerMode | 'compare'
 
 /** One generation, kept for the session so any two runs can be compared. */
-type Run = { id: string; number: number; mode: ClassModelerMode; createdAt: Date; text: string; result: ClassModelerResult }
+type Run = {
+  id: string
+  number: number
+  mode: ClassModelerMode
+  createdAt: Date
+  text: string
+  result: ClassModelerResult
+  /** What the engine produced, kept so an edit can be taught back to it. */
+  generated: ClassModelerResult['model']
+  edited: boolean
+}
 
 const MAX_RUNS = 12
 
@@ -163,6 +180,8 @@ export function ClassModelerPage({ projects }: Props) {
   const [tab, setTab] = useState('diagram')
   const [running, setRunning] = useState<ClassModelerMode[]>([])
   const [isSaving, setIsSaving] = useState(false)
+  const [isRemembering, setIsRemembering] = useState(false)
+  const [editing, setEditing] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
   const drawioRef = useRef<DrawioEmbedHandle>(null)
   const canvasRef = useRef<ClassDiagramHandle>(null)
@@ -200,7 +219,16 @@ export function ClassModelerPage({ projects }: Props) {
           : {}),
       })
       runCounter.current += 1
-      const record: Run = { id: `run-${runCounter.current}`, number: runCounter.current, mode, createdAt: new Date(), text, result: next }
+      const record: Run = {
+        id: `run-${runCounter.current}`,
+        number: runCounter.current,
+        mode,
+        createdAt: new Date(),
+        text,
+        result: next,
+        generated: next.model,
+        edited: false,
+      }
       setRuns((current) => [record, ...current].slice(0, MAX_RUNS))
       return record
     } catch (caught) {
@@ -226,6 +254,71 @@ export function ClassModelerPage({ projects }: Props) {
       setOllama({ reachable: false, installed: [], suggested: [], defaultModel: null, error: errorMessage(caught, 'Could not check Ollama') })
     } finally {
       setIsLoadingModels(false)
+    }
+  }
+
+  /** Replace the active run's model and keep the draw.io XML in step.
+   *
+   * `xml` is given only when the change came *from* draw.io: the editor already
+   * holds that exact text, so storing it verbatim leaves DrawioEmbed's guard
+   * satisfied and the user's layout untouched. A change from the Classes editor
+   * has no XML yet, so one is generated - which does reload the editor, because
+   * the structure really did change.
+   */
+  function applyModel(next: ClassModel, xml?: string) {
+    setRuns((current) =>
+      current.map((item) =>
+        item.id !== (activeRun?.id ?? '')
+          ? item
+          : {
+              ...item,
+              edited: true,
+              result: { ...item.result, model: next, drawioXml: xml ?? buildDrawioXml(next) },
+            },
+      ),
+    )
+  }
+
+  /** draw.io autosaves on every change, and most changes are not model changes.
+   *
+   * Dragging a box is still worth keeping - it is the user's arrangement, and it
+   * would otherwise be lost the next time the editor remounts - so the XML is
+   * always stored. Only a change to the model itself re-reads the model and
+   * counts as an edit, so moving a box never offers to teach the engine a "fix".
+   */
+  function applyDrawioEdit(xml: string) {
+    if (!activeRun) return
+    const parsed = parseDrawioClassModel(xml)
+    if (parsed && classModelSignature(parsed.model) !== classModelSignature(activeRun.result.model)) {
+      applyModel(parsed.model, xml)
+      return
+    }
+    setRuns((current) =>
+      current.map((item) => (item.id === activeRun.id ? { ...item, result: { ...item.result, drawioXml: xml } } : item)),
+    )
+  }
+
+  async function rememberFix() {
+    if (!activeRun || !workspaceId || !activeProject) return
+    setIsRemembering(true)
+    try {
+      const { remembered } = await classModelerApi.rememberCorrection(workspaceId, {
+        text: activeRun.text,
+        project_id: activeProject.id,
+        generation_mode: activeRun.result.provider === 'ai' ? 'ai' : activeRun.result.provider === 'ollama' ? 'ollama' : 'byok',
+        wrong_model: activeRun.generated,
+        corrected_model: activeRun.result.model,
+      })
+      toast(
+        remembered ? 'Fix remembered' : 'Nothing to remember',
+        remembered
+          ? { description: 'The next model generated from this text will be shown this correction.' }
+          : { description: 'Correction memory is switched off on this server, so nothing was stored.', tone: 'error' },
+      )
+    } catch (caught) {
+      toast('Could not save the fix', { description: errorMessage(caught, 'Request failed'), tone: 'error' })
+    } finally {
+      setIsRemembering(false)
     }
   }
 
@@ -682,22 +775,52 @@ export function ClassModelerPage({ projects }: Props) {
               <Breakdown result={result} />
             </TabsContent>
 
-            <TabsContent value="classes" className="grid grid-cols-1 gap-6">
-              <ClassCards classes={result.model.classes} enums={result.model.enums} relationships={result.model.relationships} />
-              <RelationshipList relationships={result.model.relationships} classes={result.model.classes} />
+            <TabsContent value="classes" className="grid grid-cols-1 gap-5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-[12px] text-fg-3">
+                  {editing
+                    ? 'Changes here update the diagram and the draw.io view as you make them.'
+                    : 'The model behind the diagram. Switch to editing to add attributes, methods or relationships.'}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {activeRun?.edited && activeRun.mode !== 'rule_based' ? (
+                    <Button variant="secondary" size="sm" onClick={() => void rememberFix()} disabled={isRemembering || !activeProject}>
+                      {isRemembering ? <Loader2 className="animate-spin" /> : <BrainCircuit />} Teach the engine this fix
+                    </Button>
+                  ) : null}
+                  <Button variant={editing ? 'primary' : 'secondary'} size="sm" onClick={() => setEditing((current) => !current)}>
+                    {editing ? <Eye /> : <Pencil />} {editing ? 'Done editing' : 'Edit model'}
+                  </Button>
+                </div>
+              </div>
+              {editing ? (
+                <ClassModelEditor model={result.model} onChange={applyModel} />
+              ) : (
+                <>
+                  <ClassCards classes={result.model.classes} enums={result.model.enums} relationships={result.model.relationships} />
+                  <RelationshipList relationships={result.model.relationships} classes={result.model.classes} />
+                </>
+              )}
             </TabsContent>
 
             <TabsContent value="drawio" className="grid grid-cols-1 gap-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="text-[12px] text-fg-3">
-                  The same model as a draw.io diagram - download it and keep editing in diagrams.net. Needs an internet connection to preview.
+                  The same model, editable as a diagram. Adding or renaming a class here updates the Classes tab and the
+                  interactive diagram too. Needs an internet connection to preview.
                 </p>
                 <Button variant="secondary" size="sm" onClick={handleDrawioPng}>
                   <ImageDown /> PNG from draw.io
                 </Button>
               </div>
               {tab === 'drawio' && result.validation.valid ? (
-                <DrawioEmbed ref={drawioRef} xml={result.drawioXml} title="Generated class diagram" className="h-[36rem]" />
+                <DrawioEmbed
+                  ref={drawioRef}
+                  xml={result.drawioXml}
+                  title="Generated class diagram"
+                  className="h-[36rem]"
+                  onChange={applyDrawioEdit}
+                />
               ) : null}
             </TabsContent>
 

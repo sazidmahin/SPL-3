@@ -111,6 +111,8 @@ services:
       RAG_ENABLED: ${RAG_ENABLED:-false}
       RAG_TOP_K: ${RAG_TOP_K:-2}
       RAG_MIN_SIMILARITY: ${RAG_MIN_SIMILARITY:-0.55}
+      # auto = Ollama when it answers, otherwise the built-in lexical embedder.
+      RAG_EMBEDDER: ${RAG_EMBEDDER:-auto}
       EMAIL_DELIVERY_MODE: ${EMAIL_DELIVERY_MODE:-console}
       SUPER_ADMIN_EMAIL: ${SUPER_ADMIN_EMAIL:-}
       SUPER_ADMIN_PASSWORD: ${SUPER_ADMIN_PASSWORD:-}
