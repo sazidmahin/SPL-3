@@ -5,6 +5,7 @@ returns ``(markdown, content_json)``. It never invents content — every line co
 stage the user reviewed and approved.
 """
 
+import re
 from datetime import datetime
 from typing import Any
 
@@ -120,6 +121,59 @@ def _method_line(method: Any) -> str:
     return f"{name}({params})" + (f": {return_type}" if return_type and return_type != "void" else "")
 
 
+def _describe_multiplicity(value: Any) -> str | None:
+    """"0..5" -> "up to 5", "1..*" -> "one or more". Mirrors the wording the
+    Classes tab uses in the UI (frontend relationshipGuide.describeMultiplicity),
+    so the document reads the way the screen the user approved it on reads."""
+    text = _text(value)
+    if not text:
+        return None
+    fixed = {"1": "exactly one", "0..1": "at most one", "*": "any number of", "0..*": "any number of", "1..*": "one or more"}
+    if text in fixed:
+        return fixed[text]
+    for pattern, template in (
+        (r"^0\.\.(\d+)$", "up to {0}"),
+        (r"^(\d+)\.\.\*$", "at least {0}"),
+        (r"^(\d+)\.\.(\d+)$", "between {0} and {1}"),
+        (r"^(\d+)$", "exactly {0}"),
+    ):
+        match = re.match(pattern, text)
+        if match:
+            return template.format(*match.groups())
+    return text
+
+
+def _plural(name: str, count: str | None) -> str:
+    if not count or count in {"exactly one", "at most one"} or name.endswith("s"):
+        return name
+    return f"{name}s"
+
+
+def _relationship_sentence(relationship: dict[str, Any], source: str, target: str, by_name: dict[str, dict[str, Any]]) -> str:
+    """One plain-English sentence for an edge, as the Classes tab explains it."""
+    kind = _text(relationship.get("type"))
+    target_class = by_name.get(target, {})
+    if kind == "inheritance":
+        return f"{source} is a {target} and inherits its attributes and operations."
+    if kind == "realization":
+        methods = [line for line in (_method_line(m) for m in target_class.get("methods") or []) if line]
+        promise = f" and must provide {', '.join(methods)}" if methods else ""
+        return f"{source} implements the {target} contract{promise}."
+    forward = _describe_multiplicity(relationship.get("targetMultiplicity"))
+    backward = _describe_multiplicity(relationship.get("sourceMultiplicity"))
+    verb = {"composition": "owns", "aggregation": "has", "dependency": "uses"}.get(kind) or _text(relationship.get("label")) or "is linked to"
+    sentence = f"Each {source} {verb} {forward + ' ' if forward else ''}{_plural(target, forward)}."
+    if kind == "composition":
+        sentence += f" A {target} cannot exist without its {source}."
+    elif kind == "aggregation":
+        sentence += f" A {target} can also exist on its own."
+    elif backward:
+        sentence += f" Each {target} belongs to {backward} {_plural(source, backward)}."
+    if relationship.get("multiplicityAssumed"):
+        sentence += " (The count was not stated in the text, so it is assumed.)"
+    return sentence
+
+
 def build_srs_document(
     *,
     title: str,
@@ -142,8 +196,10 @@ def build_srs_document(
     non_functional = [item for item in requirements if item.get("requirementType") == "non_functional"]
     classes = _enabled(class_model.get("classes"))
     relationships = _enabled(class_model.get("relationships"))
+    enums = _enabled(class_model.get("enums"))
     stories = [item for item in final_story.get("atomicStorySections", []) if isinstance(item, dict)]
     class_names = {str(item.get("id")): _text(item.get("name")) for item in classes}
+    classes_by_name = {_text(item.get("name")): item for item in classes}
 
     # An "actor" that only ever *has* things (e.g. "Each book has a title") is a data entity, not a user class.
     acting = [
@@ -259,6 +315,21 @@ def build_srs_document(
             methods = [line for line in (_method_line(m) for m in item.get("methods") or []) if line]
             lines.append("- **Attributes:** " + (", ".join(f"`{a}`" for a in attributes) if attributes else "none"))
             lines.append("- **Operations:** " + (", ".join(f"`{m}`" for m in methods) if methods else "none"))
+            # The generalisation lines the Classes tab prints under the class name.
+            class_id = str(item.get("id"))
+            for label, kinds, own_side, other_side in (
+                ("Inherits from", {"inheritance"}, "sourceClassId", "targetClassId"),
+                ("Implements", {"realization"}, "sourceClassId", "targetClassId"),
+                ("Specialised by", {"inheritance", "realization"}, "targetClassId", "sourceClassId"),
+            ):
+                related = [
+                    class_names.get(str(rel.get(other_side)), "")
+                    for rel in relationships
+                    if _text(rel.get("type")) in kinds and str(rel.get(own_side)) == class_id
+                ]
+                related = sorted({name for name in related if name})
+                if related:
+                    lines.append(f"- **{label}:** " + ", ".join(related))
             sources = item.get("sourceRequirementIds") or []
             if sources:
                 lines.append("- **Traces to:** " + ", ".join(str(source) for source in sources))
@@ -270,7 +341,7 @@ def build_srs_document(
     if relationships:
         lines.extend(
             _table(
-                ["Source", "Relationship", "Target", "Multiplicity", "Label"],
+                ["Source", "Relationship", "Target", "Multiplicity", "Label", "In plain words"],
                 [
                     [
                         class_names.get(str(item.get("sourceClassId")), item.get("sourceClassId")),
@@ -278,6 +349,12 @@ def build_srs_document(
                         class_names.get(str(item.get("targetClassId")), item.get("targetClassId")),
                         f"{_text(item.get('sourceMultiplicity')) or '—'} → {_text(item.get('targetMultiplicity')) or '—'}",
                         item.get("label"),
+                        _relationship_sentence(
+                            item,
+                            class_names.get(str(item.get("sourceClassId")), ""),
+                            class_names.get(str(item.get("targetClassId")), ""),
+                            classes_by_name,
+                        ),
                     ]
                     for item in relationships
                 ],
@@ -285,6 +362,32 @@ def build_srs_document(
         )
     else:
         lines.append("No relationships were modelled.")
+
+    if enums:
+        lines.extend(["", "### 4.3 Enumerations", ""])
+        lines.extend(
+            _table(
+                ["Enumeration", "Allowed values", "Used by"],
+                [
+                    [
+                        _text(item.get("name")),
+                        ", ".join(f"`{_text(literal)}`" for literal in item.get("literals") or []),
+                        ", ".join(
+                            sorted(
+                                {
+                                    _text(cls.get("name"))
+                                    for cls in classes
+                                    for attribute in cls.get("attributes") or []
+                                    if isinstance(attribute, dict) and _text(attribute.get("type")) == _text(item.get("name"))
+                                }
+                            )
+                        )
+                        or _text(item.get("owner")),
+                    ]
+                    for item in enums
+                ],
+            )
+        )
 
     trace_rows: list[list[Any]] = []
     for index, item in enumerate([*functional, *non_functional]):
@@ -313,6 +416,10 @@ def build_srs_document(
         "provider": provider,
         "modelName": model_name,
         "actors": actors,
+        "enums": [
+            {"name": _text(item.get("name")), "literals": [_text(literal) for literal in item.get("literals") or []]}
+            for item in enums
+        ],
         "stories": [_text(item.get("normalizedSentence") or item.get("sourceSentence")) for item in stories],
         "clarifications": [{"question": row[0], "resolution": row[1]} for row in clarification_rows],
         "requirements": [
