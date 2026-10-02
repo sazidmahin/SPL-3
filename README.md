@@ -22,6 +22,19 @@ Normal product APIs remain workspace-scoped through `workspace_id` and workspace
 SRS generation is a reviewed pipeline: input → clarifications → final story → requirements → class model →
 draw.io diagram. Accepting the last stage publishes an IEEE-style SRS document (markdown, with a traceability
 matrix) and saves the class diagram to the project; reopening and re-accepting a stage refreshes the same document.
+The published document's Domain Model section carries what the Class Modeler's Classes tab shows: each class with
+its attributes, operations and what it inherits or implements, every relationship written out in plain words, and
+the enumerations.
+
+A class model has one representation and three editors. The Classes tab edits it as structured fields, the draw.io
+tab edits it as a diagram, and the interactive canvas draws it; a change in either editor is read back into the
+model (`frontend/src/features/diagram/drawioModel.ts` and `drawioXml.ts` convert both ways), so all three stay in
+step rather than drifting apart.
+
+When correction memory is on (`RAG_ENABLED`), a fix the user makes to anything an AI engine produced — a pipeline
+stage or a class model — is stored with an embedding of the input it came from, and the most similar past fixes are
+fed back into the prompt next time. It applies to every model-authored engine, not just the local one, and falls
+back to a built-in lexical embedder when no Ollama is installed to embed with.
 
 Everything is free. Four engines write the pipeline, and none of them bills the user:
 

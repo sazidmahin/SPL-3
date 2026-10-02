@@ -823,3 +823,85 @@ def test_hosted_ai_mode_writes_a_stage_over_its_own_http_layer(
     # Nothing about the vendor reaches the workspace.
     assert run["model_name"] is None
     assert "vendor/model-a" not in json.dumps(run)
+
+
+def test_hosted_ai_runs_also_learn_from_corrections_without_any_local_model(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The learning loop used to be Ollama-only, in both senses: only ollama runs
+    captured corrections, and the only embedder was Ollama's. A user on the
+    hosted engine installs nothing, so neither held - they got no memory at all.
+    """
+    from app.core.config import settings
+    from app.services import rag_service
+    from app.services.hosted_ai_service import HostedAiClient
+
+    monkeypatch.setattr(settings, "rag_enabled", True)
+    monkeypatch.setattr(settings, "rag_embedder", "auto")
+    monkeypatch.setattr(settings, "openrouter_api_key", "platform-key")
+    monkeypatch.setattr(settings, "openrouter_model", "vendor/model-a")
+    # No Ollama anywhere, which is the whole point of the hosted engine.
+    monkeypatch.setattr(
+        OllamaClient, "embed", lambda self, text, model=None: (_ for _ in ()).throw(RuntimeError("no ollama here"))
+    )
+    monkeypatch.setattr(rag_service, "_vector_store", rag_service.InMemoryVectorStore())
+
+    prompts: list[str] = []
+    draft = {
+        "originalText": "x",
+        "normalizedSentences": [],
+        "atomicStorySections": [{"id": "s1", "normalizedSentence": "Original bad content."}],
+        "appliedClarificationAnswers": [],
+        "unresolvedFields": [],
+        "warnings": [],
+        "extractionMetadata": {},
+    }
+
+    def fake_generate(self: HostedAiClient, request):
+        prompts.append(request.prompt)
+        content = json.dumps(
+            {"facts": [], "sentences": [], "clarificationQuestions": []}
+            if request.purpose == "pipeline_clarifications"
+            else draft
+        )
+        return LlmResponse(content=content, response_payload={"content": content}, prompt_tokens=1, completion_tokens=1)
+
+    monkeypatch.setattr(HostedAiClient, "generate", fake_generate)
+
+    token = register(client, "hosted-rag@example.com")
+    workspace_id, _ = setup_project(client, token)
+    raw_text = "A customer can place an order for several products."
+
+    def run_to_final_story(name: str) -> tuple[str, dict]:
+        project = client.post(
+            f"/api/v1/workspaces/{workspace_id}/projects", headers=auth_header(token), json={"name": name, "description": None}
+        )
+        assert project.status_code == 201, project.text
+        base_url = pipeline_url(workspace_id, project.json()["id"])
+        created = client.post(
+            base_url, headers=auth_header(token), json={"title": name, "raw_text": raw_text, "generation_mode": "ai"}
+        )
+        assert created.status_code == 201, created.text
+        run = approve_and_proceed(client, token, base_url, created.json())  # -> clarifications
+        run = approve_and_proceed(client, token, base_url, run)  # -> final-story
+        assert run["current_stage"] == "final-story"
+        return base_url, run
+
+    # --- First run: nothing has been corrected yet ---
+    base_url, run = run_to_final_story("Hosted RAG A")
+    assert prompts and '"pastCorrections"' not in prompts[-1]
+
+    stage = next(item for item in run["stages"] if item["stage_name"] == "final-story")
+    corrected = {**draft, "atomicStorySections": [{"id": "s1", "normalizedSentence": "Corrected content."}]}
+    saved = client.post(
+        f"{base_url}/{run['id']}/stages/final-story/revisions",
+        headers=auth_header(token),
+        json={"payload": corrected, "expected_version": stage["version_number"]},
+    )
+    assert saved.status_code == 200, saved.text
+
+    # --- Second run, same input: the fix comes back as context ---
+    run_to_final_story("Hosted RAG B")
+    assert '"pastCorrections"' in prompts[-1]
+    assert "Original bad content." in prompts[-1]
+    assert "Corrected content." in prompts[-1]

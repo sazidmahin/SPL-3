@@ -180,6 +180,18 @@ export const classModelerApi = {
     payload: { text: string; mode: ClassModelerMode; project_id?: string; llm_provider?: LlmProvider; model_name?: string },
   ) => request<ClassModelerResult>(`${ws(workspaceId)}/class-modeler/generate`, { method: 'POST', body: payload }),
   ollamaModels: (workspaceId: string) => request<OllamaModels>(`${ws(workspaceId)}/class-modeler/ollama-models`),
+  /** Remember a model the user fixed, so the same text stops producing the same
+   * mistake. `remembered` is false when nothing was stored. */
+  rememberCorrection: (
+    workspaceId: string,
+    payload: {
+      text: string
+      project_id: string
+      generation_mode: string
+      wrong_model: ClassModelerResult['model']
+      corrected_model: ClassModelerResult['model']
+    },
+  ) => request<{ remembered: boolean }>(`${ws(workspaceId)}/class-modeler/corrections`, { method: 'POST', body: payload }),
 }
 
 const aiBase = '/users/me/ai-settings'

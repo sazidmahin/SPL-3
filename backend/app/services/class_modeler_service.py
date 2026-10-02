@@ -35,6 +35,7 @@ from app.services.ai_settings_service import (
     mark_credential_used,
 )
 from app.services.llm_json import parse_json_response as _parse_json_response
+from app.services.rag_service import LEARNING_MODES, capture_model_correction, retrieve_model_corrections
 from app.services.hosted_ai_service import HostedAiClient
 from app.services.llm_service import LlmClient, LlmConfigurationError, execute_llm_call, get_or_create_prompt_template
 from app.services.ollama_service import OllamaClient, ollama_models
@@ -49,6 +50,8 @@ LLM_PROVIDERS = {"ollama", "byok", "ai"}
 # _generate_with_ollama), so each answer stays well inside this on a CPU laptop.
 OLLAMA_NUM_PREDICT = 2048
 MAX_INPUT_CHARS = 20000
+# Prompt budget for one remembered correction, per side.
+_CORRECTION_CHARS = 1200
 CARDINALITY_TYPES = {"association", "aggregation", "composition"}
 
 LLM_CONTRACT = (
@@ -133,11 +136,16 @@ def generate_class_model_from_text(
         name="class_modeler_llm",
         purpose="class_modeler",
         template_text=(
-            LLM_INSTRUCTION + " {contract}\n\nREQUIREMENT_TEXT_START\n{requirements}\nREQUIREMENT_TEXT_END"
+            LLM_INSTRUCTION + " {contract}{corrections}\n\nREQUIREMENT_TEXT_START\n{requirements}\nREQUIREMENT_TEXT_END"
         ),
     )
+    # Models the user already fixed for text like this one, so the same mistake
+    # is not made twice (app/services/rag_service.py).
+    corrections = _corrections_note(
+        db, workspace_id=membership.workspace_id, generation_mode=_engine_mode(client, llm_provider), requirement_text=cleaned
+    )
     if is_ollama:
-        call, payload = _generate_with_ollama(db, membership, project_id, template, client, cleaned)
+        call, payload = _generate_with_ollama(db, membership, project_id, template, client, cleaned, corrections)
     else:
         call = execute_llm_call(
             db,
@@ -145,7 +153,7 @@ def generate_class_model_from_text(
             project_id=project_id,
             pipeline_run_id=None,
             template=template,
-            variables={"contract": LLM_CONTRACT, "requirements": cleaned},
+            variables={"contract": LLM_CONTRACT, "requirements": cleaned, "corrections": corrections},
             client=client,
             response_format="json",
         )
@@ -265,12 +273,13 @@ def _generate_with_ollama(
     template: Any,
     client: OllamaClient,
     text: str,
+    corrections: str = "",
 ) -> tuple[Any, dict[str, Any] | None]:
     """Long text is split into chunks that fit the model's fixed context window
     (Ollama silently drops the *start* of an oversized prompt - the instructions),
     each answer is schema-constrained, and the chunk answers are merged. A chunk
     whose answer is cut off by the output limit is split in half and retried."""
-    overhead = estimate_tokens(LLM_INSTRUCTION + OLLAMA_CONTRACT) + 100
+    overhead = estimate_tokens(LLM_INSTRUCTION + OLLAMA_CONTRACT + corrections) + 100
     chunks = split_text(text, client.input_token_budget(OLLAMA_NUM_PREDICT, overhead_tokens=overhead))
     payloads: list[dict[str, Any]] = []
     last_call: Any = None
@@ -283,7 +292,7 @@ def _generate_with_ollama(
             project_id=project_id,
             pipeline_run_id=None,
             template=template,
-            variables={"contract": OLLAMA_CONTRACT, "requirements": chunk},
+            variables={"contract": OLLAMA_CONTRACT, "requirements": chunk, "corrections": corrections},
             client=client,
             response_format="json",
             json_schema=OLLAMA_SCHEMA,
@@ -312,6 +321,106 @@ def _generate_with_ollama(
     if not payloads:
         return last_call, None
     return last_call, payloads[0] if len(payloads) == 1 else _merge_chunk_payloads(payloads)
+
+
+
+def _engine_mode(client: LlmClient, llm_provider: str | None) -> str:
+    """The generation mode a correction is filed under: the engine that actually
+    ran, not the request's "llm"/"ai" wording, so it lines up with the pipeline's
+    modes in rag_service.LEARNING_MODES."""
+    if isinstance(client, HostedAiClient):
+        return "ai"
+    if isinstance(client, OllamaClient):
+        return "ollama"
+    del llm_provider
+    return "byok"
+
+
+def _corrections_note(db: Session, *, workspace_id: UUID, generation_mode: str, requirement_text: str) -> str:
+    """Past fixes for similar text, as a prompt fragment. Empty when there are
+    none, so an unused correction memory costs the prompt nothing."""
+    matches = retrieve_model_corrections(
+        db, workspace_id=workspace_id, generation_mode=generation_mode, requirement_text=requirement_text
+    )
+    if not matches:
+        return ""
+    examples = []
+    for match in matches[:2]:
+        wrong = json.dumps(_correction_summary(match.wrong_payload), ensure_ascii=False)[:_CORRECTION_CHARS]
+        right = json.dumps(_correction_summary(match.corrected_payload), ensure_ascii=False)[:_CORRECTION_CHARS]
+        examples.append(f'{{"youIncorrectlyProduced": {wrong}, "theCorrectAnswerWas": {right}}}')
+    return (
+        " On text like this you previously produced a model the user had to fix. Do not repeat these mistakes: ["
+        + ", ".join(examples)
+        + "]."
+    )
+
+
+def _correction_summary(model: dict[str, Any]) -> dict[str, Any]:
+    """Just the shape of a model - names, members and edges - without the ids and
+    layout noise that would spend the prompt budget without teaching anything."""
+    classes = model.get("classes") if isinstance(model, dict) else None
+    relationships = model.get("relationships") if isinstance(model, dict) else None
+    enums = model.get("enums") if isinstance(model, dict) else None
+    return {
+        "classes": [
+            {
+                "name": cls.get("name"),
+                "stereotype": cls.get("stereotype"),
+                "attributes": [f"{a.get('name')}: {a.get('type')}" for a in cls.get("attributes") or [] if isinstance(a, dict)],
+                "methods": [m.get("name") for m in cls.get("methods") or [] if isinstance(m, dict)],
+            }
+            for cls in classes or []
+            if isinstance(cls, dict)
+        ],
+        "relationships": [
+            {
+                "from": rel.get("source"),
+                "to": rel.get("target"),
+                "type": rel.get("type"),
+                "label": rel.get("label"),
+            }
+            for rel in relationships or []
+            if isinstance(rel, dict)
+        ],
+        "enums": [{"name": item.get("name"), "literals": item.get("literals")} for item in enums or [] if isinstance(item, dict)],
+    }
+
+
+def capture_class_model_correction(
+    db: Session,
+    *,
+    membership: WorkspaceMember,
+    text: str,
+    project_id: UUID,
+    generation_mode: str,
+    wrong_model: dict[str, Any],
+    corrected_model: dict[str, Any],
+) -> bool:
+    """Remember that the user fixed a generated class model for this text.
+
+    Returns whether it was stored, so the caller can say so honestly: correction
+    memory is off by default (RAG_ENABLED) and the rule engine never learns.
+    """
+    require_workspace_role(membership, allowed_roles=CLASS_MODELER_ROLES)
+    cleaned = (text or "").strip()
+    if not cleaned:
+        raise ClassModelerError("The requirement text the model was generated from is required.")
+    if len(cleaned) > MAX_INPUT_CHARS:
+        raise ClassModelerError(f"Requirement text is limited to {MAX_INPUT_CHARS} characters.")
+    mode = (generation_mode or "").strip().lower()
+    if mode not in LEARNING_MODES:
+        raise ClassModelerError("Only a model an AI engine generated can be corrected.")
+    get_active_project(db, workspace_id=membership.workspace_id, project_id=project_id)
+    return capture_model_correction(
+        db,
+        workspace_id=membership.workspace_id,
+        project_id=project_id,
+        generation_mode=mode,
+        requirement_text=cleaned,
+        wrong_model=_correction_summary(wrong_model),
+        corrected_model=_correction_summary(corrected_model),
+    )
 
 
 def _ollama_client(model_name: str | None) -> OllamaClient:
