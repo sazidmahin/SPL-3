@@ -80,15 +80,32 @@ function parseHeader(value: string): { name: string; stereotype: string } {
   return { name: text.slice(match[0].length).trim(), stereotype: (match[1] ?? match[2] ?? '').toLowerCase() }
 }
 
+/** Split a parameter list on the commas that separate parameters, not the ones
+ * inside a generic type - `Map<String, Int> q` is one parameter, not two. */
+function splitParameters(raw: string): string[] {
+  const parts: string[] = []
+  let depth = 0
+  let current = ''
+  for (const character of raw) {
+    if (character === '<' || character === '(' || character === '[') depth += 1
+    else if (character === '>' || character === ')' || character === ']') depth = Math.max(0, depth - 1)
+    if (character === ',' && depth === 0) {
+      parts.push(current)
+      current = ''
+      continue
+    }
+    current += character
+  }
+  parts.push(current)
+  return parts.map((part) => part.trim()).filter(Boolean)
+}
+
 function parseParameters(raw: string): ModelParameter[] {
-  return raw
-    .split(',')
-    .map((part) => part.trim())
-    .filter(Boolean)
-    .map((part) => {
-      const [name, ...rest] = part.split(':')
-      return { name: (name ?? part).trim(), type: rest.join(':').trim() || 'String' }
-    })
+  return splitParameters(raw).map((part) => {
+    const separator = part.indexOf(':')
+    if (separator === -1) return { name: part, type: 'String' }
+    return { name: part.slice(0, separator).trim(), type: part.slice(separator + 1).trim() || 'String' }
+  })
 }
 
 function parseAttribute(id: string, row: string): ModelAttribute {

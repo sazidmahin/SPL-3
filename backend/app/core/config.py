@@ -78,6 +78,10 @@ class Settings(BaseSettings):
     rag_enabled: bool = False
     rag_top_k: int = 2
     rag_min_similarity: float = 0.55
+    # Which embedder the correction memory uses: "auto" prefers Ollama and falls
+    # back to the built-in lexical one, "ollama" or "lexical" force a single one.
+    # The fallback matters because the hosted AI engine needs no local setup.
+    rag_embedder: str = "auto"
     ai_credential_encryption_key: str = "change-this-development-ai-credential-key"
     srsgen_base_model: str = "Qwen/Qwen1.5-1.8B-Chat"
     srsgen_artifact_path: str = "model_artifacts/srsgen-qwen1.5"

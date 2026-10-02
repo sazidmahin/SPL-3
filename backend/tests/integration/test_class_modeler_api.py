@@ -286,3 +286,109 @@ def test_ai_generation_mode_is_its_own_engine(client: TestClient, monkeypatch: p
     assert body["modelName"] is None
     assert {cls["name"] for cls in body["model"]["classes"]} == {"Book", "Member"}
     assert "openrouter" not in response.text.lower()
+
+
+def test_a_fixed_class_model_is_remembered_and_steers_the_next_generation(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The Class Modeler is stateless, so a user's fix used to vanish with the
+    page. Now it is stored against the requirement text and fed back the next
+    time that text is modelled."""
+    from app.core.config import settings
+    from app.services import rag_service
+    from app.services.hosted_ai_service import HostedAiClient
+
+    monkeypatch.setattr(settings, "rag_enabled", True)
+    monkeypatch.setattr(settings, "rag_embedder", "lexical")
+    monkeypatch.setattr(settings, "openrouter_api_key", "platform-key")
+    monkeypatch.setattr(settings, "openrouter_model", "vendor/model-a")
+    monkeypatch.setattr(rag_service, "_vector_store", rag_service.InMemoryVectorStore())
+
+    prompts: list[str] = []
+    generated = {
+        "classes": [
+            {"name": "Book", "attributes": [{"name": "title", "type": "String"}], "methods": []},
+            {"name": "Member", "attributes": [{"name": "name", "type": "String"}], "methods": []},
+        ],
+        "relationships": [{"from": "Member", "to": "Book", "type": "association", "label": "borrows"}],
+    }
+
+    def fake_generate(self: HostedAiClient, request):
+        prompts.append(request.prompt)
+        content = json.dumps(generated)
+        return LlmResponse(content=content, response_payload={"content": content}, prompt_tokens=5, completion_tokens=5)
+
+    monkeypatch.setattr(HostedAiClient, "generate", fake_generate)
+
+    token = register(client, "modeler-memory@example.com")
+    workspace_id, project_id = setup_project(client, token)
+    base = f"/api/v1/workspaces/{workspace_id}/class-modeler"
+    body = {"text": TASK, "mode": "ai", "project_id": project_id}
+
+    first = client.post(f"{base}/generate", headers=auth_header(token), json=body)
+    assert first.status_code == 200, first.text
+    # Nothing has been corrected yet, so nothing is quoted back at the model.
+    assert "youIncorrectlyProduced" not in prompts[0]
+
+    wrong_model = first.json()["model"]
+    fixed_model = {
+        **wrong_model,
+        "classes": [
+            *wrong_model["classes"],
+            {"id": "c_librarian", "name": "Librarian", "stereotype": "entity", "attributes": [], "methods": [], "sourceSentences": []},
+        ],
+    }
+    remembered = client.post(
+        f"{base}/corrections",
+        headers=auth_header(token),
+        json={
+            "text": TASK,
+            "project_id": project_id,
+            "generation_mode": "ai",
+            "wrong_model": wrong_model,
+            "corrected_model": fixed_model,
+        },
+    )
+    assert remembered.status_code == 200, remembered.text
+    assert remembered.json() == {"remembered": True}
+
+    second = client.post(f"{base}/generate", headers=auth_header(token), json=body)
+    assert second.status_code == 200, second.text
+    assert "youIncorrectlyProduced" in prompts[1]
+    assert "Librarian" in prompts[1]
+
+
+def test_correction_memory_is_honest_about_not_storing_anything(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Off by default, and a fix that changed nothing is not a fix. The endpoint
+    reports that rather than letting the UI claim the engine learned."""
+    from app.core.config import settings
+
+    token = register(client, "modeler-memory-off@example.com")
+    workspace_id, project_id = setup_project(client, token)
+    base = f"/api/v1/workspaces/{workspace_id}/class-modeler"
+    model = {"classes": [{"name": "Book", "attributes": [], "methods": []}], "relationships": [], "enums": []}
+    payload = {
+        "text": TASK,
+        "project_id": project_id,
+        "generation_mode": "ai",
+        "wrong_model": model,
+        "corrected_model": {**model, "classes": [{"name": "Novel", "attributes": [], "methods": []}]},
+    }
+
+    off = client.post(f"{base}/corrections", headers=auth_header(token), json=payload)
+    assert off.status_code == 200, off.text
+    assert off.json() == {"remembered": False}
+
+    monkeypatch.setattr(settings, "rag_enabled", True)
+    monkeypatch.setattr(settings, "rag_embedder", "lexical")
+    unchanged = client.post(
+        f"{base}/corrections", headers=auth_header(token), json={**payload, "corrected_model": model}
+    )
+    assert unchanged.json() == {"remembered": False}
+
+    # The rule engine is deterministic, so there is nothing it could learn.
+    rule_based = client.post(f"{base}/corrections", headers=auth_header(token), json={**payload, "generation_mode": "rule_based"})
+    assert rule_based.status_code == 422
+    assert "AI engine" in rule_based.json()["detail"]
