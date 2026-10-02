@@ -321,7 +321,12 @@ def create_pipeline_run(
         hosted_client = HostedAiClient()
         hosted_client.validate_configuration()
         provider = hosted_client.provider
-        model_name = hosted_client.model_name
+        # The hosted model is platform-configured and deliberately not recorded:
+        # run.model_name is served to every member of the workspace and copied
+        # into the published SRS document, and the vendor's model id names the
+        # vendor (see app/services/hosted_ai_service.py). _client_for_run falls
+        # back to the configured model, so a run still resolves its client.
+        model_name = None
     elif mode == "ollama":
         ollama_client = OllamaClient()
         ollama_client.validate_configuration()

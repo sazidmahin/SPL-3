@@ -106,8 +106,17 @@ class Settings(BaseSettings):
             "anthropic": self.anthropic_models,
             "gemini": self.gemini_models,
             "ollama": self.ollama_models,
-            "openrouter_fallback": self.openrouter_fallback_models,
         }.get(provider, "")
+        return list(dict.fromkeys(model.strip() for model in raw.split(",") if model.strip()))
+
+    @property
+    def openrouter_models(self) -> list[str]:
+        """The hosted "AI generation" model, then its configured fallbacks, de-duplicated.
+
+        Not part of provider_models(): those are the BYOK providers a user picks
+        in AI Settings, and the hosted vendor is never one of them.
+        """
+        raw = f"{self.openrouter_model},{self.openrouter_fallback_models}"
         return list(dict.fromkeys(model.strip() for model in raw.split(",") if model.strip()))
 
     @field_validator("ollama_num_thread", mode="before")
