@@ -9,6 +9,10 @@ reviewed Software Requirements Specification and a UML class diagram. The implem
   SRS documents, diagrams, workspace search and platform-admin APIs.
 - `frontend/`: React/Vite client — `src/api` (typed API client), `src/app` (shell, router, session),
   `src/pages` (one file per screen), `src/features` (stage editors, class modeler, draw.io) and `src/shared/ui`.
+  A saved diagram opens in whichever view the reader wants — the interactive React canvas, the draw.io editor, or
+  both side by side. The canvas reads its model straight out of the stored draw.io XML
+  (`src/features/diagram/drawioModel.ts`), so every view shows the same drawing, including unsaved edits and older
+  versions being previewed; editing stays in draw.io.
 - `.specsmd/`: product, API, database, architecture, and implementation-ticket context for AI-DLC agents.
 
 ## Current Architecture Notes

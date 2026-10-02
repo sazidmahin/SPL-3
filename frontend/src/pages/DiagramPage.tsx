@@ -1,14 +1,34 @@
 import { useEffect, useRef, useState } from 'react'
-import { ArrowLeft, Download, History, ImageDown, Loader2, MoreHorizontal, Pencil, RotateCcw, Save, Trash2 } from 'lucide-react'
+import type { Ref } from 'react'
+import {
+  ArrowLeft,
+  Columns2,
+  Download,
+  FileCode2,
+  History,
+  ImageDown,
+  Loader2,
+  MoreHorizontal,
+  Network,
+  Pencil,
+  RotateCcw,
+  Save,
+  Trash2,
+} from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import { diagramApi, errorMessage, projectApi } from '../api'
-import type { DiagramVersion } from '../api'
+import type { ClassModelerResult, DiagramVersion } from '../api'
 import { ErrorState, LoadingState } from '../app/components/PageStates'
 import { RenameDialog } from '../app/components/RenameDialog'
 import { href, navigate, routes } from '../app/core/router'
 import { useSession } from '../app/core/session'
 import { useAsync } from '../app/core/useAsync'
+import { ClassDiagramCanvas } from '../features/classModeler/diagram/ClassDiagramCanvas'
+import type { ClassDiagramHandle } from '../features/classModeler/diagram/ClassDiagramCanvas'
+import { RelationshipLegend } from '../features/classModeler/RelationshipLegend'
 import { DrawioEmbed } from '../features/diagram/DrawioEmbed'
 import type { DrawioEmbedHandle } from '../features/diagram/DrawioEmbed'
+import { useDrawioClassModel } from '../features/diagram/useDrawioClassModel'
 import { downloadDataUrl, downloadTextFile } from '../shared/download'
 import { formatDateTime, relativeTime } from '../shared/format'
 import {
@@ -20,12 +40,68 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
   cn,
   useFeedback,
 } from '../shared/ui'
 
+type ClassModel = ClassModelerResult['model']
+
+/** The same drawing, three ways to look at it. The interactive canvas reads its
+ * model out of the stored draw.io XML (see features/diagram/drawioModel.ts), so
+ * every view shows exactly what is on the canvas right now - the version being
+ * previewed included, and edits not yet saved. Editing stays in draw.io. */
+type ViewId = 'interactive' | 'drawio' | 'split'
+
+const VIEWS: { id: ViewId; label: string; icon: LucideIcon }[] = [
+  { id: 'interactive', label: 'Interactive', icon: Network },
+  { id: 'drawio', label: 'draw.io', icon: FileCode2 },
+  { id: 'split', label: 'Side by side', icon: Columns2 },
+]
+
+function count(total: number, singular: string, plural = `${singular}s`) {
+  return `${total} ${total === 1 ? singular : plural}`
+}
+
 function stem(title: string) {
   return title.trim().replace(/[^\w.-]+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'diagram'
+}
+
+/** The interactive canvas, or an explanation of why there is nothing to draw.
+ *
+ * A diagram is stored as draw.io XML only, so a drawing that is not a class
+ * model (a flowchart, a sketch, boxes without names) yields no model. That is
+ * not an error - draw.io still shows it, so say so and point there. */
+function CanvasView({
+  model,
+  parsing,
+  className,
+  ref,
+}: {
+  model: ClassModel | null
+  parsing: boolean
+  className?: string
+  ref?: Ref<ClassDiagramHandle>
+}) {
+  if (model) return <ClassDiagramCanvas ref={ref} model={model} className={className} />
+  return (
+    <div className={cn('grid place-items-center rounded-xl border border-border bg-surface-2 p-6', className)}>
+      {parsing ? (
+        <span className="flex items-center gap-2 text-[13px] text-fg-2">
+          <Loader2 className="size-4 animate-spin" /> Reading the model…
+        </span>
+      ) : (
+        <p className="max-w-sm text-center text-[13px] leading-relaxed text-fg-2">
+          <strong className="block text-fg">No class model in this drawing</strong>
+          The interactive view reads classes, attributes and relationships out of the diagram. This one holds shapes it cannot
+          read as a class model — open the <strong className="text-fg">draw.io</strong> view to see and edit it.
+        </p>
+      )}
+    </div>
+  )
 }
 
 export function DiagramPage({ projectId, diagramId }: { projectId: string; diagramId: string }) {
@@ -35,14 +111,17 @@ export function DiagramPage({ projectId, diagramId }: { projectId: string; diagr
   const versions = useAsync(() => diagramApi.versions(workspaceId, projectId, diagramId), [workspaceId, projectId, diagramId], Boolean(workspaceId))
   const project = useAsync(() => projectApi.get(workspaceId, projectId), [workspaceId, projectId], Boolean(workspaceId))
   const embed = useRef<DrawioEmbedHandle>(null)
+  const canvas = useRef<ClassDiagramHandle>(null)
 
   const [xml, setXml] = useState('')
   const [savedXml, setSavedXml] = useState('')
   const [syncedVersionId, setSyncedVersionId] = useState<string | null>(null)
   const [viewing, setViewing] = useState<DiagramVersion | null>(null)
   const [saving, setSaving] = useState(false)
-  const [exporting, setExporting] = useState<'png' | 'jpeg' | null>(null)
+  const [exporting, setExporting] = useState<string | null>(null)
   const [renaming, setRenaming] = useState(false)
+  // A class diagram opens on the canvas; anything else only draw.io can draw.
+  const [view, setView] = useState<ViewId | null>(null)
 
   // Load the canvas from the server's current version whenever that version changes.
   const current = diagram.data?.current
@@ -54,6 +133,11 @@ export function DiagramPage({ projectId, diagramId }: { projectId: string; diagr
   }
 
   const dirty = xml !== savedXml && !viewing
+  const activeView: ViewId = view ?? (diagram.data?.diagram_type === 'class' ? 'interactive' : 'drawio')
+  const showsCanvas = activeView === 'interactive' || activeView === 'split'
+  const showsDrawio = activeView === 'drawio' || activeView === 'split'
+  const { pending: parsing, result: parsed } = useDrawioClassModel(xml, showsCanvas)
+  const model = parsed?.model ?? null
 
   useEffect(() => {
     if (!dirty) return
@@ -80,17 +164,31 @@ export function DiagramPage({ projectId, diagramId }: { projectId: string; diagr
     }
   }
 
-  async function exportImage(format: 'png' | 'jpeg') {
-    if (!embed.current || !diagram.data) return
-    setExporting(format)
+  async function runExport(label: string, download: () => Promise<void> | void) {
+    setExporting(label)
     try {
-      const dataUrl = await embed.current.exportImage(format)
-      downloadDataUrl(`${stem(diagram.data.title)}.${format === 'jpeg' ? 'jpg' : 'png'}`, dataUrl)
+      await download()
     } catch (caught) {
       toast('Export failed', { description: errorMessage(caught), tone: 'error' })
     } finally {
       setExporting(null)
     }
+  }
+
+  function exportFromDrawio(format: 'png' | 'jpeg') {
+    return runExport(`drawio-${format}`, async () => {
+      if (!embed.current || !diagram.data) throw new Error('Open the draw.io view first.')
+      downloadDataUrl(`${stem(diagram.data.title)}.${format === 'jpeg' ? 'jpg' : 'png'}`, await embed.current.exportImage(format))
+    })
+  }
+
+  function exportFromCanvas(format: 'png' | 'svg') {
+    return runExport(`canvas-${format}`, async () => {
+      if (!canvas.current || !diagram.data) throw new Error('Open the interactive view first.')
+      const name = `${stem(diagram.data.title)}.${format}`
+      if (format === 'png') downloadDataUrl(name, await canvas.current.exportPng())
+      else downloadTextFile(name, canvas.current.exportSvg().svg, 'image/svg+xml')
+    })
   }
 
   async function remove() {
@@ -162,12 +260,30 @@ export function DiagramPage({ projectId, diagramId }: { projectId: string; diagr
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onSelect={() => void exportImage('png')} disabled={exporting !== null}>
-                <ImageDown /> PNG image
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => void exportImage('jpeg')} disabled={exporting !== null}>
-                <ImageDown /> JPG image
-              </DropdownMenuItem>
+              {/* Each view renders the diagram itself, so each exports its own
+                  picture - the canvas through React, draw.io through its editor. */}
+              {showsCanvas && model ? (
+                <>
+                  <DropdownMenuItem onSelect={() => void exportFromCanvas('png')} disabled={exporting !== null}>
+                    <ImageDown /> PNG · interactive view
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => void exportFromCanvas('svg')} disabled={exporting !== null}>
+                    <ImageDown /> SVG · interactive view
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                </>
+              ) : null}
+              {showsDrawio ? (
+                <>
+                  <DropdownMenuItem onSelect={() => void exportFromDrawio('png')} disabled={exporting !== null}>
+                    <ImageDown /> PNG · draw.io
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => void exportFromDrawio('jpeg')} disabled={exporting !== null}>
+                    <ImageDown /> JPG · draw.io
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                </>
+              ) : null}
               <DropdownMenuItem onSelect={() => downloadTextFile(`${stem(data.title)}.drawio`, xml, 'application/xml;charset=utf-8')}>
                 <Download /> draw.io file
               </DropdownMenuItem>
@@ -207,13 +323,61 @@ export function DiagramPage({ projectId, diagramId }: { projectId: string; diagr
       ) : null}
 
       <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-[minmax(0,1fr)_16rem]">
-        <DrawioEmbed
-          ref={embed}
-          xml={xml}
-          title={`${data.title} editor`}
-          className="h-[min(72vh,44rem)] min-h-[26rem]"
-          onChange={canEdit && !viewing ? setXml : undefined}
-        />
+        <Tabs value={activeView} onValueChange={(next) => setView(next as ViewId)} className="grid min-w-0 grid-cols-1 gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <TabsList className="overflow-x-auto">
+              {VIEWS.map((item) => {
+                const Icon = item.icon
+                return (
+                  <TabsTrigger key={item.id} value={item.id} className="flex items-center gap-1.5 whitespace-nowrap">
+                    <Icon className="size-3.5" />
+                    {item.label}
+                  </TabsTrigger>
+                )
+              })}
+            </TabsList>
+            {showsCanvas && model ? (
+              <p className="text-[11.5px] text-fg-3">
+                {[
+                  count(model.classes.length, 'class', 'classes'),
+                  count(model.relationships.length, 'relationship'),
+                  model.enums.length ? count(model.enums.length, 'enum') : null,
+                  parsed?.skipped ? `${count(parsed.skipped, 'other shape')} not shown` : null,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+              </p>
+            ) : null}
+          </div>
+
+          <TabsContent value="interactive" className="grid min-w-0 grid-cols-1 gap-4 2xl:grid-cols-[minmax(0,1fr)_18rem]">
+            <CanvasView model={model} parsing={parsing} ref={canvas} className="h-[min(72vh,44rem)] min-h-[26rem]" />
+            {model ? <RelationshipLegend model={model} className="content-start 2xl:max-h-[38rem] 2xl:overflow-y-auto 2xl:pr-1" /> : null}
+          </TabsContent>
+
+          <TabsContent value="split" className="grid min-w-0 grid-cols-1 gap-4 2xl:grid-cols-2">
+            <CanvasView model={model} parsing={parsing} ref={canvas} className="h-[min(56vh,34rem)] min-h-[22rem]" />
+            {/* Editing happens here even in the split view; the canvas on the
+                left re-reads the model as draw.io autosaves. */}
+            <DrawioEmbed
+              ref={embed}
+              xml={xml}
+              title={`${data.title} editor`}
+              className="h-[min(56vh,34rem)] min-h-[22rem]"
+              onChange={canEdit && !viewing ? setXml : undefined}
+            />
+          </TabsContent>
+
+          <TabsContent value="drawio" className="min-w-0">
+            <DrawioEmbed
+              ref={embed}
+              xml={xml}
+              title={`${data.title} editor`}
+              className="h-[min(72vh,44rem)] min-h-[26rem]"
+              onChange={canEdit && !viewing ? setXml : undefined}
+            />
+          </TabsContent>
+        </Tabs>
         <Card className="p-3">
           <p className="mb-2 flex items-center gap-1.5 px-1.5 text-[11px] font-semibold uppercase tracking-[0.1em] text-fg-3">
             <History className="size-3.5" /> Versions
