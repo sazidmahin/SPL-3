@@ -1,6 +1,5 @@
 *
 !.gitignore
-!README.md
 !base_model/
 !base_model/.gitkeep
 !lora_adapter/
