@@ -603,3 +603,223 @@ flowchart LR
     ADMN --> DB
     RAG --> DB
 ```
+
+## Figure 17: Rule-Based Engine Pipeline and Rules
+
+```mermaid
+flowchart TD
+    RAW[Raw description text] --> N1
+    subgraph S1["Stage 1: Input analysis"]
+        N1["Normalise text<br/>TXT_UNICODE_NFKC_001<br/>TXT_WHITESPACE_COLLAPSE_001<br/>TXT_PUNCTUATION_ASCII_001<br/>TXT_CONTRACTION_EXPAND_001"]
+        N2["Split sentences<br/>SPL_SENTENCE_TERMINATOR_001"]
+        N3["Split clauses<br/>SPL_CLAUSE_COMMA_CONJUNCTION_001"]
+        N4["Tokenise<br/>TOK_WORD_001"]
+        N5["Extract facts: actor, action, object<br/>EXT_ACTION_ALIAS_001, EXT_PASSIVE_OBJECT_ACTION_001<br/>EXT_PASSIVE_WITH_AGENT_001, EXT_PHRASAL_VERB_001"]
+        N1 --> N2 --> N3 --> N4 --> N5
+    end
+    subgraph S2["Stage 2: Clarifications"]
+        C1["Missing slot rules<br/>CLR_MISSING_ACTOR / OBJECT / ACTION_001"]
+        C2["Vague wording rules<br/>CLR_VAGUE_NFR_TARGET_001<br/>CLR_VAGUE_QUANTIFIER_001<br/>CLR_VAGUE_TIMING_001"]
+        C3["Reference and conflict rules<br/>CLR_AMBIGUOUS_PRONOUN_001<br/>CLR_CONFLICTING_MODALITY_001"]
+    end
+    N5 --> C1
+    N5 --> C2
+    N5 --> C3
+    C1 --> ANS[User answers fill fact slots]
+    C2 --> ANS
+    C3 --> ANS
+    ANS --> F1["Stage 3: Final story<br/>FIN_ATOMIC_STORY_TEMPLATE_001"]
+    F1 --> R1["Stage 4: Requirements<br/>FR_ACTOR_ACTION_OBJECT_001<br/>FR_CONDITIONAL_ACTOR_ACTION_OBJECT_001<br/>NFR keyword rules"]
+    R1 --> M1["Stage 5: Class model<br/>CLS_CANDIDATE_SCORE_001<br/>ATTR_PRIMITIVE_NOUN_001, REL_PHRASE_DICTIONARY_001<br/>MUL_* multiplicity rules"]
+    M1 --> V1{"VAL_CLASS_MODEL_REFERENCES_001"}
+    V1 -->|valid| X1["Stage 6: draw.io XML<br/>XML_STABLE_CLASS_ID_001"]
+    V1 -->|errors| M1
+    X1 --> V2{"VAL_XML_WELL_FORMED_001<br/>VAL_XML_DRAWIO_001"}
+    V2 -->|valid| OUT[Approved diagram XML]
+    V2 -->|errors| X1
+```
+
+## Figure 18: Diagram-Only Generation Pipeline (Class Modeler)
+
+```mermaid
+flowchart TD
+    T[Requirement text, max 20,000 chars] --> M{Engine mode}
+    M -->|rule_based| A1[Classify each sentence]
+    A1 --> A2[Collect nouns as candidates with evidence]
+    A2 --> A3{Class, attribute or rejected?}
+    A3 --> A4[Merge synonyms]
+    A4 --> A5[Turn verbs into methods]
+    A5 --> A6[Draw relationships and multiplicities]
+    A6 --> A7[Pull shared attributes up to parent]
+    M -->|llm: Ollama or BYOK| L1[Chunk text and call model]
+    M -->|ai: hosted| L2[Single hosted call]
+    L1 --> NORM[Normalise LLM output to common model]
+    L2 --> NORM
+    A7 --> RES[Class model: classes, relationships, enums, breakdown]
+    NORM --> RES
+    RES --> VAL[Validate model]
+    VAL --> XML[Build draw.io XML]
+    XML --> VIEW[Diagram, Step-by-step, Classes, draw.io, Compare tabs]
+    VIEW --> EXP[Export PNG, SVG, XML, .drawio]
+    VIEW --> SAVE[Save to project as a Diagram]
+    VIEW -->|edit AI output| COR[Store correction in memory]
+```
+
+## Figure 19: Diagram Editing: One Model, Three Editors
+
+```mermaid
+flowchart LR
+    MODEL[(Class model JSON<br/>stage revision or diagram version)]
+    TAB[Classes tab<br/>structured fields]
+    DIO[draw.io editor<br/>embedded iframe]
+    CAN[Interactive canvas<br/>xyflow]
+    SRV[Class model endpoints<br/>/class-model/classes<br/>/class-model/relationships]
+    VER[(New revision or<br/>new DiagramVersion)]
+
+    TAB -->|add, edit, delete| SRV
+    SRV --> VER
+    VER --> MODEL
+    MODEL -->|drawioXml.ts: model to XML| DIO
+    DIO -->|drawioModel.ts: XML to model| MODEL
+    DIO -->|save| VER
+    MODEL -->|render| CAN
+    CAN -->|move nodes, auto layout| CAN
+```
+
+## Figure 20: Exportability of SpecTwin
+
+```mermaid
+flowchart LR
+    SRS[SRS Document] --> MD[Markdown .md]
+    SRS --> PDF[Print / PDF]
+    DIA[Saved Diagram] --> DRAWIO[draw.io XML .drawio]
+    DIA --> PNG1[PNG / JPEG from draw.io]
+    DIA --> PNG2[PNG / SVG from canvas]
+    XMLS[XML stage of a run] --> DRAWIO2[class-diagram.drawio]
+    XMLS --> PNG3[class-diagram.png]
+    CM[Class Modeler result] --> CPNG[PNG]
+    CM --> CSVG[SVG]
+    CM --> CXML[XML]
+    CM --> CDRAWIO[.drawio]
+    CM --> PROJ[Save to project]
+```
+
+## Figure 21: AI Engineering Architecture
+
+```mermaid
+flowchart TD
+    REQ[Stage generation request] --> SEL{generation_mode}
+    SEL -->|rule_based or xml stage| RULE[Rule engine]
+    SEL -->|ollama| OT[Ollama task layer<br/>chunking, JSON schema, retries]
+    SEL -->|ai| HA[Hosted AI client<br/>platform key]
+    SEL -->|byok| BY[Provider client<br/>OpenAI, Anthropic, Gemini]
+    SEL -->|srsgen| SG[SrsGen client<br/>Qwen1.5 + LoRA]
+
+    subgraph PROMPT["Prompt construction"]
+        CT[Stage contract: exact keys and values]
+        UP[Upstream artifacts: raw text, previous stage, facts]
+        PC[Past corrections from RAG]
+        GU[Untrusted data guard]
+    end
+    PROMPT --> HA
+    PROMPT --> BY
+    PROMPT --> SG
+    PROMPT --> OT
+
+    RAGS[(RAG correction memory)] --> PC
+    OT --> OL[Ollama server]
+    HA --> PARSE
+    BY --> PARSE
+    SG --> PARSE
+    OL --> PARSE[Tolerant JSON parser and repair]
+    PARSE -->|fails| FB[Plain-text fallback payload]
+    PARSE --> VAL[Stage payload validation]
+    FB --> VAL
+    RULE --> VAL
+    VAL --> REV[(Stage revision)]
+    HA --> LOG[(llm_calls audit log)]
+    BY --> LOG
+    OT --> LOG
+```
+
+## Figure 22: Ollama Chunked Generation Flow
+
+```mermaid
+flowchart TD
+    IN[Stage input] --> SPLIT[split_text / pack_items<br/>chunks sized to num_ctx]
+    SPLIT --> CALL[json_task: schema-constrained call<br/>with past corrections]
+    CALL --> P{Parses as JSON?}
+    P -->|yes| TR{Cut off by num_predict?}
+    P -->|no, text returned| REF[Ask model to reformat once]
+    REF --> P2{Parses now?}
+    P2 -->|yes| OK[Keep chunk result]
+    P2 -->|no| FB[Plain-text fallback or clear error]
+    TR -->|no| OK
+    TR -->|yes| HALF[Split chunk in half, retry up to depth 2]
+    HALF --> CALL
+    OK --> MERGE[Merge and dedupe chunk results]
+    MERGE --> NORM[Normalise into stage payload]
+```
+
+## Figure 23: RAG Correction Memory
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as User
+    participant GPS as Pipeline / Class Modeler
+    participant RAG as RagService
+    participant EMB as Embedder
+    participant DB as generation_corrections
+
+    U->>GPS: Edit AI-generated stage and save
+    GPS->>RAG: capture_correction(wrong, corrected)
+    RAG->>EMB: embed(raw input text)
+    EMB-->>RAG: vector + embedder id
+    RAG->>DB: store row
+    Note over GPS,DB: Later run with similar text
+    GPS->>RAG: retrieve_corrections(stage, raw text)
+    RAG->>EMB: embed(raw text)
+    RAG->>DB: cosine search, same workspace, stage, embedder
+    DB-->>RAG: top-k above min similarity
+    RAG-->>GPS: past corrections
+    GPS->>GPS: add to prompt, trimmed to budget
+```
+
+## Figure 24: Deployment Diagram
+
+```mermaid
+flowchart LR
+    BR[User Browser]
+    subgraph HOST["Docker host (docker compose project spl3)"]
+        subgraph FEC["frontend container<br/>nginx 1.27-alpine :80"]
+            SPA[React build<br/>static files]
+        end
+        subgraph BEC["backend container<br/>python 3.12-slim :8000"]
+            EP[entrypoint: alembic upgrade head<br/>seed super admin]
+            API[uvicorn FastAPI app]
+        end
+        subgraph DBC["db container<br/>postgres 16-alpine :5432"]
+            PG[(srs_diagram_platform)]
+        end
+        subgraph OLC["ollama container :11434<br/>profile docker-ollama"]
+            OLM[Ollama models]
+        end
+        INIT[ollama-init<br/>pulls default model once]
+        V1[(volume pgdata)]
+        V2[(volume ollama-models)]
+    end
+    EXT[Hosted AI / OpenAI / Anthropic / Gemini]
+    SMTP[SMTP server]
+
+    BR -->|HTTP :5173| SPA
+    BR -->|REST /api/v1 :8000| API
+    EP --> API
+    API --> PG
+    PG --- V1
+    API -->|host.docker.internal or ollama| OLM
+    OLM --- V2
+    INIT --> OLM
+    API --> EXT
+    API --> SMTP
+```
