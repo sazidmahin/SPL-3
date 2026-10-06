@@ -481,17 +481,32 @@ sequenceDiagram
     FE-->>U: Open SRS and class diagram
 ```
 
-## Figure 13: State Diagram of a Stage Revision
+## Figure 13: State Diagram of the Generation Pipeline
 
 ```mermaid
-flowchart LR
-    S((Start)) -->|generated or created| R[ready_for_review]
-    R -->|user saves edit, new version| R
-    R -->|approve exact version, validation passes| A[approved]
-    A -->|reopen, copied as new version| R
-    A -->|earlier stage edited or reopened| ST[stale]
-    R -->|earlier stage edited or reopened| ST
-    ST -->|regenerated after earlier stage re-approved| R
+flowchart TD
+    S((Start)) -->|create run| IN
+    subgraph RUN["Pipeline run: current stage is ready_for_review"]
+        IN["1. Input"]
+        CL["2. Clarifications"]
+        FS["3. Final Story"]
+        RQ["4. Requirements"]
+        CM["5. Class Model"]
+        XM["6. draw.io XML"]
+        IN -->|approve, run running, generate| CL
+        CL -->|approve, all questions resolved| FS
+        FS -->|approve| RQ
+        RQ -->|approve| CM
+        CM -->|approve, model valid| XM
+    end
+    NOTE["In every stage: edit saves a new version; approve validates, then the run is running while the next stage is generated"]
+    XM -->|approve, XML valid| DONE["Run completed"]
+    DONE -->|publish| PUB["Published: SRS document and class diagram"]
+    PUB --> E((End))
+    RUN -->|generation error| FAIL["Run failed"]
+    FAIL -->|retry| RUN
+    PUB -->|reopen a stage| REO["Stage reopened: later stages stale"]
+    REO -->|re-approve and regenerate| RUN
 ```
 
 ## Figure 14: Architectural Context Diagram
