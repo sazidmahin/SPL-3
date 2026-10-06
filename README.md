@@ -32,7 +32,6 @@ fixes users make.
 16. [Running the project](#16-running-the-project)
 17. [Configuration](#17-configuration)
 18. [Verification](#18-verification)
-19. [Further documentation](#19-further-documentation)
 
 ---
 
@@ -324,7 +323,7 @@ Per stage:
 | Class model | **Two passes**: classes first (each chunk is told the class names found so far, so names stay consistent), then relationships constrained by a JSON schema to exactly those class names |
 
 The model is pre-loaded while the user reviews the input stage, so the first generation does not also pay the model
-load time. See [`LOCAL_MODELS.md`](LOCAL_MODELS.md) for model choices and tuning.
+load time.
 
 ---
 
@@ -565,8 +564,7 @@ SPL-3/
 │       ├── pages/               one file per screen (Generate, Run, Documents, Diagrams, Admin, …)
 │       ├── features/            stage editors, class modeler, draw.io + canvas, SRS markdown
 │       └── shared/ui/           shared UI components
-├── docker-compose.yml           Postgres + Ollama + backend + frontend
-└── *.md / *.txt                 design notes (see Further documentation)
+└── docker-compose.yml           Postgres + Ollama + backend + frontend
 ```
 
 Frontend screens: Dashboard, Projects, **Generate SRS**, **Generations** (runs), **Run** (stage-by-stage review),
@@ -590,8 +588,16 @@ docker compose up -d --build
 | Postgres | localhost:5432 |
 
 The backend runs `alembic upgrade head` on start and seeds a super admin when `SUPER_ADMIN_EMAIL` and
-`SUPER_ADMIN_PASSWORD` are set. `ollama-init` pulls the default `OLLAMA_MODEL` once into a cached volume. Full
-details, GPU setup and troubleshooting: [`DOCKER.md`](DOCKER.md).
+`SUPER_ADMIN_PASSWORD` are set. `ollama-init` pulls the default `OLLAMA_MODEL` once into a cached volume
+that survives rebuilds. To use another local model, pull it into the running service and add it to `OLLAMA_MODELS`:
+
+```bash
+docker compose exec ollama ollama pull qwen2.5
+docker compose up -d backend
+```
+
+For an NVIDIA GPU, install `nvidia-container-toolkit` and uncomment the `deploy` block under the `ollama` service in
+`docker-compose.yml`; without it Ollama runs on CPU.
 
 ### Locally
 
@@ -659,16 +665,6 @@ builder, the Ollama task helpers, the hosted and LLM clients, RAG, and integrati
 projects, diagrams, generation modes, class modeler and admin APIs.
 
 ---
-
-## 19. Further documentation
-
-| File | Contents |
-| --- | --- |
-| [`DOCKER.md`](DOCKER.md) | Running the full stack in Docker |
-| [`LOCAL_MODELS.md`](LOCAL_MODELS.md) | Choosing and tuning local Ollama models |
-| [`BACKEND_FEATURES.md`](BACKEND_FEATURES.md) | Backend feature reference |
-| [`SRS_GENERATION_PIPELINE_NOTES.md`](SRS_GENERATION_PIPELINE_NOTES.md) | SRS generation pipeline notes |
-| [`bangla-explaination.md`](bangla-explaination.md) | Project explanation in Bangla |
 
 ## License
 
