@@ -188,28 +188,6 @@ docker-compose.override.yml
 # Keep main docker-compose.yml tracked.
 
 
-# =========================================================
-# SpecsMD
-# =========================================================
-
-# Keep project specs tracked.
-# Keep .specsmd/product, architecture, database, frontend, backend, features, api, decisions, implementation-plan tracked.
-
-# SpecsMD internal generated/cache files if any
-.specsmd/.aidc/cache/
-.specsmd/.aidc/tmp/
-.specsmd/.aidc/temp/
-.specsmd/.aidc/logs/
-
-# Do not ignore these SpecsMD config files:
-!.specsmd/
-!.specsmd/.aidc/
-!.specsmd/.aidc/context-config.yaml
-!.specsmd/.aidc/memory-bank.yaml
-!.specsmd/.aidc/manifest.yaml
-!.specsmd/.aidc/README.md
-!.specsmd/.aidc/quick-start.md
-
 
 # =========================================================
 # AI / Generated Local Files

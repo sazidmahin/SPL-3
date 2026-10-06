@@ -565,7 +565,6 @@ SPL-3/
 │       ├── pages/               one file per screen (Generate, Run, Documents, Diagrams, Admin, …)
 │       ├── features/            stage editors, class modeler, draw.io + canvas, SRS markdown
 │       └── shared/ui/           shared UI components
-├── .specsmd/                    product, API, database, architecture and ticket context for AI-DLC agents
 ├── docker-compose.yml           Postgres + Ollama + backend + frontend
 └── *.md / *.txt                 design notes (see Further documentation)
 ```
@@ -668,10 +667,8 @@ projects, diagrams, generation modes, class modeler and admin APIs.
 | [`DOCKER.md`](DOCKER.md) | Running the full stack in Docker |
 | [`LOCAL_MODELS.md`](LOCAL_MODELS.md) | Choosing and tuning local Ollama models |
 | [`BACKEND_FEATURES.md`](BACKEND_FEATURES.md) | Backend feature reference |
-| [`RULE_BASED_PIPELINE.txt`](RULE_BASED_PIPELINE.txt) | Rule-based pipeline design notes |
 | [`SRS_GENERATION_PIPELINE_NOTES.md`](SRS_GENERATION_PIPELINE_NOTES.md) | SRS generation pipeline notes |
 | [`bangla-explaination.md`](bangla-explaination.md) | Project explanation in Bangla |
-| `.specsmd/` | Product, API, database and architecture specifications |
 
 ## License
 
