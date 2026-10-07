@@ -17,6 +17,7 @@ import { BrandMark, EmptyState, FeedbackProvider, LinkButton, TooltipProvider } 
 const AdminPage = lazy(() => import('../pages/AdminPage').then((module) => ({ default: module.AdminPage })))
 const ClassModelerRoute = lazy(() => import('../pages/ClassModelerRoute').then((module) => ({ default: module.ClassModelerRoute })))
 const DiagramPage = lazy(() => import('../pages/DiagramPage').then((module) => ({ default: module.DiagramPage })))
+const DocumentComparePage = lazy(() => import('../pages/DocumentComparePage').then((module) => ({ default: module.DocumentComparePage })))
 const DocumentPage = lazy(() => import('../pages/DocumentPage').then((module) => ({ default: module.DocumentPage })))
 const RunPage = lazy(() => import('../pages/RunPage').then((module) => ({ default: module.RunPage })))
 import { Sidebar } from './Sidebar'
@@ -46,6 +47,11 @@ function resolve(route: Route): Resolved {
     case 'generations':
       return { section: 'generations', label: 'Generations', element: <GenerationsPage /> }
     case 'documents':
+      if (second === 'compare') {
+        const leftId = route.query.get('a') ?? ''
+        const rightId = route.query.get('b') ?? ''
+        return { section: 'documents', label: 'Compare SRS documents', element: <DocumentComparePage leftId={leftId} rightId={rightId} /> }
+      }
       return second && third
         ? { section: 'documents', label: 'SRS document', element: <DocumentPage key={third} projectId={second} documentId={third} /> }
         : { section: 'documents', label: 'SRS documents', element: <DocumentsPage /> }

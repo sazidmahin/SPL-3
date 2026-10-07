@@ -49,6 +49,7 @@ export const routes = {
   run: (projectId: string, runId: string) => `/generate/${projectId}/${runId}`,
   generations: () => '/generations',
   documents: () => '/documents',
+  compareDocuments: () => '/documents/compare',
   document: (projectId: string, documentId: string) => `/documents/${projectId}/${documentId}`,
   diagrams: () => '/diagrams',
   diagram: (projectId: string, diagramId: string) => `/diagrams/${projectId}/${diagramId}`,
