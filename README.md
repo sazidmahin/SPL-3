@@ -26,12 +26,13 @@ fixes users make.
 10. [Publishing: SRS document and class diagram](#10-publishing-srs-document-and-class-diagram)
 11. [Class Modeler](#11-class-modeler)
 12. [One class model, three editors](#12-one-class-model-three-editors)
-13. [Data model](#13-data-model)
-14. [API overview](#14-api-overview)
-15. [Repository layout](#15-repository-layout)
-16. [Running the project](#16-running-the-project)
-17. [Configuration](#17-configuration)
-18. [Verification](#18-verification)
+13. [Workspaces, invitations and email](#13-workspaces-invitations-and-email)
+14. [Data model](#14-data-model)
+15. [API overview](#15-api-overview)
+16. [Repository layout](#16-repository-layout)
+17. [Running the project](#17-running-the-project)
+18. [Configuration](#18-configuration)
+19. [Verification](#19-verification)
 
 ---
 
@@ -50,7 +51,13 @@ Main features:
 - **Class Modeler**: a standalone noun/verb (Abbott) analysis that turns a short OOP task into a class diagram and
   explains every decision.
 - **Correction memory (RAG)**: fixes users make to AI output are fed back into later prompts.
+- **SRS comparison**: put two published SRS documents side by side and see which requirements were added, removed
+  or changed, plus a line-by-line diff of the text.
 - **Multi-tenant workspaces** with member roles, projects, workspace search and a platform admin console.
+- **Email invitations**: organization owners and admins invite people by email; the invitee joins with their
+  existing account or registers from the link.
+- **Email delivery** for verification codes and invitations through Resend or SMTP (or printed to the console in
+  development).
 - **Free to use**: no engine bills the user.
 
 ---
@@ -423,6 +430,18 @@ The generated SRS (`srs_document_builder.py`) is IEEE-style:
 Documents can be viewed, edited, exported and archived; diagrams keep every version and can be exported as draw.io
 XML.
 
+### Comparing SRS documents
+
+**SRS documents → Compare** (`#/documents/compare?a=<id>&b=<id>`, also in a document's actions menu) puts two
+published documents side by side, for example two runs over the same description or a document before and after
+an edit:
+
+- **Requirements** tab: requirements are matched by identical statement first (so renumbering does not count as a
+  change), then by requirement ID. Each one is marked *added*, *removed*, *changed* or *unchanged*.
+- **Full text** tab: a line-by-line diff of the Markdown, with long unchanged stretches collapsed.
+
+The comparison runs in the browser (`frontend/src/features/srs/documentDiff.ts`); no extra API is needed.
+
 ---
 
 ## 11. Class Modeler
@@ -491,12 +510,82 @@ flowchart LR
 
 ---
 
-## 13. Data model
+## 13. Workspaces, invitations and email
+
+Every user gets a **personal workspace** at registration and can create **organization workspaces** for a team.
+Everything (projects, runs, documents, diagrams) belongs to one workspace, and access is checked against the
+member's role:
+
+| Role | Can |
+| --- | --- |
+| Owner | everything, including managing members; cannot be removed |
+| Admin | manage members and invitations, and all content |
+| Member | create and edit projects, runs, documents and diagrams |
+| Viewer | read only |
+
+### Inviting people
+
+Owners and admins invite people from **Members** by email and role. The invitee does not need an account yet:
+
+```mermaid
+sequenceDiagram
+    actor A as Admin
+    participant API as Backend
+    participant M as Email (Resend / SMTP)
+    actor I as Invitee
+    A->>API: POST /workspaces/{id}/members/invite (email, role)
+    API->>API: store invitation (hashed token, expires in 7 days)
+    API->>M: send link FRONTEND_URL/#/invite/{token}
+    M-->>I: invitation email
+    I->>API: GET /invitations/{token} (who invited, which workspace, account exists?)
+    alt has an account
+        I->>API: sign in with the invited email
+    else no account
+        I->>API: register + verify with the invited email
+    end
+    I->>API: POST /invitations/{token}/accept
+    API-->>I: membership with the invited role
+```
+
+- A link works **once**, only for the **invited email**, and **expires** after `WORKSPACE_INVITATION_EXPIRE_DAYS`.
+- Inviting the same email again refreshes the pending invitation (new role, new link); the old link stops working.
+- Pending invitations are listed on the Members page and can be cancelled.
+- Only a SHA-256 hash of the token is stored (`workspace_invitations` table).
+
+### Email delivery
+
+Verification codes and invitations go through one delivery path (`backend/app/services/email_service.py`),
+selected by `EMAIL_DELIVERY_MODE`:
+
+| Mode | Behaviour |
+| --- | --- |
+| `console` (default) | Prints the email to the backend log. The API also returns the verification code / invite link so local development works without a mail server. |
+| `resend` | Sends through the [Resend](https://resend.com) HTTP API using `RESEND_API_KEY`. |
+| `smtp` | Sends through any SMTP server (`SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, …). |
+
+To send real email with Resend, set in `backend/.env`:
+
+```env
+EMAIL_DELIVERY_MODE=resend
+RESEND_API_KEY=re_xxxxxxxx
+RESEND_FROM_EMAIL=no-reply@your-verified-domain.com
+RESEND_FROM_NAME=SpecTwin
+FRONTEND_URL=https://your-frontend-address
+```
+
+`RESEND_FROM_EMAIL` must use a domain verified in Resend (`onboarding@resend.dev` only delivers to the Resend account
+owner's own address, which is fine for testing). If sending fails, the API answers `503` and nothing is saved, so the
+user can simply try again.
+
+---
+
+## 14. Data model
 
 ```mermaid
 erDiagram
     users ||--o{ workspace_members : "belongs to"
     workspaces ||--o{ workspace_members : has
+    workspaces ||--o{ workspace_invitations : "invites to"
     workspaces ||--o{ projects : contains
     projects ||--o{ generation_pipeline_runs : has
     generation_pipeline_runs ||--o{ generation_stage_revisions : "versioned stages"
@@ -515,11 +604,11 @@ erDiagram
 
 Migrations live in `backend/alembic/versions/` (users → workspaces → projects → diagrams → generation → LLM →
 SRS → admin → rule system → generation modes → corrections → free-platform documents → correction memory for all AI
-engines).
+engines → workspace invitations).
 
 ---
 
-## 14. API overview
+## 15. API overview
 
 All routes are under `/api/v1`. Interactive docs are served at `/docs` when the backend is running.
 
@@ -541,7 +630,7 @@ All routes are under `/api/v1`. Interactive docs are served at `/docs` when the 
 
 ---
 
-## 15. Repository layout
+## 16. Repository layout
 
 ```text
 SPL-3/
@@ -569,11 +658,12 @@ SPL-3/
 ```
 
 Frontend screens: Dashboard, Projects, **Generate SRS**, **Generations** (runs), **Run** (stage-by-stage review),
-**SRS documents**, **Diagrams**, **Class modeler**, Members, Settings (AI providers) and the Admin console.
+**SRS documents** (with **Compare**), **Diagrams**, **Class modeler**, Members (with invitations), Settings (AI
+providers), the Admin console, and the public invitation page (`#/invite/<token>`).
 
 ---
 
-## 16. Running the project
+## 17. Running the project
 
 ### With Docker (recommended)
 
@@ -625,7 +715,7 @@ Optional: install [Ollama](https://ollama.com) and `ollama pull llama3.2:1b` to 
 
 ---
 
-## 17. Configuration
+## 18. Configuration
 
 Backend settings come from environment variables (`backend/app/core/config.py`, example in
 `backend/.env.example`). The most important ones:
@@ -648,7 +738,7 @@ Backend settings come from environment variables (`backend/app/core/config.py`, 
 
 ---
 
-## 18. Verification
+## 19. Verification
 
 Backend, from `backend/`:
 
@@ -664,8 +754,8 @@ npm run build
 ```
 
 The backend suite covers the rule pipeline, the OOP modeler (including evaluation case sets), the SRS document
-builder, the Ollama task helpers, the hosted and LLM clients, RAG, and integration tests for auth, workspaces,
-projects, diagrams, generation modes, class modeler and admin APIs.
+builder, the Ollama task helpers, the hosted and LLM clients, RAG, email delivery (console / Resend), and integration
+tests for auth, workspaces and invitations, projects, diagrams, generation modes, class modeler and admin APIs.
 
 ---
 
