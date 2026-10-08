@@ -114,6 +114,13 @@ services:
       # auto = Ollama when it answers, otherwise the built-in lexical embedder.
       RAG_EMBEDDER: ${RAG_EMBEDDER:-auto}
       EMAIL_DELIVERY_MODE: ${EMAIL_DELIVERY_MODE:-console}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-no-reply@srs-platform.local}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-SRS Diagram Platform}
+      SMTP_USE_TLS: ${SMTP_USE_TLS:-true}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
       WORKSPACE_INVITATION_EXPIRE_DAYS: ${WORKSPACE_INVITATION_EXPIRE_DAYS:-7}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
