@@ -466,6 +466,9 @@ function RequirementsReview({
                     Traces to: “{String(requirement.sourceSentence)}”
                   </p>
                 ) : null}
+                {requirement.reason ? (
+                  <p className="-mt-2 text-[11.5px] text-fg-3">Why: {String(requirement.reason)}</p>
+                ) : null}
                 {isNfr ? (
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
                     <StoryField label="Category" value={requirement.nfrCategory} onChange={(value) => updateRequirement(index, 'nfrCategory', value || null)} />

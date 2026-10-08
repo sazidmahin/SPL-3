@@ -303,6 +303,36 @@ def retrieve_corrections(db: Session, *, run: GenerationPipelineRun, stage_name:
     )
 
 
+def _same_input_key(text: str) -> str:
+    return " ".join(text.lower().split())
+
+
+def find_same_input_correction(
+    db: Session, *, run: GenerationPipelineRun, stage_name: str
+) -> GenerationCorrection | None:
+    """The newest correction a user made to this stage in another run of the same
+    input text (ignoring case and whitespace), so the stage can start from that
+    corrected answer instead of asking the model again.
+
+    Similar-but-different inputs still only get pastCorrections in the prompt
+    (retrieve_corrections); this exact-match path is what makes the same input
+    reliably come back the way the user fixed it.
+    """
+    if not settings.rag_enabled or run.generation_mode not in LEARNING_MODES or stage_name in _RULE_ENGINE_STAGES:
+        return None
+    key = _same_input_key(run.raw_text)
+    rows = db.scalars(
+        select(GenerationCorrection)
+        .where(
+            GenerationCorrection.workspace_id == run.workspace_id,
+            GenerationCorrection.stage_name == stage_name,
+            GenerationCorrection.run_id != run.id,
+        )
+        .order_by(GenerationCorrection.created_at.desc())
+    )
+    return next((row for row in rows if _same_input_key(row.query_text) == key), None)
+
+
 # The Class Modeler keeps no run, so its memories get their own stage name - its
 # model has a different shape from the pipeline's class-model stage payload and
 # the two must never be offered to each other as examples.

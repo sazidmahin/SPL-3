@@ -60,8 +60,21 @@ from app.services.ollama_tasks import (
     split_text,
 )
 from app.services.project_service import get_active_project
-from app.services.rag_service import capture_correction, format_corrections_for_prompt, retrieve_corrections
+from app.services.rag_service import (
+    capture_correction,
+    find_same_input_correction,
+    format_corrections_for_prompt,
+    retrieve_corrections,
+)
 from app.services.llm_json import parse_json_response as _parse_json_response
+from app.services.reqinone_prompts import (
+    CLASSIFICATION_TEMPLATE,
+    EXTRACTION_TEMPLATE,
+    COMPARISON_OPERATORS,
+    NFR_LABELS,
+    SUMMARY_COMMANDS,
+    SUMMARY_TEMPLATE,
+)
 from app.services.srs_service import publish_pipeline_run
 from app.services.srsgen_service import SrsGenClient
 from app.services.workspace_service import require_workspace_role
@@ -609,6 +622,50 @@ def _string_items(fields: dict[str, Any], *keys: str) -> list[str]:
     return []
 
 
+def _coerce_class_members(payload: dict[str, Any]) -> dict[str, Any]:
+    """Hosted models sometimes list class attributes/methods as plain strings
+    (observed: attributes=["title", "author", "ISBN"]) instead of the objects the
+    renderer expects. Turn each string into the object form ("name: Type" and
+    "name(params): Return" are split; anything else becomes the name) and drop
+    entries that are neither. Classes that already use objects pass through as-is."""
+    classes = payload.get("classes")
+    if not isinstance(classes, list):
+        return payload
+    coerced_classes = []
+    for cls in classes:
+        if not isinstance(cls, dict):
+            coerced_classes.append(cls)
+            continue
+        class_key = snake_case(str(cls.get("name") or cls.get("id") or "class"))
+        attributes = []
+        for item in cls.get("attributes") or []:
+            if isinstance(item, dict):
+                attributes.append(item)
+            elif isinstance(item, str) and item.strip():
+                name, _, kind = item.partition(":")
+                attribute = {"id": f"attr_{class_key}_{snake_case(name.strip())}", "name": name.strip()}
+                if kind.strip():
+                    attribute["type"] = kind.strip()
+                attributes.append(attribute)
+        methods = []
+        for item in cls.get("methods") or []:
+            if isinstance(item, dict):
+                methods.append(item)
+            elif isinstance(item, str) and item.strip():
+                signature, _, return_type = item.partition(")")
+                name, _, params = signature.partition("(")
+                method: dict[str, Any] = {
+                    "id": f"method_{class_key}_{snake_case(name.strip())}",
+                    "name": name.strip(),
+                    "parameters": [param.strip() for param in params.split(",") if param.strip()],
+                }
+                if return_type.strip(" :"):
+                    method["returnType"] = return_type.strip(" :")
+                methods.append(method)
+        coerced_classes.append({**cls, "attributes": attributes, "methods": methods})
+    return {**payload, "classes": coerced_classes}
+
+
 def _normalize_ollama_class_model(payload: dict[str, Any]) -> dict[str, Any]:
     """Turn Ollama's minimal, loosely-shaped answer (see _OLLAMA_CLASSES_SCHEMA
     - just name/fields/methods per class, and a plain-language relationship
@@ -839,6 +896,8 @@ def _generate_ai_stage(
     payload = _parse_json_response(content)
     if payload is None:
         payload = _fallback_stage_payload(stage_name, content)
+    if stage_name == "class-model":
+        payload = _coerce_class_members(payload)
     _validate_stage_payload(stage_name, payload)
     return payload
 
@@ -1483,16 +1542,239 @@ def _generate_rule_stage(db: Session, run: GenerationPipelineRun, stage_name: st
     if class_model is None:
         raise GenerationPipelineStateError("Class model stage is missing")
     if stage_name == "xml":
-        xml_text, validation = generate_drawio_xml(class_model.payload)
+        # Class models saved before AI output was coerced may still hold string members.
+        class_model_payload = _coerce_class_members(class_model.payload)
+        xml_text, validation = generate_drawio_xml(class_model_payload)
         if not validation["valid"]:
             raise GenerationPipelineStateError("; ".join(validation["errors"]))
         return {
             "xml": xml_text,
             "validation": validation,
-            "classModel": class_model.payload,
+            "classModel": class_model_payload,
             "classModelVersion": class_model.version_number,
         }
     raise GenerationPipelineStateError("Invalid next stage")
+
+
+def _reqinone_source_text(db: Session, run: GenerationPipelineRun) -> tuple[str, set[str]]:
+    """The natural-language text the ReqInOne prompts work from - the stakeholder's own
+    words plus the reviewed story, which already has the clarification answers applied -
+    and the ids of the story lines, which requirements trace back to."""
+    lines = ["Original stakeholder text:", run.raw_text.strip()]
+    final_story = _latest_revision(db, run.id, "final-story")
+    story: list[tuple[str, str]] = []
+    for index, item in enumerate(final_story.payload.get("atomicStorySections", []) if final_story else [], start=1):
+        if not isinstance(item, dict):
+            continue
+        sentence = _coerce_display_text(item.get("normalizedSentence") or item.get("sourceSentence"))
+        if sentence:
+            story.append((_coerce_display_text(item.get("id")) or f"S{index}", sentence))
+    if story:
+        lines.extend(["", "Reviewed story, one need per line, with the clarification answers applied:"])
+        lines.extend(f"- [{section_id}] {sentence}" for section_id, sentence in story)
+    return "\n".join(lines), {section_id for section_id, _ in story}
+
+
+def _reqinone_call(
+    db: Session,
+    run: GenerationPipelineRun,
+    client: LlmClient,
+    *,
+    step: str,
+    template_text: str,
+    variables: dict[str, str],
+) -> dict[str, Any]:
+    template = get_or_create_prompt_template(
+        db,
+        name=f"reqinone_{step}",
+        purpose=f"pipeline_requirements_reqinone_{step}",
+        template_text=template_text,
+    )
+    call = execute_llm_call(
+        db,
+        workspace_id=run.workspace_id,
+        project_id=run.project_id,
+        pipeline_run_id=run.id,
+        template=template,
+        variables=variables,
+        client=client,
+        response_format="json",
+    )
+    content = (call.response_payload or {}).get("content")
+    payload = _parse_json_response(content) if isinstance(content, str) else None
+    if not isinstance(payload, dict):
+        raise GenerationPipelineStateError(
+            f"AI generation did not return valid JSON for the requirement {step} step. Try regenerating this stage."
+        )
+    return payload
+
+
+def _reqinone_label(label: str) -> str | None:
+    """The NFR type a classification label names, or None for a functional one.
+    Accepts the paper's own example form too ("Performance, Non-Functional Requirements")."""
+    return NFR_LABELS.get(label.split(",")[0].strip().lower())
+
+
+def _optional_text(value: Any) -> str | None:
+    """A model's answer for an optional field, with null-ish placeholders treated as absent."""
+    text = _coerce_single_value_text(value)
+    return None if not text or text.strip().lower() in {"null", "none", "n/a", "na", "tbd", "unknown", "-"} else text
+
+
+def _reqinone_summary(
+    db: Session, run: GenerationPipelineRun, client: LlmClient, source_text: str, known_actors: list[str]
+) -> tuple[dict[str, Any], list[str]]:
+    """ReqInOne's Summary Task: one call per command in the command list. A failed
+    section is left out with a warning rather than failing the requirements."""
+    summary: dict[str, Any] = {}
+    warnings: list[str] = []
+    for command, key, output_format in SUMMARY_COMMANDS:
+        try:
+            answer = _reqinone_call(
+                db,
+                run,
+                client,
+                step=f"summary_{key}",
+                template_text=SUMMARY_TEMPLATE,
+                variables={
+                    "source_text": source_text,
+                    "known_actors": ", ".join(known_actors) or "None",
+                    "command": command,
+                    "output_format": output_format,
+                },
+            )
+        except (LlmExecutionError, GenerationPipelineStateError) as exc:
+            warnings.append(f"The {key} section of the SRS could not be generated: {exc}")
+            continue
+        value = answer.get(key)
+        rows = value if isinstance(value, list) else []
+        if key == "introduction":
+            text = _coerce_display_text(value)
+            if text:
+                summary[key] = text
+        elif key == "stakeholders":
+            summary[key] = [
+                {
+                    "name": _coerce_display_text(item.get("name")),
+                    "description": _optional_text(item.get("description")),
+                    "traceToSource": _optional_text(item.get("traceToSource")),
+                }
+                for item in rows
+                if isinstance(item, dict)
+                and _coerce_display_text(item.get("name"))
+                and _coerce_display_text(item.get("name")).lower() != "system"
+            ]
+        elif key == "glossary":
+            summary[key] = [
+                {"term": _coerce_display_text(item.get("term")), "definition": _coerce_display_text(item.get("definition"))}
+                for item in rows
+                if isinstance(item, dict) and _coerce_display_text(item.get("term"))
+            ]
+    return summary, warnings
+
+
+def _generate_reqinone_requirements(db: Session, run: GenerationPipelineRun) -> dict[str, Any]:
+    """The requirements stage for AI generation, following ReqInOne (arXiv:2508.09648):
+    extract requirements with the extraction prompt, label them with the classification
+    prompt, and write the SRS summary sections with the summary prompt. The answers are
+    mapped onto the same requirement fields the rule engine produces, so the review
+    screen, the class-model stage and the SRS document read them the same way."""
+    client, _ = _client_for_run(db, run)
+    source_text, story_ids = _reqinone_source_text(db, run)
+    corrections = _correction_context(db, run, "requirements")
+
+    extracted = _reqinone_call(
+        db,
+        run,
+        client,
+        step="extraction",
+        template_text=EXTRACTION_TEMPLATE,
+        variables={
+            "source_text": source_text,
+            "past_corrections": json.dumps(corrections, ensure_ascii=False, default=str) if corrections else "None",
+        },
+    )
+    raw_items = extracted.get("requirements")
+    items = [
+        item
+        for item in (raw_items if isinstance(raw_items, list) else [])
+        if isinstance(item, dict) and _coerce_display_text(item.get("statement"))
+    ]
+    if not items:
+        raise GenerationPipelineStateError("AI generation did not extract any requirements. Try regenerating this stage.")
+
+    numbered = "\n".join(
+        f"{index}. {_coerce_display_text(item.get('statement'))}" for index, item in enumerate(items, start=1)
+    )
+    classified = _reqinone_call(
+        db,
+        run,
+        client,
+        step="classification",
+        template_text=CLASSIFICATION_TEMPLATE,
+        variables={"requirements": numbered},
+    )
+    classifications: dict[int, dict[str, Any]] = {}
+    for entry in classified.get("classifications") or []:
+        if not isinstance(entry, dict):
+            continue
+        try:
+            classifications[int(entry.get("index"))] = entry
+        except (TypeError, ValueError):
+            continue
+
+    requirements: list[dict[str, Any]] = []
+    for index, item in enumerate(items, start=1):
+        entry = classifications.get(index, {})
+        label = _coerce_display_text(entry.get("label"))
+        category = _reqinone_label(label) if label else None
+        statement = _coerce_display_text(item.get("statement"))
+        warnings: list[str] = []
+        if not label:
+            warnings.append("The classification step returned no label for this requirement; marked functional.")
+        elif category is None and not label.lower().startswith("functional"):
+            warnings.append(f'Unrecognised classification "{label}"; marked functional.')
+        if " shall " not in f" {statement.lower()} ":
+            warnings.append('The statement does not follow the "The <subject> shall <action> <object>" pattern.')
+        story_id = (_optional_text(item.get("sourceStorySectionId")) or "").strip("[] ")
+        target_value = _optional_text(entry.get("targetValue")) if category else None
+        operator = _optional_text(entry.get("operator")) if category else None
+        requirement_id = f"REQ-{index:03d}"
+        requirements.append(
+            {
+                "id": requirement_id,
+                "requirementId": requirement_id,
+                "requirementType": "non_functional" if category else "functional",
+                "statement": statement,
+                "sourceStorySectionId": story_id if story_id in story_ids else None,
+                "sourceSentence": _optional_text(item.get("traceToSource")),
+                "reason": _optional_text(item.get("reason")),
+                "extractionMethod": "REQINONE_LLM",
+                "actor": _optional_text(item.get("actor")),
+                "action": _optional_text(item.get("action")),
+                "object": _optional_text(item.get("object")),
+                "condition": _optional_text(item.get("condition")),
+                "nfrCategory": category,
+                "metric": _optional_text(entry.get("metric")) if category else None,
+                "operator": operator if operator in COMPARISON_OPERATORS else None,
+                "targetValue": target_value,
+                "unit": _optional_text(entry.get("unit")) if category else None,
+                "measurable": bool(target_value) if category else None,
+                "enabled": True,
+                "warnings": warnings,
+            }
+        )
+
+    known_actors = sorted({item["actor"] for item in requirements if item["actor"] and item["actor"].lower() != "system"})
+    summary, summary_warnings = _reqinone_summary(db, run, client, source_text, known_actors)
+    return {
+        "requirements": requirements,
+        "srsSummary": summary,
+        "generationMethod": "reqinone",
+        "warnings": summary_warnings,
+        "dictionaryVersionId": None,
+        "ruleVersionId": None,
+    }
 
 
 def _ai_upstream(db: Session, run: GenerationPipelineRun, stage_name: str) -> dict[str, Any]:
@@ -1569,8 +1851,22 @@ def generate_next_stage(
     run.status = "running"
     db.commit()
     try:
-        if next_stage == "xml" or run.generation_mode == "rule_based":
+        parent = _latest_revision(db, run.id, next_stage)
+        # Only a stage's first generation reuses a past fix; one generated again
+        # after reopening an earlier stage goes back to the engine.
+        reused = None if parent is not None else find_same_input_correction(db, run=run, stage_name=next_stage)
+        if reused is not None:
+            payload = deepcopy(reused.corrected_payload)
+            logger.info(
+                "Pipeline stage reused the user's correction for the same input: run_id=%s stage=%s source_run_id=%s",
+                run.id,
+                next_stage,
+                reused.run_id,
+            )
+        elif next_stage == "xml" or run.generation_mode == "rule_based":
             payload = _generate_rule_stage(db, run, next_stage)
+        elif run.generation_mode == "ai" and next_stage == "requirements":
+            payload = _generate_reqinone_requirements(db, run)
         elif run.generation_mode == "ollama":
             # Every content stage is authored by the local model; only XML (mechanical
             # rendering + validation, handled above) stays on the rule engine.
@@ -1583,7 +1879,6 @@ def generate_next_stage(
                 upstream=_ai_upstream(db, run, next_stage),
             )
         _validate_stage_payload(next_stage, payload)
-        parent = _latest_revision(db, run.id, next_stage)
         _create_revision(
             db,
             run=run,

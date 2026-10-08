@@ -193,3 +193,80 @@ def test_fallbacks_come_from_the_dedicated_setting_not_the_byok_provider_list() 
     assert client.fallback_models == ["vendor/model-b"]
     # The hosted vendor is not a provider a user can pick in AI Settings.
     assert settings.provider_models("openrouter_fallback") == []
+
+
+def _gemini_ok(text: str, **extra) -> _FakeResponse:
+    return _ok(
+        {
+            "candidates": [
+                {
+                    "content": {"parts": [{"text": "thinking...", "thought": True}, {"text": text}]},
+                    "finishReason": "STOP",
+                }
+            ],
+            "usageMetadata": {"promptTokenCount": 9, "candidatesTokenCount": 4, "thoughtsTokenCount": 2},
+            **extra,
+        }
+    )
+
+
+def test_gemini_leads_when_its_key_is_set(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "gemini_api_key", "gemini-key")
+    monkeypatch.setattr(settings, "gemini_hosted_model", "gemini-test")
+    sent: list[tuple[str, dict, dict]] = []
+
+    def fake_urlopen(request, timeout):
+        sent.append((request.full_url, dict(request.header_items()), json.loads(request.data)))
+        return _gemini_ok('{"ok": true}')
+
+    monkeypatch.setattr(hosted_ai_service, "urlopen", fake_urlopen)
+    client = HostedAiClient()
+    response = client.generate(LlmRequest(prompt="hi", purpose="test", response_format="json"))
+
+    url, headers, body = sent[0]
+    assert url.endswith("/models/gemini-test:generateContent")
+    assert headers["X-goog-api-key"] == "gemini-key"
+    assert "key=" not in url
+    assert body["contents"][0]["parts"][0]["text"] == "hi"
+    assert body["generationConfig"]["responseMimeType"] == "application/json"
+    assert response.content == '{"ok": true}'  # the thought part is left out
+    assert response.prompt_tokens == 9 and response.completion_tokens == 6
+    assert client.model_name == "gemini-test"
+
+
+def test_gemini_failure_falls_back_to_openrouter(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "gemini_api_key", "gemini-key")
+    calls: list[str] = []
+
+    def fake_urlopen(request, timeout):
+        calls.append(request.full_url)
+        if "generateContent" in request.full_url:
+            raise _http_error(429, "Resource has been exhausted")
+        return _ok({"choices": [{"message": {"content": "from openrouter"}, "finish_reason": "stop"}]})
+
+    monkeypatch.setattr(hosted_ai_service, "urlopen", fake_urlopen)
+    client = HostedAiClient()
+    response = client.generate(LlmRequest(prompt="hi", purpose="test"))
+
+    assert response.content == "from openrouter"
+    assert client.model_name == "vendor/model-a"
+    assert any("generateContent" in url for url in calls) and calls[-1].endswith("/chat/completions")
+
+
+def test_gemini_alone_is_enough_and_its_errors_surface(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "openrouter_api_key", None)
+    monkeypatch.setattr(settings, "gemini_api_key", "gemini-key")
+    assert hosted_ai_available()
+
+    monkeypatch.setattr(
+        hosted_ai_service, "urlopen", lambda request, timeout: _ok({"candidates": [{"content": {"parts": []}, "finishReason": "MAX_TOKENS"}]})
+    )
+    with pytest.raises(LlmExecutionError, match="ran out of room"):
+        HostedAiClient().generate(LlmRequest(prompt="hi", purpose="test"))
+
+
+def test_no_key_at_all_means_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "openrouter_api_key", None)
+    assert not hosted_ai_available()
+    with pytest.raises(LlmConfigurationError):
+        HostedAiClient().validate_configuration()

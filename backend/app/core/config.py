@@ -41,8 +41,8 @@ class Settings(BaseSettings):
     openai_timeout_seconds: int = 20
     openai_max_retries: int = 0
     ollama_base_url: str = Field(default="http://localhost:11434", alias="OLLAMA_BASE_URL")
-    ollama_model: str = "llama3.2:1b"
-    ollama_models: str = "llama3.2:1b,llama3.2,llama3.1,qwen2.5,qwen2.5-coder,mistral,phi3"
+    ollama_model: str = "qwen2.5:3b"
+    ollama_models: str = "qwen2.5:3b,llama3.2:1b,llama3.2,llama3.1,qwen2.5,qwen2.5-coder,mistral,phi3"
     # At temperature 0 (greedy decoding), a small model that starts repeating a
     # phrase has no randomness to break out of it - the repeated pattern stays
     # the single highest-probability next token forever. repeat_penalty=1.3 alone
@@ -75,7 +75,17 @@ class Settings(BaseSettings):
     ollama_repeat_last_n: int = 64
     ollama_embed_model: str = "nomic-embed-text"
     # Platform-managed hosted "AI generation" mode (app/services/hosted_ai_service.py).
-    # One server-side key serves every user; the mode is hidden when it is unset.
+    # One server-side key serves every user; the mode is hidden when neither
+    # GEMINI_API_KEY nor OPENROUTER_API_KEY is set. Gemini is used when its key is
+    # set, with OpenRouter as the fallback; without a Gemini key, OpenRouter alone.
+    gemini_api_key: str | None = None
+    gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta"
+    gemini_hosted_model: str = "gemini-3.6-flash"
+    gemini_temperature: float = 0.2
+    gemini_timeout_seconds: int = 120
+    # Thinking models spend part of this budget on reasoning before they answer.
+    gemini_max_output_tokens: int = 16384
+    gemini_max_retries: int = 2
     openrouter_api_key: str | None = None
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     openrouter_model: str = "openai/gpt-4o-mini"

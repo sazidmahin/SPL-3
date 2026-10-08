@@ -192,6 +192,11 @@ def build_srs_document(
     class_model = stages.get("class-model", {})
 
     requirements = _enabled(requirements_payload.get("requirements"))
+    # Summary-type sections written by the ReqInOne summary prompt (AI generation runs).
+    summary = requirements_payload.get("srsSummary") if isinstance(requirements_payload.get("srsSummary"), dict) else {}
+    introduction = _text(summary.get("introduction"))
+    stakeholders = [item for item in summary.get("stakeholders") or [] if isinstance(item, dict) and _text(item.get("name"))]
+    glossary = [item for item in summary.get("glossary") or [] if isinstance(item, dict) and _text(item.get("term"))]
     functional = [item for item in requirements if item.get("requirementType", "functional") != "non_functional"]
     non_functional = [item for item in requirements if item.get("requirementType") == "non_functional"]
     classes = _enabled(class_model.get("classes"))
@@ -234,10 +239,16 @@ def build_srs_document(
         "",
         "### 1.1 Purpose",
         "",
-        f"This document specifies the software requirements for **{project_name}**. "
-        "It was derived from the stakeholder input below and refined through a reviewed, "
-        "stage-by-stage generation pipeline: clarifications, a normalised story, requirements "
-        "and a domain class model.",
+        *(
+            [introduction]
+            if introduction
+            else [
+                f"This document specifies the software requirements for **{project_name}**. "
+                "It was derived from the stakeholder input below and refined through a reviewed, "
+                "stage-by-stage generation pipeline: clarifications, a normalised story, requirements "
+                "and a domain class model."
+            ]
+        ),
         "",
         "### 1.2 Scope and stakeholder input",
         "",
@@ -246,7 +257,9 @@ def build_srs_document(
         "### 1.3 Definitions",
         "",
     ]
-    if classes:
+    if glossary:
+        lines.extend(f"- **{_text(item.get('term'))}** — {_text(item.get('definition'))}" for item in glossary)
+    elif classes:
         lines.extend(
             f"- **{_text(item.get('name'))}** — {_text(item.get('stereotype')) or 'domain'} concept"
             for item in classes
@@ -255,7 +268,17 @@ def build_srs_document(
         lines.append("- No domain terms were identified.")
 
     lines.extend(["", "## 2. Overall Description", "", "### 2.1 User classes", ""])
-    lines.extend([f"- {actor}" for actor in actors] or ["- No distinct user classes were identified."])
+    if stakeholders:
+        for item in stakeholders:
+            description = _text(item.get("description"))
+            source = _text(item.get("traceToSource"))
+            lines.append(
+                f"- **{_text(item.get('name'))}**"
+                + (f" — {description}" if description else "")
+                + (f" *(Source: “{source}”)*" if source else "")
+            )
+    else:
+        lines.extend([f"- {actor}" for actor in actors] or ["- No distinct user classes were identified."])
 
     lines.extend(["", "### 2.2 User stories", ""])
     story_lines = [
@@ -416,6 +439,16 @@ def build_srs_document(
         "provider": provider,
         "modelName": model_name,
         "actors": actors,
+        "introduction": introduction or None,
+        "stakeholders": [
+            {
+                "name": _text(item.get("name")),
+                "description": _text(item.get("description")) or None,
+                "source": _text(item.get("traceToSource")) or None,
+            }
+            for item in stakeholders
+        ],
+        "glossary": [{"term": _text(item.get("term")), "definition": _text(item.get("definition"))} for item in glossary],
         "enums": [
             {"name": _text(item.get("name")), "literals": [_text(literal) for literal in item.get("literals") or []]}
             for item in enums
@@ -430,6 +463,7 @@ def build_srs_document(
                 "actor": _text(item.get("actor")) or None,
                 "category": _text(item.get("nfrCategory")) or None,
                 "source": _text(item.get("sourceSentence")) or None,
+                "reason": _text(item.get("reason")) or None,
             }
             for index, item in enumerate(requirements)
         ],

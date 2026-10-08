@@ -20,8 +20,13 @@ function asRows(value: unknown): Entity[] {
 function text(item: Entity, key: string) {
   return typeof item[key] === 'string' ? item[key] : ''
 }
-function identifier(label: string, prefix: string) {
-  return `${prefix}_${label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || Date.now()}`
+/** An id built from the label that no row in `existing` already uses (`_2`, `_3`... on a clash). */
+function identifier(label: string, prefix: string, existing: Entity[]) {
+  const base = `${prefix}_${label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || Date.now()}`
+  const taken = new Set(existing.map((item) => text(item, 'id')))
+  let candidate = base
+  for (let suffix = 2; taken.has(candidate); suffix += 1) candidate = `${base}_${suffix}`
+  return candidate
 }
 function warnings(item: Entity) {
   return Array.isArray(item.warnings) ? item.warnings.map(String) : []
@@ -91,7 +96,7 @@ export function ClassModelReview({ revision, busy, onSave, onDraftChange, onRevi
       ...current,
       classes: [
         ...asRows(current.classes),
-        { id: identifier('NewClass', 'class'), name: 'NewClass', enabled: true, attributes: [], methods: [], sourceRequirementIds: [], warnings: [] },
+        { id: identifier('NewClass', 'class', asRows(current.classes)), name: 'NewClass', enabled: true, attributes: [], methods: [], sourceRequirementIds: [], warnings: [] },
       ],
     }))
   }
@@ -114,7 +119,7 @@ export function ClassModelReview({ revision, busy, onSave, onDraftChange, onRevi
       relationships: [
         ...asRows(current.relationships),
         {
-          id: identifier(`edge_${relationships.length + 1}`, 'edge'),
+          id: identifier(`edge_${relationships.length + 1}`, 'edge', [...asRows(current.relationships), ...asRows(current.classes)]),
           type: 'association',
           sourceClassId: text(includedClasses[0], 'id'),
           targetClassId: text(includedClasses[1] ?? includedClasses[0], 'id'),

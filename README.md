@@ -711,7 +711,7 @@ npm install
 npm run dev
 ```
 
-Optional: install [Ollama](https://ollama.com) and `ollama pull llama3.2:1b` to use the Local AI engine.
+Optional: install [Ollama](https://ollama.com) and `ollama pull qwen2.5:3b` to use the Local AI engine.
 
 ---
 
@@ -728,7 +728,7 @@ Backend settings come from environment variables (`backend/app/core/config.py`, 
 | `EMAIL_DELIVERY_MODE`, `SMTP_*` | Verification and reset emails (`console` prints them, `smtp` or `resend` sends them) | `console` |
 | `FRONTEND_URL`, `WORKSPACE_INVITATION_EXPIRE_DAYS` | Where workspace invitation links point, and how long they stay valid | `http://localhost:5173`, `7` |
 | `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, `RESEND_FROM_NAME` | Resend credentials and sender, used when `EMAIL_DELIVERY_MODE=resend` | unset, `onboarding@resend.dev` |
-| `OLLAMA_BASE_URL`, `OLLAMA_MODEL`, `OLLAMA_MODELS` | Local AI server, default and selectable models | `http://localhost:11434`, `llama3.2:1b` |
+| `OLLAMA_BASE_URL`, `OLLAMA_MODEL`, `OLLAMA_MODELS` | Local AI server, default and selectable models | `http://localhost:11434`, `qwen2.5:3b` |
 | `OLLAMA_NUM_CTX`, `OLLAMA_NUM_PREDICT`, `OLLAMA_CHUNK_TOKENS`, `OLLAMA_NUM_THREAD`, `OLLAMA_KEEP_ALIVE` | CPU-friendly tuning for local generation | `8192`, `1024`, `2000`, auto, `30m` |
 | `OPENROUTER_API_KEY`, `OPENROUTER_MODEL`, … | Platform key for the hosted *AI generation* engine (engine hidden when unset) | unset |
 | `OPENAI_MODELS`, `ANTHROPIC_MODELS`, `GEMINI_MODELS` | Models offered for BYOK | see `.env.example` |

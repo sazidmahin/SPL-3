@@ -446,6 +446,77 @@ def test_rag_correction_memory_feeds_past_mistakes_back_into_the_prompt(
     assert "Corrected content." in final_story_prompts[1]
 
 
+def test_same_input_reuses_the_users_corrected_stage_instead_of_regenerating(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "rag_enabled", True)
+    monkeypatch.setattr(OllamaClient, "validate_configuration", lambda self: None)
+    monkeypatch.setattr(OllamaClient, "embed", lambda self, text, model=None: [1.0, 0.0, 0.0])
+
+    final_story_calls: list[str] = []
+    model_final_story = {
+        "originalText": "x",
+        "normalizedSentences": [],
+        "atomicStorySections": [{"id": "s1", "normalizedSentence": "Model content."}],
+        "appliedClarificationAnswers": [],
+        "unresolvedFields": [],
+        "warnings": [],
+        "extractionMetadata": {},
+    }
+
+    def fake_generate(self: OllamaClient, request):
+        if request.purpose == "pipeline_clarifications_ollama_questions":
+            content = '{"clarificationQuestions": []}'
+        elif request.purpose == "pipeline_final-story_ollama_independent":
+            final_story_calls.append(request.prompt)
+            content = json.dumps(model_final_story)
+        else:
+            content = "{}"
+        return LlmResponse(content=content, response_payload={"content": content}, prompt_tokens=1, completion_tokens=1)
+
+    monkeypatch.setattr(OllamaClient, "generate", fake_generate)
+
+    token = register(client, "reuse@example.com")
+    workspace_id, project_id = setup_project(client, token)
+    base_url = pipeline_url(workspace_id, project_id)
+
+    def run_to_final_story(raw_text: str) -> dict:
+        created = client.post(
+            base_url,
+            headers=auth_header(token),
+            json={"title": "Reuse test", "raw_text": raw_text, "generation_mode": "ollama"},
+        )
+        assert created.status_code == 201, created.text
+        run = approve_and_proceed(client, token, base_url, created.json())
+        return approve_and_proceed(client, token, base_url, run)
+
+    def final_story(run: dict) -> dict:
+        return next(stage for stage in run["stages"] if stage["stage_name"] == "final-story")
+
+    run_a = run_to_final_story("A customer can place an order.")
+    corrected = {**model_final_story, "atomicStorySections": [{"id": "s1", "normalizedSentence": "Fixed content."}]}
+    saved = client.post(
+        f"{base_url}/{run_a['id']}/stages/final-story/revisions",
+        headers=auth_header(token),
+        json={"payload": corrected, "expected_version": final_story(run_a)["version_number"]},
+    )
+    assert saved.status_code == 200, saved.text
+    assert len(final_story_calls) == 1
+
+    # Same text up to case and spacing: the user's fix comes back and the model is not asked.
+    run_b = run_to_final_story("  a customer can   place an order. ")
+    assert final_story(run_b)["payload"] == corrected
+    assert len(final_story_calls) == 1
+
+    # Different text still goes to the model.
+    run_c = run_to_final_story("An admin can approve an order.")
+    assert final_story(run_c)["payload"]["atomicStorySections"][0]["normalizedSentence"] == "Model content."
+    assert len(final_story_calls) == 2
+
+
 def test_ai_settings_encrypt_key_and_gate_ai_gen(
     client: TestClient,
     db_session: Session,
@@ -872,7 +943,7 @@ def test_hosted_ai_runs_also_learn_from_corrections_without_any_local_model(
     workspace_id, _ = setup_project(client, token)
     raw_text = "A customer can place an order for several products."
 
-    def run_to_final_story(name: str) -> tuple[str, dict]:
+    def run_to_final_story(name: str, raw_text: str = raw_text) -> tuple[str, dict]:
         project = client.post(
             f"/api/v1/workspaces/{workspace_id}/projects", headers=auth_header(token), json={"name": name, "description": None}
         )
@@ -900,8 +971,9 @@ def test_hosted_ai_runs_also_learn_from_corrections_without_any_local_model(
     )
     assert saved.status_code == 200, saved.text
 
-    # --- Second run, same input: the fix comes back as context ---
-    run_to_final_story("Hosted RAG B")
+    # --- Second run, similar input: the fix comes back as context. (The exact same
+    # input reuses the fix outright; see test_same_input_reuses_the_users_corrected_stage...)
+    run_to_final_story("Hosted RAG B", "A customer can place an order for several products today.")
     assert '"pastCorrections"' in prompts[-1]
     assert "Original bad content." in prompts[-1]
     assert "Corrected content." in prompts[-1]
