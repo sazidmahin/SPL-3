@@ -32,6 +32,7 @@ from app.services.auth_service import (
     reset_password,
     verify_email,
 )
+from app.services.email_service import EmailDeliveryError
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -49,6 +50,11 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> Registe
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except InvalidRegistrationError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
+    except EmailDeliveryError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Could not send the verification email. Please try again later.",
+        ) from exc
 
     return RegisterResponse(
         message="Verification code sent to email",
@@ -80,6 +86,11 @@ def resend_user_verification_code(
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=str(exc)) from exc
     except InvalidRegistrationError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
+    except EmailDeliveryError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Could not send the verification email. Please try again later.",
+        ) from exc
 
     return RegisterResponse(
         message="If the email requires verification, a new code has been sent.",
