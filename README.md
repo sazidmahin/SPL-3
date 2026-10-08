@@ -634,7 +634,8 @@ Backend settings come from environment variables (`backend/app/core/config.py`, 
 | `DATABASE_URL` | PostgreSQL connection string | local `srs_diagram_platform` |
 | `SECRET_KEY` | JWT signing key | development value — **change it** |
 | `AI_CREDENTIAL_ENCRYPTION_KEY` | Encrypts users' BYOK keys | development value — **change it** |
-| `EMAIL_DELIVERY_MODE`, `SMTP_*` | Verification and reset emails (`console` prints them) | `console` |
+| `EMAIL_DELIVERY_MODE`, `SMTP_*` | Verification and reset emails (`console` prints them, `smtp` or `resend` sends them) | `console` |
+| `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, `RESEND_FROM_NAME` | Resend credentials and sender, used when `EMAIL_DELIVERY_MODE=resend` | unset, `onboarding@resend.dev` |
 | `OLLAMA_BASE_URL`, `OLLAMA_MODEL`, `OLLAMA_MODELS` | Local AI server, default and selectable models | `http://localhost:11434`, `llama3.2:1b` |
 | `OLLAMA_NUM_CTX`, `OLLAMA_NUM_PREDICT`, `OLLAMA_CHUNK_TOKENS`, `OLLAMA_NUM_THREAD`, `OLLAMA_KEEP_ALIVE` | CPU-friendly tuning for local generation | `8192`, `1024`, `2000`, auto, `30m` |
 | `OPENROUTER_API_KEY`, `OPENROUTER_MODEL`, … | Platform key for the hosted *AI generation* engine (engine hidden when unset) | unset |
