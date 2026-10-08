@@ -4,6 +4,7 @@ import {
   Download,
   Eye,
   FileText,
+  GitCompareArrows,
   ListTree,
   Loader2,
   MoreHorizontal,
@@ -209,6 +210,9 @@ export function DocumentPage({ projectId, documentId }: { projectId: string; doc
                     <WandSparkles /> Open generation run
                   </DropdownMenuItem>
                 ) : null}
+                <DropdownMenuItem onSelect={() => navigate(routes.compareDocuments(), { a: data.id })}>
+                  <GitCompareArrows /> Compare with another document
+                </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem disabled={!canEdit} onSelect={() => void remove()} className="text-danger data-[highlighted]:text-danger">
                   <Trash2 /> Delete document

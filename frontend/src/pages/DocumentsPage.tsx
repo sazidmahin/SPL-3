@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Plus } from 'lucide-react'
+import { GitCompareArrows, Plus } from 'lucide-react'
 import { projectApi, srsApi } from '../api'
 import { FilterBar } from '../app/components/FilterBar'
 import { DocumentList } from '../app/components/Lists'
@@ -26,6 +26,13 @@ export function DocumentsPage() {
     )
   }, [documents.data, query, projectId])
 
+  const compareButton =
+    (documents.data?.length ?? 0) >= 2 ? (
+      <LinkButton variant="secondary" href={href(routes.compareDocuments())}>
+        <GitCompareArrows /> Compare
+      </LinkButton>
+    ) : null
+
   const newButton = canEdit ? (
     <LinkButton href={href(routes.generate())}>
       <Plus /> Generate SRS
@@ -34,7 +41,16 @@ export function DocumentsPage() {
 
   return (
     <section className="grid grid-cols-1 gap-5">
-      <PageHeader title="SRS documents" description="Published software requirements specifications across all projects." actions={newButton} />
+      <PageHeader title="SRS documents" description="Published software requirements specifications across all projects."
+        actions={
+          compareButton || newButton ? (
+            <div className="flex flex-wrap gap-2">
+              {compareButton}
+              {newButton}
+            </div>
+          ) : null
+        }
+      />
       <FilterBar
         query={query}
         onQueryChange={setQuery}
