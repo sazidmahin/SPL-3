@@ -65,3 +65,36 @@ class WorkspaceMemberRead(BaseModel):
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+InvitationStatus = Literal["pending", "accepted", "revoked", "expired"]
+
+
+class WorkspaceInvitationRead(BaseModel):
+    id: UUID
+    workspace_id: UUID
+    email: str
+    role: WorkspaceRole
+    status: InvitationStatus
+    invited_by: UUID
+    expires_at: datetime
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class WorkspaceInvitationCreateResponse(WorkspaceInvitationRead):
+    # Set only when EMAIL_DELIVERY_MODE=console, so local development can open
+    # the link without a mail server.
+    invite_url: str | None = None
+
+
+class WorkspaceInvitationPreview(BaseModel):
+    workspace_name: str
+    inviter_name: str
+    email: str
+    role: WorkspaceRole
+    status: InvitationStatus
+    expires_at: datetime
+    account_exists: bool

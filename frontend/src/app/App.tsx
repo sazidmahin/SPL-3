@@ -3,6 +3,7 @@ import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
 import { Boxes, Building2, FileText, Folder, History, LayoutDashboard, Loader2, Network, Settings, ShieldCheck, Users, WandSparkles } from 'lucide-react'
 import { AuthView } from '../features/auth/AuthView'
 import { FooterSection } from '../features/footer/FooterSection'
+import { InvitePage } from '../features/invitations/InvitePage'
 import { DashboardPage } from '../pages/DashboardPage'
 import { DiagramsPage } from '../pages/DiagramsPage'
 import { DocumentsPage } from '../pages/DocumentsPage'
@@ -190,6 +191,9 @@ function NoWorkspace() {
 
 function Gate() {
   const session = useSession()
+  const route = useRoute()
+  // The emailed invite link works signed in or out, so it sits outside the app shell.
+  if (route.segments[0] === 'invite' && route.segments[1]) return <InvitePage key={route.segments[1]} token={route.segments[1]} />
   if (session.status === 'signed-out') return <AuthView />
   return <Shell />
 }

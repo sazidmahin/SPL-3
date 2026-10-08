@@ -5,7 +5,7 @@ from urllib.error import HTTPError
 import pytest
 
 from app.services import email_service
-from app.services.email_service import EmailDeliveryError, send_verification_code
+from app.services.email_service import EmailDeliveryError, send_verification_code, send_workspace_invitation
 
 
 class _FakeResponse:
@@ -66,3 +66,29 @@ def test_resend_api_error_raises_email_delivery_error(monkeypatch):
 
     with pytest.raises(EmailDeliveryError):
         send_verification_code(email="user@example.com", code="123456", full_name="Ada")
+
+
+def test_workspace_invitation_email_contains_the_link(monkeypatch):
+    _use_resend(monkeypatch)
+    captured = {}
+
+    def fake_urlopen(request, timeout):
+        captured["body"] = json.loads(request.data)
+        return _FakeResponse()
+
+    monkeypatch.setattr(email_service, "urlopen", fake_urlopen)
+
+    send_workspace_invitation(
+        email="new@example.com",
+        workspace_name="Acme <Team>",
+        inviter_name="Ada",
+        role="member",
+        invite_url="http://localhost:5173/#/invite/abc123",
+    )
+
+    body = captured["body"]
+    assert body["to"] == ["new@example.com"]
+    assert body["subject"] == "Ada invited you to join Acme <Team>"
+    assert "http://localhost:5173/#/invite/abc123" in body["text"]
+    assert 'href="http://localhost:5173/#/invite/abc123"' in body["html"]
+    assert "Acme &lt;Team&gt;" in body["html"]

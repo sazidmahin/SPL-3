@@ -56,4 +56,5 @@ export const routes = {
   settings: (tab?: string) => `/settings${tab ? `/${tab}` : ''}`,
   members: () => '/members',
   admin: (tab?: string) => `/admin${tab ? `/${tab}` : ''}`,
+  invite: (token: string) => `/invite/${token}`,
 }

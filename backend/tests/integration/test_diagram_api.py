@@ -49,6 +49,10 @@ def auth_header(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
+def invitation_token(invite_response) -> str:
+    return invite_response.json()["invite_url"].rsplit("/", 1)[-1]
+
+
 def register(client: TestClient, email: str, full_name: str) -> str:
     response = client.post(
         "/api/v1/auth/register",
@@ -189,6 +193,11 @@ def test_viewer_can_read_diagrams_but_cannot_save_versions(client: TestClient) -
         json={"email": "viewer@example.com", "role": "viewer"},
     )
     assert invite_response.status_code == 201
+    accept_response = client.post(
+        f"/api/v1/invitations/{invitation_token(invite_response)}/accept",
+        headers=auth_header(viewer_token),
+    )
+    assert accept_response.status_code == 200
 
     read_response = client.get(
         f"/api/v1/workspaces/{workspace_id}/projects/{project['id']}/diagrams/{diagram['id']}",

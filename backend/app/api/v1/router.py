@@ -8,6 +8,7 @@ from app.api.v1.routes import (
     diagrams,
     generation_pipelines,
     health,
+    invitations,
     projects,
     search,
     srs,
@@ -21,6 +22,7 @@ api_router.include_router(ai_settings.router)
 api_router.include_router(generation_pipelines.workspace_router)
 api_router.include_router(generation_pipelines.router)
 api_router.include_router(workspaces.router)
+api_router.include_router(invitations.router)
 api_router.include_router(projects.router)
 api_router.include_router(diagrams.workspace_router)
 api_router.include_router(diagrams.router)

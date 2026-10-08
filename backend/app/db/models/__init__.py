@@ -8,6 +8,7 @@ from app.db.models.rag import GenerationCorrection
 from app.db.models.srs import SrsDocument
 from app.db.models.user import User
 from app.db.models.workspace import Workspace
+from app.db.models.workspace_invitation import WorkspaceInvitation
 from app.db.models.workspace_member import WorkspaceMember
 
 __all__ = [
@@ -25,5 +26,6 @@ __all__ = [
     "User",
     "UserAiProviderCredential",
     "Workspace",
+    "WorkspaceInvitation",
     "WorkspaceMember",
 ]

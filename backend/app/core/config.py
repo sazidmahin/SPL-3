@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     resend_timeout_seconds: int = 15
     email_verification_code_expire_minutes: int = 10
     email_verification_resend_cooldown_seconds: int = 60
+    # Where the web app is served; workspace invitation emails link back to it.
+    frontend_url: str = "http://localhost:5173"
+    workspace_invitation_expire_days: int = 7
     openai_model: str = "gpt-5.6"
     openai_models: str = "gpt-5.6,gpt-5.6-sol,gpt-5.6-terra,gpt-5.6-luna,gpt-5.5,gpt-5.5-2026-04-23,gpt-5.4,gpt-5.4-2026-03-05,gpt-5.4-pro,gpt-5.4-mini,gpt-5.2,gpt-4.1,gpt-4.1-mini,gpt-4.1-nano,gpt-4o,gpt-4o-mini"
     anthropic_model: str = "claude-sonnet-5"

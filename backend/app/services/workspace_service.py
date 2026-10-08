@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.db.models import User, Workspace, WorkspaceMember
@@ -130,74 +130,6 @@ def list_workspace_members(
             .order_by(WorkspaceMember.created_at.asc())
         )
     )
-
-
-def invite_workspace_member(
-    db: Session,
-    *,
-    workspace_id: UUID,
-    requester_membership: WorkspaceMember,
-    email: str,
-    role: str,
-) -> WorkspaceMember:
-    require_workspace_role(requester_membership, allowed_roles=MANAGER_ROLES)
-    workspace = requester_membership.workspace
-    if workspace.type != "organization":
-        raise InvalidWorkspaceError("Members can only be invited to organization workspaces")
-    if role not in INVITABLE_ROLES:
-        raise InvalidWorkspaceError("Invalid workspace role")
-
-    user = db.scalar(
-        select(User).where(User.email == email.strip().lower(), User.status == "active")
-    )
-    if user is None:
-        raise UserNotFoundError("User not found")
-
-    active_member_count = db.scalar(
-        select(func.count())
-        .select_from(WorkspaceMember)
-        .where(
-            WorkspaceMember.workspace_id == workspace_id,
-            WorkspaceMember.status == "active",
-        )
-    )
-    if workspace.type == "personal" and active_member_count >= 1:
-        raise InvalidWorkspaceError("Personal workspaces cannot have additional members")
-
-    existing_membership = db.scalar(
-        select(WorkspaceMember).where(
-            WorkspaceMember.workspace_id == workspace_id,
-            WorkspaceMember.user_id == user.id,
-            WorkspaceMember.status == "active",
-        )
-    )
-    if existing_membership is not None:
-        raise DuplicateWorkspaceMemberError("User is already a workspace member")
-
-    removed_membership = db.scalar(
-        select(WorkspaceMember).where(
-            WorkspaceMember.workspace_id == workspace_id, WorkspaceMember.user_id == user.id
-        )
-    )
-    if removed_membership is not None:
-        removed_membership.status = "active"
-        removed_membership.role = role
-        removed_membership.invited_by = requester_membership.user_id
-        db.commit()
-        db.refresh(removed_membership)
-        return removed_membership
-
-    membership = WorkspaceMember(
-        workspace_id=workspace_id,
-        user_id=user.id,
-        role=role,
-        status="active",
-        invited_by=requester_membership.user_id,
-    )
-    db.add(membership)
-    db.commit()
-    db.refresh(membership)
-    return membership
 
 
 def _managed_member(

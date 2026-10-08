@@ -6,7 +6,8 @@ import { useSession } from '../../app/core/session'
 import { cn, useFeedback } from '../../shared/ui'
 import { AuthField, AuthFrame, AuthLinkButton, AuthPanelHeader } from './components/AuthFrame'
 
-type View = 'login' | 'register' | 'verify' | 'forgot' | 'reset'
+export type AuthViewName = 'login' | 'register' | 'verify' | 'forgot' | 'reset'
+type View = AuthViewName
 
 const submitClass =
   'inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-accent to-accent2-dim px-4 text-sm font-semibold text-white shadow-[0_10px_24px_-10px_color-mix(in_oklab,var(--color-accent)_90%,transparent)] transition hover:brightness-110 active:translate-y-px disabled:cursor-not-allowed disabled:opacity-55'
@@ -22,7 +23,7 @@ function SubmitButton({ busy, children }: { busy: boolean; children: ReactNode }
   )
 }
 
-function Alert({ tone = 'error', children }: { tone?: 'error' | 'info'; children: ReactNode }) {
+export function Alert({ tone = 'error', children }: { tone?: 'error' | 'info'; children: ReactNode }) {
   return (
     <p
       role={tone === 'error' ? 'alert' : 'status'}
@@ -37,11 +38,18 @@ function Alert({ tone = 'error', children }: { tone?: 'error' | 'info'; children
   )
 }
 
-export function AuthView() {
+type AuthViewProps = {
+  initialView?: AuthViewName
+  initialEmail?: string
+  /** Shown above the sign-in and sign-up forms, e.g. which workspace an invite is for. */
+  notice?: ReactNode
+}
+
+export function AuthView({ initialView = 'login', initialEmail = '', notice }: AuthViewProps = {}) {
   const { signIn, expiredNotice } = useSession()
   const { toast } = useFeedback()
-  const [view, setView] = useState<View>('login')
-  const [email, setEmail] = useState('')
+  const [view, setView] = useState<View>(initialView)
+  const [email, setEmail] = useState(initialEmail)
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [fullName, setFullName] = useState('')
@@ -293,6 +301,7 @@ export function AuthView() {
         title={registering ? 'Create your account' : 'Welcome back'}
         subtitle={registering ? 'Free for everyone — start turning ideas into specifications.' : 'Sign in to continue to your workspace.'}
       />
+      {notice ? <div className="mb-5">{notice}</div> : null}
       {expiredNotice && !registering ? (
         <div className="mb-5">
           <Alert tone="info">Your session expired. Please sign in again.</Alert>

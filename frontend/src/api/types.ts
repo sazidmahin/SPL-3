@@ -52,6 +52,32 @@ export type WorkspaceMember = {
   updated_at: string
 }
 
+export type InvitationStatus = 'pending' | 'accepted' | 'revoked' | 'expired'
+
+export type WorkspaceInvitation = {
+  id: string
+  workspace_id: string
+  email: string
+  role: WorkspaceRole
+  status: InvitationStatus
+  invited_by: string
+  expires_at: string
+  created_at: string
+  updated_at: string
+  /** Only set when the backend prints emails to its console (local development). */
+  invite_url?: string | null
+}
+
+export type InvitationPreview = {
+  workspace_name: string
+  inviter_name: string
+  email: string
+  role: WorkspaceRole
+  status: InvitationStatus
+  expires_at: string
+  account_exists: boolean
+}
+
 export type Project = {
   id: string
   workspace_id: string

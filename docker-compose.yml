@@ -114,6 +114,8 @@ services:
       # auto = Ollama when it answers, otherwise the built-in lexical embedder.
       RAG_EMBEDDER: ${RAG_EMBEDDER:-auto}
       EMAIL_DELIVERY_MODE: ${EMAIL_DELIVERY_MODE:-console}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
+      WORKSPACE_INVITATION_EXPIRE_DAYS: ${WORKSPACE_INVITATION_EXPIRE_DAYS:-7}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL:-onboarding@resend.dev}
       RESEND_FROM_NAME: ${RESEND_FROM_NAME:-SRS Diagram Platform}

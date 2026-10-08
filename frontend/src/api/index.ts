@@ -14,6 +14,7 @@ import type {
   DiagramDetail,
   DiagramVersion,
   GenerationMode,
+  InvitationPreview,
   PipelineRun,
   PipelineRunSummary,
   PipelineStage,
@@ -23,6 +24,7 @@ import type {
   SearchResults,
   SrsDocument,
   Workspace,
+  WorkspaceInvitation,
   WorkspaceMember,
   WorkspaceMembership,
   WorkspaceRole,
@@ -69,12 +71,21 @@ export const workspaceApi = {
     request<WorkspaceMembership>('/workspaces', { method: 'POST', body: { ...payload, type: 'organization' } }),
   members: (workspaceId: string) => request<WorkspaceMember[]>(`${ws(workspaceId)}/members`),
   invite: (workspaceId: string, payload: { email: string; role: Exclude<WorkspaceRole, 'owner'> }) =>
-    request<WorkspaceMember>(`${ws(workspaceId)}/members/invite`, { method: 'POST', body: payload }),
+    request<WorkspaceInvitation>(`${ws(workspaceId)}/members/invite`, { method: 'POST', body: payload }),
+  invitations: (workspaceId: string) => request<WorkspaceInvitation[]>(`${ws(workspaceId)}/invitations`),
+  revokeInvitation: (workspaceId: string, invitationId: string) =>
+    request<void>(`${ws(workspaceId)}/invitations/${invitationId}`, { method: 'DELETE' }),
   updateRole: (workspaceId: string, memberId: string, role: Exclude<WorkspaceRole, 'owner'>) =>
     request<WorkspaceMember>(`${ws(workspaceId)}/members/${memberId}`, { method: 'PATCH', body: { role } }),
   removeMember: (workspaceId: string, memberId: string) =>
     request<void>(`${ws(workspaceId)}/members/${memberId}`, { method: 'DELETE' }),
   search: (workspaceId: string, q: string) => request<SearchResults>(`${ws(workspaceId)}/search`, { query: { q } }),
+}
+
+export const invitationApi = {
+  preview: (token: string) => request<InvitationPreview>(`/invitations/${encodeURIComponent(token)}`, { auth: false }),
+  accept: (token: string) =>
+    request<WorkspaceMembership>(`/invitations/${encodeURIComponent(token)}/accept`, { method: 'POST' }),
 }
 
 export const projectApi = {
