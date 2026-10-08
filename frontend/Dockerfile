@@ -9,11 +9,11 @@ ARG VITE_API_PREFIX=/api/v1
 ENV VITE_API_ORIGIN=$VITE_API_ORIGIN \
     VITE_API_PREFIX=$VITE_API_PREFIX
 
-COPY package.json package-lock.json ./
-RUN npm ci
+COPY package.json yarn.lock ./
+RUN yarn install --frozen-lockfile
 
 COPY . .
-RUN npm run build
+RUN yarn build
 
 FROM nginx:1.27-alpine AS runtime
 COPY nginx.conf /etc/nginx/conf.d/default.conf
