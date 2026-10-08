@@ -114,6 +114,9 @@ services:
       # auto = Ollama when it answers, otherwise the built-in lexical embedder.
       RAG_EMBEDDER: ${RAG_EMBEDDER:-auto}
       EMAIL_DELIVERY_MODE: ${EMAIL_DELIVERY_MODE:-console}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL:-onboarding@resend.dev}
+      RESEND_FROM_NAME: ${RESEND_FROM_NAME:-SRS Diagram Platform}
       SUPER_ADMIN_EMAIL: ${SUPER_ADMIN_EMAIL:-}
       SUPER_ADMIN_PASSWORD: ${SUPER_ADMIN_PASSWORD:-}
       SUPER_ADMIN_FULL_NAME: ${SUPER_ADMIN_FULL_NAME:-Platform Super Admin}

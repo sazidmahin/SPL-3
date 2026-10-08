@@ -18,6 +18,14 @@ class Settings(BaseSettings):
     smtp_from_email: str = "no-reply@srs-platform.local"
     smtp_from_name: str = "SRS Diagram Platform"
     smtp_use_tls: bool = True
+    # Used when EMAIL_DELIVERY_MODE=resend. The sender address must belong to a
+    # domain verified in Resend; onboarding@resend.dev only delivers to the
+    # Resend account owner's own address (fine for testing).
+    resend_api_key: str | None = None
+    resend_api_url: str = "https://api.resend.com/emails"
+    resend_from_email: str = "onboarding@resend.dev"
+    resend_from_name: str = "SRS Diagram Platform"
+    resend_timeout_seconds: int = 15
     email_verification_code_expire_minutes: int = 10
     email_verification_resend_cooldown_seconds: int = 60
     openai_model: str = "gpt-5.6"
